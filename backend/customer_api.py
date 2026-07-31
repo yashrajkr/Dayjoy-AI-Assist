@@ -1,0 +1,819 @@
+"""
+Phase 4 — Customer Experience Platform (CXP) API endpoints.
+
+Adds the /customer/* routes:
+  - /customer/dashboard           — personalized dashboard KPIs
+  - /customer/favorites           — CRUD favorites (products/FAQs/conversations)
+  - /customer/collections         — CRUD collections + items
+  - /customer/recently-viewed     — list + track
+  - /customer/comparisons         — save/list product comparisons
+  - /customer/wellness/goals      — CRUD wellness goals
+  - /customer/wellness/activities — log activities
+  - /customer/wellness/reminders  — CRUD reminders
+  - /customer/feedback            — submit AI/product/support feedback
+  - /customer/profile-prefs       — get/update extended profile
+  - /customer/announcements       — list published announcements
+  - /customer/knowledge-search    — universal knowledge search
+  - /customer/tickets             — list own tickets + replies + ratings
+  - /customer/recommendations     — AI personalized recommendations
+
+All endpoints require authentication. Data scoped to auth.uid() via RLS.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Dict, List, Optional
+
+import httpx
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
+
+router = APIRouter(prefix="/customer", tags=["customer"])
+
+try:
+    from .main import (
+        require_user_id, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+        GROQ_API_KEY, stream_groq, load_safety_rules, run_safety_check,
+    )
+except ImportError:
+    pass
+
+
+def _svc_headers(token: Optional[str] = None, json_body: bool = False) -> Dict[str, str]:
+    h = {"apikey": SUPABASE_ANON_KEY}
+    if json_body:
+        h["Content-Type"] = "application/json"
+    if SUPABASE_SERVICE_ROLE_KEY:
+        h["Authorization"] = f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
+    elif token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def _prefer_headers(token: Optional[str] = None) -> Dict[str, str]:
+    h = _svc_headers(token, json_body=True)
+    h["Prefer"] = "return=representation"
+    return h
+
+
+async def _select(table: str, columns: str = "*", filters: Optional[Dict[str, Any]] = None,
+                  limit: int = 50, order: Optional[str] = None, token: Optional[str] = None) -> List[Dict[str, Any]]:
+    if not SUPABASE_URL:
+        return []
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select={columns}&limit={limit}"
+    if filters:
+        for col, val in filters.items():
+            if val is None:
+                continue
+            url += f"&{col}=eq.{val}"
+    if order:
+        url += f"&order={order}"
+    headers = _svc_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                return []
+            return resp.json()
+    except Exception:
+        return []
+
+
+async def _insert(table: str, payload: Dict[str, Any], token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    if not SUPABASE_URL:
+        return None
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select=*"
+    headers = _prefer_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                return None
+            data = resp.json()
+            return data[0] if isinstance(data, list) and data else None
+    except Exception:
+        return None
+
+
+async def _update(table: str, filters: Dict[str, Any], payload: Dict[str, Any], token: Optional[str] = None) -> List[Dict[str, Any]]:
+    if not SUPABASE_URL:
+        return []
+    url = f"{SUPABASE_URL}/rest/v1/{table}?"
+    for col, val in filters.items():
+        url += f"&{col}=eq.{val}"
+    url += "&select=*"
+    headers = _prefer_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.patch(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                return []
+            return resp.json()
+    except Exception:
+        return []
+
+
+async def _delete(table: str, filters: Dict[str, Any], token: Optional[str] = None) -> bool:
+    if not SUPABASE_URL:
+        return False
+    url = f"{SUPABASE_URL}/rest/v1/{table}?"
+    for col, val in filters.items():
+        url += f"&{col}=eq.{val}"
+    headers = _svc_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.delete(url, headers=headers)
+            return resp.status_code < 400
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+class FavoriteCreate(BaseModel):
+    entity_type: str  # product, faq, conversation, training, document, policy
+    entity_id: str
+    entity_name: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: str = "#0f766e"
+    icon: str = "📁"
+    is_public: bool = False
+
+
+class CollectionItemCreate(BaseModel):
+    entity_type: str
+    entity_id: str
+    entity_name: Optional[str] = None
+
+
+class ComparisonCreate(BaseModel):
+    name: Optional[str] = None
+    product_ids: List[str]
+    product_data: Optional[Dict[str, Any]] = None
+
+
+class WellnessGoalCreate(BaseModel):
+    goal_type: str = "general"
+    title: str
+    description: Optional[str] = None
+    target_value: Optional[float] = None
+    current_value: float = 0
+    unit: str = ""
+    target_date: Optional[str] = None
+
+
+class WellnessGoalUpdate(BaseModel):
+    current_value: Optional[float] = None
+    is_completed: Optional[bool] = None
+    description: Optional[str] = None
+
+
+class WellnessActivityCreate(BaseModel):
+    activity_type: str = "custom"
+    title: str
+    description: Optional[str] = None
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    notes: Optional[str] = None
+    activity_date: Optional[str] = None
+
+
+class ReminderCreate(BaseModel):
+    reminder_type: str = "product"
+    title: str
+    description: Optional[str] = None
+    product_id: Optional[str] = None
+    frequency: str = "daily"
+    time_of_day: Optional[str] = None
+    days_of_week: Optional[List[int]] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class FeedbackCreate(BaseModel):
+    feedback_type: str = "ai_response"
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    category: Optional[str] = None
+    message_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    feedback_text: Optional[str] = None
+    is_reported: bool = False
+    report_reason: Optional[str] = None
+
+
+class ProfilePrefsUpdate(BaseModel):
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    preferred_language: Optional[str] = None
+    location: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    health_goals: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+    allergies: Optional[List[str]] = None
+    dietary_preferences: Optional[List[str]] = None
+    email_notifications: Optional[bool] = None
+    push_notifications: Optional[bool] = None
+    sms_notifications: Optional[bool] = None
+    whatsapp_updates: Optional[bool] = None
+    marketing_emails: Optional[bool] = None
+    share_data_with_distributor: Optional[bool] = None
+    share_analytics: Optional[bool] = None
+    public_profile: Optional[bool] = None
+    ai_personalization: Optional[bool] = None
+    preferred_ai_tone: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
+
+
+class TicketReplyCreate(BaseModel):
+    body: str
+    is_internal: bool = False
+
+
+class TicketRatingCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    feedback: Optional[str] = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+    entity_types: Optional[List[str]] = None
+    language: str = "en"
+
+
+class RecommendationRequest(BaseModel):
+    health_goals: Optional[List[str]] = None
+    age: Optional[int] = None
+    lifestyle: Optional[str] = None
+    preferences: Optional[List[str]] = None
+    budget_range: Optional[str] = None
+    language: str = "en"
+
+
+# ---------------------------------------------------------------------------
+# Module 1 — Dashboard
+# ---------------------------------------------------------------------------
+@router.get("/dashboard")
+async def customer_dashboard(request: Request) -> Dict[str, Any]:
+    """Personalized customer dashboard KPIs + content."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+
+    # KPIs from view
+    dash_rows = await _select("customer_dashboard_summary", "*", filters={"user_id": user_id}, limit=1, token=token)
+    kpis = dash_rows[0] if dash_rows else {}
+
+    # Favorites (products)
+    fav_products = await _select("customer_favorites", "*", filters={"user_id": user_id, "entity_type": "product"}, limit=10, order="created_at.desc", token=token)
+
+    # Recently viewed
+    recent = await _select("recently_viewed", "*", filters={"user_id": user_id}, limit=10, order="last_viewed_at.desc", token=token)
+
+    # Wellness goals (active)
+    goals = await _select("wellness_goals", "*", filters={"user_id": user_id, "is_completed": "false"}, limit=5, order="created_at.desc", token=token)
+
+    # Active reminders
+    reminders = await _select("wellness_reminders", "*", filters={"user_id": user_id, "is_active": "true"}, limit=5, token=token)
+
+    # Support tickets (open)
+    tickets = await _select("support_tickets", "id,query,issue_category,status,priority,created_at", filters={"user_id": user_id}, limit=5, order="created_at.desc", token=token)
+    open_tickets = [t for t in tickets if t.get("status") != "closed"]
+
+    # Announcements
+    import datetime
+    now_iso = datetime.datetime.utcnow().isoformat()
+    ann_url = f"{SUPABASE_URL}/rest/v1/customer_announcements?select=id,title,body,category,action_url,action_label,image_url,published_at&is_published=eq.true&or=(expires_at.is.null,expires_at.gt.{now_iso})&order=published_at.desc&limit=5"
+    ann_headers = _svc_headers(token)
+    announcements: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(ann_url, headers=ann_headers)
+            if resp.status_code < 400:
+                announcements = resp.json()
+    except Exception:
+        pass
+
+    # Recommended products (AI) — use approved products as fallback
+    recommended = await _select("products", "id,product_name,category,benefits,ingredients,usage", filters={"approval_status": "approved"}, limit=5, order="created_at.desc", token=token)
+
+    return {
+        "user_id": user_id,
+        "kpis": {
+            "favorite_products": kpis.get("favorite_products", 0),
+            "total_favorites": kpis.get("total_favorites", 0),
+            "recently_viewed_count": kpis.get("recently_viewed_count", 0),
+            "active_wellness_goals": kpis.get("active_wellness_goals", 0),
+            "open_tickets": kpis.get("open_tickets", len(open_tickets)),
+            "collection_count": kpis.get("collection_count", 0),
+            "active_reminders": kpis.get("active_reminders", len(reminders)),
+        },
+        "favorites": fav_products,
+        "recently_viewed": recent,
+        "wellness_goals": goals,
+        "reminders": reminders,
+        "tickets": open_tickets,
+        "announcements": announcements,
+        "recommended_products": recommended,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Module 7 — Favorites
+# ---------------------------------------------------------------------------
+@router.get("/favorites")
+async def list_favorites(request: Request, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    filters = {"user_id": user_id}
+    if entity_type:
+        filters["entity_type"] = entity_type
+    return await _select("customer_favorites", "*", filters=filters, limit=100, order="created_at.desc", token=token)
+
+
+@router.post("/favorites")
+async def add_favorite(req: FavoriteCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    # Upsert (ignore if exists)
+    row = await _insert("customer_favorites", payload, token=token)
+    return row or {"status": "exists"}
+
+
+@router.delete("/favorites/{favorite_id}")
+async def remove_favorite(favorite_id: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("customer_favorites", {"id": favorite_id, "user_id": user_id}, token=token)
+    return {"status": "deleted" if ok else "error"}
+
+
+# ---------------------------------------------------------------------------
+# Collections
+# ---------------------------------------------------------------------------
+@router.get("/collections")
+async def list_collections(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("customer_collections", "*", filters={"user_id": user_id}, limit=50, order="created_at.desc", token=token)
+
+
+@router.post("/collections")
+async def create_collection(req: CollectionCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("customer_collections", payload, token=token) or {"status": "error"}
+
+
+@router.delete("/collections/{collection_id}")
+async def delete_collection(collection_id: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("customer_collections", {"id": collection_id, "user_id": user_id}, token=token)
+    return {"status": "deleted" if ok else "error"}
+
+
+@router.post("/collections/{collection_id}/items")
+async def add_collection_item(collection_id: str, req: CollectionItemCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    # Verify ownership
+    cols = await _select("customer_collections", "id", filters={"id": collection_id, "user_id": user_id}, limit=1, token=token)
+    if not cols:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    payload = {**req.model_dump(), "collection_id": collection_id}
+    return await _insert("customer_collection_items", payload, token=token) or {"status": "exists"}
+
+
+@router.get("/collections/{collection_id}/items")
+async def list_collection_items(collection_id: str, request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("customer_collection_items", "*", filters={"collection_id": collection_id}, limit=100, order="added_at.desc", token=token)
+
+
+# ---------------------------------------------------------------------------
+# Recently Viewed
+# ---------------------------------------------------------------------------
+@router.get("/recently-viewed")
+async def list_recently_viewed(request: Request, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    filters = {"user_id": user_id}
+    if entity_type:
+        filters["entity_type"] = entity_type
+    return await _select("recently_viewed", "*", filters=filters, limit=20, order="last_viewed_at.desc", token=token)
+
+
+@router.post("/recently-viewed")
+async def track_recently_viewed(req: Dict[str, Any], request: Request) -> Dict[str, str]:
+    """Track a recently viewed entity. Upserts — increments view_count."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    entity_type = req.get("entity_type", "product")
+    entity_id = req.get("entity_id")
+    entity_name = req.get("entity_name")
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="entity_id required")
+
+    # Check if exists
+    existing = await _select("recently_viewed", "*", filters={"user_id": user_id, "entity_type": entity_type, "entity_id": entity_id}, limit=1, token=token)
+    if existing:
+        # Update view_count + last_viewed_at
+        await _update("recently_viewed", {"id": existing[0]["id"]}, {
+            "view_count": int(existing[0].get("view_count", 1)) + 1,
+            "last_viewed_at": "now()",
+            "entity_name": entity_name,
+        }, token=token)
+    else:
+        await _insert("recently_viewed", {
+            "user_id": user_id, "entity_type": entity_type,
+            "entity_id": entity_id, "entity_name": entity_name,
+        }, token=token)
+    return {"status": "tracked"}
+
+
+# ---------------------------------------------------------------------------
+# Product Comparisons
+# ---------------------------------------------------------------------------
+@router.get("/comparisons")
+async def list_comparisons(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("product_comparisons", "*", filters={"user_id": user_id}, limit=20, order="created_at.desc", token=token)
+
+
+@router.post("/comparisons")
+async def save_comparison(req: ComparisonCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("product_comparisons", payload, token=token) or {"status": "error"}
+
+
+@router.delete("/comparisons/{comparison_id}")
+async def delete_comparison(comparison_id: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("product_comparisons", {"id": comparison_id, "user_id": user_id}, token=token)
+    return {"status": "deleted" if ok else "error"}
+
+
+# ---------------------------------------------------------------------------
+# Module 8 — Wellness Journey
+# ---------------------------------------------------------------------------
+@router.get("/wellness/goals")
+async def list_wellness_goals(request: Request, active_only: bool = False) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    filters = {"user_id": user_id}
+    if active_only:
+        filters["is_completed"] = "false"
+    return await _select("wellness_goals", "*", filters=filters, limit=50, order="created_at.desc", token=token)
+
+
+@router.post("/wellness/goals")
+async def create_wellness_goal(req: WellnessGoalCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("wellness_goals", payload, token=token) or {"status": "error"}
+
+
+@router.patch("/wellness/goals/{goal_id}")
+async def update_wellness_goal(goal_id: str, req: WellnessGoalUpdate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {k: v for k, v in req.model_dump().items() if v is not None}
+    if payload.get("is_completed"):
+        payload["completed_at"] = "now()"
+    rows = await _update("wellness_goals", {"id": goal_id, "user_id": user_id}, payload, token=token)
+    return rows[0] if rows else {"status": "error"}
+
+
+@router.delete("/wellness/goals/{goal_id}")
+async def delete_wellness_goal(goal_id: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("wellness_goals", {"id": goal_id, "user_id": user_id}, token=token)
+    return {"status": "deleted" if ok else "error"}
+
+
+@router.get("/wellness/activities")
+async def list_wellness_activities(request: Request, limit: int = 50) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("wellness_activities", "*", filters={"user_id": user_id}, limit=limit, order="activity_date.desc", token=token)
+
+
+@router.post("/wellness/activities")
+async def log_wellness_activity(req: WellnessActivityCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("wellness_activities", payload, token=token) or {"status": "error"}
+
+
+@router.get("/wellness/reminders")
+async def list_reminders(request: Request, active_only: bool = False) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    filters = {"user_id": user_id}
+    if active_only:
+        filters["is_active"] = "true"
+    return await _select("wellness_reminders", "*", filters=filters, limit=50, order="created_at.desc", token=token)
+
+
+@router.post("/wellness/reminders")
+async def create_reminder(req: ReminderCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("wellness_reminders", payload, token=token) or {"status": "error"}
+
+
+@router.patch("/wellness/reminders/{reminder_id}")
+async def update_reminder(reminder_id: str, payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    rows = await _update("wellness_reminders", {"id": reminder_id, "user_id": user_id}, payload, token=token)
+    return rows[0] if rows else {"status": "error"}
+
+
+@router.delete("/wellness/reminders/{reminder_id}")
+async def delete_reminder(reminder_id: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("wellness_reminders", {"id": reminder_id, "user_id": user_id}, token=token)
+    return {"status": "deleted" if ok else "error"}
+
+
+# ---------------------------------------------------------------------------
+# Module 12 — Feedback
+# ---------------------------------------------------------------------------
+@router.get("/feedback")
+async def list_feedback(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("customer_feedback", "*", filters={"user_id": user_id}, limit=50, order="created_at.desc", token=token)
+
+
+@router.post("/feedback")
+async def submit_feedback(req: FeedbackCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {**req.model_dump(), "user_id": user_id}
+    return await _insert("customer_feedback", payload, token=token) or {"status": "error"}
+
+
+# ---------------------------------------------------------------------------
+# Module 6 — Profile Preferences
+# ---------------------------------------------------------------------------
+@router.get("/profile-prefs")
+async def get_profile_prefs(request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    rows = await _select("customer_profile_prefs", "*", filters={"user_id": user_id}, limit=1, token=token)
+    if rows:
+        return rows[0]
+    # Return defaults
+    return {
+        "preferred_language": "en",
+        "email_notifications": True,
+        "push_notifications": True,
+        "whatsapp_updates": True,
+        "share_data_with_distributor": True,
+        "share_analytics": True,
+        "ai_personalization": True,
+        "preferred_ai_tone": "friendly",
+        "onboarding_completed": False,
+        "health_goals": [],
+        "interests": [],
+        "allergies": [],
+        "dietary_preferences": [],
+    }
+
+
+@router.patch("/profile-prefs")
+async def update_profile_prefs(req: ProfilePrefsUpdate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    payload = {k: v for k, v in req.model_dump().items() if v is not None}
+    payload["updated_at"] = "now()"
+
+    # Try update first
+    rows = await _update("customer_profile_prefs", {"user_id": user_id}, payload, token=token)
+    if rows:
+        return rows[0]
+    # If no row exists, insert with user_id
+    payload["user_id"] = user_id
+    row = await _insert("customer_profile_prefs", payload, token=token)
+    return row or {"status": "error"}
+
+
+# ---------------------------------------------------------------------------
+# Module 11 — Announcements
+# ---------------------------------------------------------------------------
+@router.get("/announcements")
+async def list_announcements(request: Request, limit: int = 10) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    import datetime
+    now_iso = datetime.datetime.utcnow().isoformat()
+    url = f"{SUPABASE_URL}/rest/v1/customer_announcements?select=id,title,body,category,priority,action_url,action_label,image_url,published_at&is_published=eq.true&or=(expires_at.is.null,expires_at.gt.{now_iso})&order=published_at.desc&limit={limit}"
+    headers = _svc_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                return []
+            return resp.json()
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Module 10 — Knowledge Center Search
+# ---------------------------------------------------------------------------
+@router.post("/knowledge-search")
+async def knowledge_search(req: KnowledgeSearchRequest, request: Request) -> Dict[str, Any]:
+    """Search across FAQs, policies, products, training, and knowledge documents."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+
+    q = req.query.strip()
+    if not q or len(q) < 2:
+        return {"results": [], "total": 0}
+
+    results: List[Dict[str, Any]] = []
+    types = req.entity_types or ["faq", "policy", "product", "training", "document"]
+
+    # Search FAQs
+    if "faq" in types:
+        faqs = await _select("faqs", "id,question,answer,category", filters={"approval_status": "approved"}, limit=200, token=token)
+        q_lower = q.lower()
+        for f in faqs:
+            if q_lower in (f.get("question") or "").lower() or q_lower in (f.get("answer") or "").lower():
+                results.append({"entity_type": "faq", "entity_id": str(f.get("id", "")), "title": f.get("question"), "snippet": (f.get("answer") or "")[:200], "category": f.get("category")})
+
+    # Search policies
+    if "policy" in types:
+        policies = await _select("policies", "id,topic,content,category", filters={"approval_status": "approved"}, limit=200, token=token)
+        for p in policies:
+            if q_lower in (p.get("topic") or "").lower() or q_lower in (p.get("content") or "").lower():
+                results.append({"entity_type": "policy", "entity_id": str(p.get("id", "")), "title": p.get("topic"), "snippet": (p.get("content") or "")[:200], "category": p.get("category")})
+
+    # Search products
+    if "product" in types:
+        products = await _select("products", "id,product_name,category,benefits,ingredients,usage", filters={"approval_status": "approved"}, limit=200, token=token)
+        for p in products:
+            text = " ".join(str(p.get(k) or "") for k in ["product_name", "category", "benefits", "ingredients", "usage"]).lower()
+            if q_lower in text:
+                results.append({"entity_type": "product", "entity_id": str(p.get("id", "")), "title": p.get("product_name"), "snippet": (p.get("benefits") or "")[:200], "category": p.get("category")})
+
+    # Search training
+    if "training" in types:
+        training = await _select("distributor_training", "id,title,content,category", filters={"approval_status": "approved"}, limit=200, token=token)
+        for t in training:
+            if q_lower in (t.get("title") or "").lower() or q_lower in (t.get("content") or "").lower():
+                results.append({"entity_type": "training", "entity_id": str(t.get("id", "")), "title": t.get("title"), "snippet": (t.get("content") or "")[:200], "category": t.get("category")})
+
+    # Search knowledge documents
+    if "document" in types:
+        docs = await _select("knowledge_documents", "id,file_name,extracted_text,category", filters={"approval_status": "approved"}, limit=100, token=token)
+        for d in docs:
+            if q_lower in (d.get("file_name") or "").lower() or q_lower in (d.get("extracted_text") or "").lower():
+                results.append({"entity_type": "document", "entity_id": str(d.get("id", "")), "title": d.get("file_name"), "snippet": (d.get("extracted_text") or "")[:200], "category": d.get("category")})
+
+    # Log search
+    try:
+        await _insert("knowledge_search_log", {
+            "user_id": user_id, "query": q[:500],
+            "entity_types": types, "result_count": len(results),
+            "language": req.language,
+        }, token=token)
+    except Exception:
+        pass
+
+    return {"results": results[:30], "total": len(results)}
+
+
+# ---------------------------------------------------------------------------
+# Module 9 — Support Tickets (customer view)
+# ---------------------------------------------------------------------------
+@router.get("/tickets")
+async def list_my_tickets(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select("support_tickets", "*", filters={"user_id": user_id}, limit=50, order="created_at.desc", token=token)
+
+
+@router.get("/tickets/{ticket_id}/replies")
+async def list_ticket_replies(ticket_id: str, request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    # Verify ownership
+    tickets = await _select("support_tickets", "id", filters={"id": ticket_id, "user_id": user_id}, limit=1, token=token)
+    if not tickets and not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    # Get non-internal replies
+    url = f"{SUPABASE_URL}/rest/v1/ticket_replies?ticket_id=eq.{ticket_id}&is_internal=eq.false&select=*&order=created_at.asc&limit=100"
+    headers = _svc_headers(token)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                return []
+            return resp.json()
+    except Exception:
+        return []
+
+
+@router.post("/tickets/{ticket_id}/replies")
+async def add_ticket_reply(ticket_id: str, req: TicketReplyCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    # Verify ownership
+    tickets = await _select("support_tickets", "id", filters={"id": ticket_id, "user_id": user_id}, limit=1, token=token)
+    if not tickets:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    payload = {
+        "ticket_id": ticket_id,
+        "author_id": user_id,
+        "author_role": "customer",
+        "body": req.body,
+        "is_internal": False,  # Customers can't post internal notes
+    }
+    return await _insert("ticket_replies", payload, token=token) or {"status": "error"}
+
+
+@router.post("/tickets/{ticket_id}/rating")
+async def rate_ticket(ticket_id: str, req: TicketRatingCreate, request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    # Verify ownership
+    tickets = await _select("support_tickets", "id", filters={"id": ticket_id, "user_id": user_id}, limit=1, token=token)
+    if not tickets:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    payload = {
+        "ticket_id": ticket_id,
+        "user_id": user_id,
+        "rating": req.rating,
+        "feedback": req.feedback,
+    }
+    return await _insert("ticket_ratings", payload, token=token) or {"status": "exists"}
+
+
+# ---------------------------------------------------------------------------
+# Module 5 — AI Recommendation Engine
+# ---------------------------------------------------------------------------
+@router.post("/recommendations")
+async def get_recommendations(req: RecommendationRequest, request: Request) -> Dict[str, Any]:
+    """Generate AI-powered personalized product recommendations."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+
+    # Safety check
+    rules = await load_safety_rules()
+    is_blocked, rule_key = run_safety_check(req.lifestyle or "", rules)
+    if is_blocked:
+        raise HTTPException(status_code=400, detail=f"Blocked by safety rule: {rule_key}")
+
+    # Build context
+    context = "Customer profile for AI product recommendations:\n"
+    if req.health_goals:
+        context += f"Health goals: {', '.join(req.health_goals)}\n"
+    if req.age:
+        context += f"Age: {req.age}\n"
+    if req.lifestyle:
+        context += f"Lifestyle: {req.lifestyle}\n"
+    if req.preferences:
+        context += f"Preferences: {', '.join(req.preferences)}\n"
+    if req.budget_range:
+        context += f"Budget: {req.budget_range}\n"
+    context += f"\nLanguage: {req.language}\n\nRecommend 3 suitable Dayjoy products. For each, explain WHY it's recommended (personalized reasoning). Include usage suggestions and precautions. Do NOT make medical claims."
+
+    # Generate via Groq
+    recommendation = ""
+    try:
+        if GROQ_API_KEY:
+            async for tok in stream_groq(context, [], "", req.language):
+                recommendation += tok
+    except Exception:
+        pass
+
+    if not recommendation:
+        # Fallback: return approved products
+        products = await _select("products", "id,product_name,category,benefits", filters={"approval_status": "approved"}, limit=5, token=token)
+        recommendation = "Based on your profile, here are some recommended products:\n\n" + "\n".join([f"• {p.get('product_name', '')} — {p.get('benefits', '')[:100]}" for p in products])
+
+    return {"recommendation": recommendation, "context_used": context}

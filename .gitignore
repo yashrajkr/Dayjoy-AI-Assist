@@ -1,0 +1,27 @@
+# Env files
+.env
+.env.local
+.env.*
+!env.example
+!/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+
+# Backend env
+backend/.env
+backend/.env.*
+
+# Local cache / build
+node_modules/
+dist/
+backend/__pycache__/
+backend/.venv/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+

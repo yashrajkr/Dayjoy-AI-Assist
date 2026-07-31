@@ -1,0 +1,93 @@
+# ============================================================================
+# Dayjoy AI Assist — Production Docker Compose
+# ============================================================================
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+#
+# Frontend: http://localhost:8080 (nginx serving built static files)
+# Backend:  http://localhost:8000 (uvicorn with 4 workers)
+# Redis:    internal (caching + job queue)
+#
+# Required environment variables (set in .env or shell):
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_API_BASE_URL
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+#   GROQ_API_KEY, OPENAI_API_KEY (optional)
+#   RAG_EMBEDDING_PROVIDER, RAG_EMBEDDING_MODEL
+#   ALLOWED_ORIGINS (comma-separated, e.g. https://dayjoy.com,https://www.dayjoy.com)
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-}
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8080}
+      - REDIS_URL=redis://redis:6379/0
+      - WORKERS=${BACKEND_WORKERS:-4}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-prod-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Background worker for task queue processing
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_MODE=true
+    command: ["python", "-m", "backend.worker"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+volumes:
+  redis-prod-data:

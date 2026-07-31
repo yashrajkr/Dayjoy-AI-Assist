@@ -1,0 +1,729 @@
+import { lazy, Suspense, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { MotionConfig } from "framer-motion";
+import { AuthProvider } from "./lib/AuthContext";
+import { ProtectedRoute } from "./lib/ProtectedRoute";
+import { AppShellFallback } from "./components/common/AppShellFallback";
+import { ThemeProvider } from "./components/common/ThemeProvider";
+import { I18nProvider } from "./lib/i18n/I18nContext";
+import { subscribeToNotificationClicks } from "./lib/pushNotifications";
+
+// Eager-loaded: critical-path UI (login + selector + layout shells)
+import { AppSelector } from "./components/AppSelector";
+import { LoginPage } from "./components/user/LoginPage";
+import { UserLayout } from "./components/user/UserLayout";
+import { AdminLayout } from "./components/admin/AdminLayout";
+
+// Lazy-loaded: route components — code-split per route so a customer
+// logging in to ask one question does not download the entire admin console.
+// Each chunk is requested only when the user navigates to that route.
+const UserChat = lazy(() =>
+  import("./components/user/UserChat").then((m) => ({ default: m.UserChat })),
+);
+const ProductDiscovery = lazy(() =>
+  import("./components/user/ProductDiscovery").then((m) => ({ default: m.ProductDiscovery })),
+);
+const DistributorAssistant = lazy(() =>
+  import("./components/user/DistributorAssistant").then((m) => ({
+    default: m.DistributorAssistant,
+  })),
+);
+const DistributorTraining = lazy(() =>
+  import("./components/user/DistributorTraining").then((m) => ({
+    default: m.DistributorTraining,
+  })),
+);
+const HumanSupport = lazy(() =>
+  import("./components/user/HumanSupport").then((m) => ({ default: m.HumanSupport })),
+);
+const UserSettings = lazy(() =>
+  import("./components/user/UserSettings").then((m) => ({ default: m.UserSettings })),
+);
+const LeadCapturePage = lazy(() =>
+  import("./components/user/LeadCapturePage").then((m) => ({ default: m.LeadCapturePage })),
+);
+
+const AdminDashboard = lazy(() =>
+  import("./components/admin/AdminDashboard").then((m) => ({ default: m.AdminDashboard })),
+);
+const KnowledgeManager = lazy(() =>
+  import("./components/admin/KnowledgeManager").then((m) => ({ default: m.KnowledgeManager })),
+);
+const ProductDatabase = lazy(() =>
+  import("./components/admin/ProductDatabase").then((m) => ({ default: m.ProductDatabase })),
+);
+const FAQManager = lazy(() =>
+  import("./components/admin/FAQManager").then((m) => ({ default: m.FAQManager })),
+);
+const ApprovalQueue = lazy(() =>
+  import("./components/admin/ApprovalQueue").then((m) => ({ default: m.ApprovalQueue })),
+);
+const UserManagement = lazy(() =>
+  import("./components/admin/UserManagement").then((m) => ({ default: m.UserManagement })),
+);
+const SupportTickets = lazy(() =>
+  import("./components/admin/SupportTickets").then((m) => ({ default: m.SupportTickets })),
+);
+const AdminAnalytics = lazy(() =>
+  import("./components/admin/AdminAnalytics").then((m) => ({ default: m.AdminAnalytics })),
+);
+const AISafetyRules = lazy(() =>
+  import("./components/admin/AISafetyRules").then((m) => ({ default: m.AISafetyRules })),
+);
+const PolicyManager = lazy(() =>
+  import("./components/admin/PolicyManager").then((m) => ({ default: m.PolicyManager })),
+);
+const TrainingManager = lazy(() =>
+  import("./components/admin/TrainingManager").then((m) => ({ default: m.TrainingManager })),
+);
+const LeadsCRM = lazy(() =>
+  import("./components/admin/LeadsCRM").then((m) => ({ default: m.LeadsCRM })),
+);
+const AuditLogs = lazy(() =>
+  import("./components/admin/AuditLogs").then((m) => ({ default: m.AuditLogs })),
+);
+const Integrations = lazy(() =>
+  import("./components/admin/Integrations").then((m) => ({ default: m.Integrations })),
+);
+const AdminSettings = lazy(() =>
+  import("./components/admin/AdminSettings").then((m) => ({ default: m.AdminSettings })),
+);
+const ManagementDashboard = lazy(() =>
+  import("./components/admin/ManagementDashboard").then((m) => ({
+    default: m.ManagementDashboard,
+  })),
+);
+const EmployeeDashboard = lazy(() =>
+  import("./components/admin/EmployeeDashboard").then((m) => ({ default: m.EmployeeDashboard })),
+);
+const LeaderDashboard = lazy(() =>
+  import("./components/admin/LeaderDashboard").then((m) => ({ default: m.LeaderDashboard })),
+);
+const TrainerDashboard = lazy(() =>
+  import("./components/admin/TrainerDashboard").then((m) => ({ default: m.TrainerDashboard })),
+);
+const SupportDashboard = lazy(() =>
+  import("./components/admin/SupportDashboard").then((m) => ({ default: m.SupportDashboard })),
+);
+const KnowledgeTimeline = lazy(() =>
+  import("./components/admin/KnowledgeTimeline").then((m) => ({ default: m.KnowledgeTimeline })),
+);
+const AIConfiguration = lazy(() =>
+  import("./components/admin/AIConfiguration").then((m) => ({ default: m.AIConfiguration })),
+);
+const RolePermissions = lazy(() =>
+  import("./components/admin/RolePermissions").then((m) => ({ default: m.RolePermissions })),
+);
+const UniversalSearch = lazy(() =>
+  import("./components/admin/UniversalSearch").then((m) => ({ default: m.UniversalSearch })),
+);
+const DistributorDashboard = lazy(() =>
+  import("./components/user/DistributorDashboard").then((m) => ({ default: m.DistributorDashboard })),
+);
+const CustomerProfiles = lazy(() =>
+  import("./components/user/CustomerProfiles").then((m) => ({ default: m.CustomerProfiles })),
+);
+const FollowUpManager = lazy(() =>
+  import("./components/user/FollowUpManager").then((m) => ({ default: m.FollowUpManager })),
+);
+const ContentGenerator = lazy(() =>
+  import("./components/user/ContentGenerator").then((m) => ({ default: m.ContentGenerator })),
+);
+const TeamManagement = lazy(() =>
+  import("./components/user/TeamManagement").then((m) => ({ default: m.TeamManagement })),
+);
+const BusinessAnalytics = lazy(() =>
+  import("./components/user/BusinessAnalytics").then((m) => ({ default: m.BusinessAnalytics })),
+);
+const CustomerDashboard = lazy(() =>
+  import("./components/user/CustomerDashboard").then((m) => ({ default: m.CustomerDashboard })),
+);
+const Favorites = lazy(() =>
+  import("./components/user/Favorites").then((m) => ({ default: m.Favorites })),
+);
+const WellnessJourney = lazy(() =>
+  import("./components/user/WellnessJourney").then((m) => ({ default: m.WellnessJourney })),
+);
+const KnowledgeCenter = lazy(() =>
+  import("./components/user/KnowledgeCenter").then((m) => ({ default: m.KnowledgeCenter })),
+);
+const ExecutiveDashboard = lazy(() =>
+  import("./components/admin/ExecutiveDashboard").then((m) => ({ default: m.ExecutiveDashboard })),
+);
+const AnalyticsHub = lazy(() =>
+  import("./components/admin/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })),
+);
+const CommunicationCenter = lazy(() =>
+  import("./components/admin/CommunicationCenter").then((m) => ({ default: m.CommunicationCenter })),
+);
+const CommunicationHub = lazy(() =>
+  import("./components/admin/CommunicationHub").then((m) => ({ default: m.CommunicationHub })),
+);
+const AgentCenter = lazy(() =>
+  import("./components/admin/AgentCenter").then((m) => ({ default: m.AgentCenter })),
+);
+const WorkflowAutomation = lazy(() =>
+  import("./components/admin/WorkflowAutomation").then((m) => ({ default: m.WorkflowAutomation })),
+);
+const SecurityCenter = lazy(() =>
+  import("./components/admin/SecurityCenter").then((m) => ({ default: m.SecurityCenter })),
+);
+
+// Route roles — kept here so the policy is visible in one place.
+// NOTE: admin/management are excluded from public self-signup (see LoginPage).
+const ANY_LOGGED_IN = ["customer", "distributor", "leader", "trainer", "employee", "support", "management", "admin", "super_admin"] as const;
+const ADMIN_OR_MGMT = ["admin", "management", "super_admin"] as const;
+const STAFF_ONLY = ["employee", "support", "trainer", "leader", "admin", "management", "super_admin"] as const;
+
+export default function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+    <ThemeProvider>
+      <I18nProvider>
+        <BrowserRouter>
+          <AuthProvider>
+        <NotificationClickBridge />
+        <Routes>
+          {/* Public */}
+          <Route path="/select" element={<AppSelector />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/lead-capture" element={<LeadCapturePage />} />
+
+          {/* User app */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                <UserLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route
+              index
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UserChat />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="chat/:chatId?"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UserChat />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="products"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ProductDiscovery />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <DistributorAssistant />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <DistributorDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/customers"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <CustomerProfiles />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/follow-ups"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <FollowUpManager />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/content"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ContentGenerator />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/team"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <TeamManagement />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="distributor/analytics"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <BusinessAnalytics />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="training"
+              element={
+                <ProtectedRoute allowedRoles={["distributor", "leader", "trainer", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <DistributorTraining />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="support"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <HumanSupport />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="dashboard"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <CustomerDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="favorites"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <Favorites />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="wellness"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <WellnessJourney />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="knowledge"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <KnowledgeCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UserSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          {/* Admin console — ADMIN_OR_MGMT only at the layout level. */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+
+            {/* Admin + Management */}
+            <Route
+              path="dashboard"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AdminDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="executive"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ExecutiveDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="analytics-hub"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AnalyticsHub />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="communication"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <CommunicationCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="comm-hub"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <CommunicationHub />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="agents"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AgentCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="workflows"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <WorkflowAutomation />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="security"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <SecurityCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="knowledge"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <KnowledgeManager />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="products"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ProductDatabase />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="faqs"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <FAQManager />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="policies"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <PolicyManager />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="training"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <TrainingManager />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="approvals"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ApprovalQueue />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="safety"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AISafetyRules />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UserManagement />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="leads"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <LeadsCRM />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="support"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <SupportTickets />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="analytics"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AdminAnalytics />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="audit"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AuditLogs />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="timeline"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <KnowledgeTimeline />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="ai-config"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "super_admin", ...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AIConfiguration />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="roles"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "super_admin"]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <RolePermissions />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="search"
+              element={
+                <ProtectedRoute allowedRoles={[...STAFF_ONLY, ...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UniversalSearch />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="integrations"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <Integrations />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AdminSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Role-specific dashboards */}
+            <Route
+              path="employee"
+              element={
+                <ProtectedRoute allowedRoles={[...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <EmployeeDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="leader"
+              element={
+                <ProtectedRoute allowedRoles={["leader", ...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <LeaderDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="trainer"
+              element={
+                <ProtectedRoute allowedRoles={["trainer", ...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <TrainerDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="support-team"
+              element={
+                <ProtectedRoute allowedRoles={["support", ...STAFF_ONLY]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <SupportDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="management"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ManagementDashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </I18nProvider>
+    </ThemeProvider>
+    </MotionConfig>
+  );
+}
+
+/**
+ * NotificationClickBridge — listens for "notification clicked" messages
+ * posted by the Service Worker and routes the user to the target URL.
+ *
+ * When the user clicks a system notification (e.g. "Ticket updated"),
+ * the SW posts `{ type: "NOTIFICATION_CLICK", route: "/support" }` to
+ * the active client. This bridge converts that into a router navigation.
+ *
+ * Renders nothing — it's a side-effect only component.
+ */
+function NotificationClickBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const unsub = subscribeToNotificationClicks((route) => {
+      navigate(route);
+    });
+    return unsub;
+  }, [navigate]);
+  return null;
+}

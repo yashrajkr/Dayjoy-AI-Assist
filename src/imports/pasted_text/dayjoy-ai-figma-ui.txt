@@ -1,0 +1,892 @@
+You are a senior SaaS UI/UX designer, AI product designer, enterprise dashboard designer, and startup product strategist.
+
+I am designing a production-level web app called:
+
+Dayjoy AI Assistant
+
+Use the uploaded Stitch AI screenshots as the main visual reference. Keep the same premium wellness SaaS style:
+- Cream/off-white background
+- Dark green primary color
+- Soft green accents
+- Beige cards
+- White rounded cards
+- Minimal shadows
+- Large clean spacing
+- Calm wellness feel
+- Professional enterprise AI dashboard look
+- Left sidebar navigation
+- Top search bar / top navbar
+- Rounded buttons
+- Clean icons
+- Modern typography
+- Desktop-first responsive layout
+
+Important:
+Do not create a basic chatbot UI.
+Create a full company-level private GPT platform for Dayjoy.
+
+Product concept:
+Dayjoy AI Assistant is a private company GPT-style AI assistant for Dayjoy company. It helps customers, distributors, employees, admins, and management with Dayjoy product knowledge, product recommendations, distributor training, policy support, lead capture, analytics, knowledge management, and business support.
+
+Target users:
+1. Customer
+2. Distributor
+3. Employee
+4. Admin
+5. Management / Super Admin
+
+Create a complete Figma UI with all pages, components, and flows listed below.
+
+MAIN DESIGN SYSTEM
+
+Create a design system page with:
+- Color palette:
+  - Primary dark green: #234F1E
+  - Secondary green: #4F6F46
+  - Light green: #DDEDD5
+  - Cream background: #F8F7EE
+  - White cards: #FFFFFF
+  - Beige accent: #F3EAD8
+  - Gold/peach accent: #FFC98B
+  - Charcoal text: #1F1F1F
+  - Muted gray text: #6B6B6B
+  - Error red: #C62828
+  - Warning amber: #B7791F
+- Typography:
+  - Large page headings
+  - Medium section headings
+  - Clear readable body text
+  - Small metadata labels
+- Components:
+  - Sidebar
+  - Top navbar
+  - Search bar
+  - KPI card
+  - Product card
+  - AI chat bubble
+  - Source citation card
+  - Disclaimer card
+  - Upload card
+  - Table
+  - Modal
+  - Tabs
+  - Badge
+  - Button
+  - Form input
+  - Empty state
+  - Error state
+  - Success state
+  - Loading state
+
+GLOBAL LAYOUT
+
+Use this app structure:
+- Left sidebar
+- Top navbar
+- Main content area
+- Optional right-side detail panel on AI/chat/product pages
+
+Sidebar items:
+1. Dashboard
+2. AI Chat
+3. Product Explorer
+4. Problem to Product
+5. Distributor Coach
+6. Knowledge Base
+7. Training Academy
+8. Training Quiz
+9. Lead Capture / CRM
+10. Employee Dashboard
+11. Analytics
+12. Admin Panel
+13. Compliance Center
+14. Management Dashboard
+15. Future Integrations
+16. Settings
+
+Top navbar:
+- Global search
+- Language selector: English / Hindi / Hinglish
+- Notification icon
+- Help icon
+- User profile
+- Role badge
+
+PAGE 1: LOGIN PAGE
+
+Design a premium login page similar to uploaded Stitch login screenshot.
+
+Elements:
+- Dayjoy AI logo placeholder
+- App name: Dayjoy AI Assistant
+- Tagline: Private AI Assistant for Dayjoy Ecosystem
+- Username/email input
+- Password input
+- Login button
+- Forgot password link
+- Role preview cards:
+  - Customer
+  - Distributor
+  - Employee
+  - Admin
+- Footer links:
+  - Privacy Policy
+  - Terms of Service
+- Trust note:
+  “Powered by approved Dayjoy knowledge”
+
+PAGE 2: ONBOARDING / ROLE SELECTION
+
+Use the uploaded role selection screenshot as reference.
+
+Elements:
+- Step indicator: Step 1 of 2
+- Title: How will you use Dayjoy AI?
+- Role cards:
+  - Customer: Product guidance and wellness information
+  - Distributor: Sales support, training, follow-up, objection handling
+  - Employee: Internal tools, support, knowledge lookup
+  - Admin: System management, analytics, approvals
+  - Management: Business insights and company intelligence
+- Step 2:
+  - Language selection:
+    - English
+    - Hindi
+    - Hinglish
+- Continue button
+
+PAGE 3: MAIN DASHBOARD
+
+Use uploaded main dashboard screenshot as reference.
+
+Elements:
+- Welcome hero card:
+  “Welcome back, Admin”
+  “Your AI assistants managed product, distributor, and customer interactions.”
+- Buttons:
+  - View Reports
+  - Assistant Settings
+- KPI cards:
+  - Total Questions
+  - Product Searches
+  - Distributor Queries
+  - Leads Captured
+  - Unsafe Blocked Queries
+  - Unanswered Queries
+- Quick action cards:
+  - Ask AI
+  - Search Product
+  - Upload Knowledge
+  - View Analytics
+  - Generate Follow-up
+  - Training Quiz
+  - Capture Lead
+  - Review Approvals
+- Recent activity feed
+- Knowledge base status card:
+  - Active
+  - Pending approvals
+  - Last updated
+- AI safety status card:
+  - Medical claim guard active
+  - Income claim guard active
+
+PAGE 4: AI CHAT PAGE
+
+Use uploaded AI chat screenshots as reference.
+
+Layout:
+- Left panel:
+  - New Assistant button
+  - Recent history
+  - Saved chats
+  - Chat categories
+- Center panel:
+  - Chat conversation
+  - User messages in dark green bubbles
+  - AI messages in white rounded cards
+  - Suggested prompt chips
+  - Input bar with:
+    - attach file icon
+    - text input
+    - microphone icon
+    - send button
+- Right panel:
+  - Related products
+  - Source snippets
+  - Safety disclaimer
+  - Human handoff button
+  - Related FAQs
+
+AI answer card includes:
+- Direct answer
+- Recommended products
+- Key benefits
+- Usage guidance
+- Safety note
+- Source citation
+- Confidence label
+- Helpful / Not helpful feedback
+- Report wrong answer button
+
+Suggested prompts:
+- Explain Asthprash
+- Which product is useful for skin care?
+- Help me answer customer objection
+- Generate follow-up message
+- Show agriculture products
+- What should I say if customer says product is costly?
+
+PAGE 5: AI CHAT WITH FILE UPLOAD
+
+Use uploaded Dayjoy GPT file upload screenshots as reference.
+
+Elements:
+- Chat conversation with attached file card
+- Supported files:
+  - PDF
+  - CSV
+  - XLSX
+  - DOCX
+  - TXT
+  - Images
+- File card states:
+  - Preparing
+  - Uploaded
+  - Processing
+  - Indexed
+  - Failed
+- Multi-file support UI
+- Document summary card
+- Ask question about uploaded file
+- Source citation from uploaded document
+- “Add to Knowledge Base” button
+- “Request approval” button
+
+PAGE 6: PRODUCT EXPLORER
+
+Use uploaded product explorer screenshot as reference.
+
+Elements:
+- Search bar: Explore Dayjoy products
+- Category pills:
+  - All Products
+  - Health Care
+  - Personal Care
+  - Skin Care
+  - Home Care
+  - Food Products
+  - Agriculture & Veterinary
+  - Clothing / Lifestyle
+  - Combo Packages
+- Product card:
+  - Product image placeholder
+  - Category badge
+  - Product name
+  - Brand
+  - Problem tags
+  - Benefits preview
+  - Price placeholder if available
+  - View details button
+  - Add to compare button
+- Right comparison panel:
+  - Select product slot 1
+  - Select product slot 2
+  - Select product slot 3
+  - Compare side-by-side button
+- Product detail modal:
+  - Product image
+  - Full benefits
+  - Ingredients
+  - Usage
+  - Who can use
+  - Safety note
+  - Source
+  - Approval status
+  - Related products
+
+PAGE 7: PROBLEM TO PRODUCT PAGE
+
+Elements:
+- Large input card:
+  “Tell us your problem or need”
+- Example chips:
+  - Skin care
+  - Hair fall
+  - General wellness
+  - Home cleaning
+  - Farming soil issue
+  - Nutrition
+- AI result section:
+  - Detected category
+  - Suggested Dayjoy products
+  - Why this product was suggested
+  - Product cards
+  - Usage guidance
+  - Safety disclaimer
+  - Human support option
+- Warning card:
+  “This is general product information, not medical advice.”
+
+PAGE 8: DISTRIBUTOR COACH
+
+Use uploaded distributor coach screenshot as reference.
+
+Tabs:
+1. Objection Handling
+2. Follow-up Generator
+3. Sales Script
+4. Social Post
+5. Training Guide
+6. Daily Routine
+7. Customer Conversation Simulator
+
+Objection Handling:
+- Textarea: “Enter what customer said”
+- Button: Get Ethical Response
+- AI response card
+- Pro tip card
+- Copy button
+- Tone selector:
+  - Professional
+  - Friendly
+  - Hinglish
+  - Short WhatsApp reply
+
+Follow-up Generator:
+- Customer name
+- Product
+- Concern
+- Last contact date
+- Tone
+- Generate message button
+- Output card with copy button
+
+Sales Script Generator:
+- Product/category input
+- Customer type
+- Script type:
+  - short intro
+  - detailed explanation
+  - WhatsApp message
+  - meeting script
+- Output card
+
+Social Media Post Generator:
+- Platform:
+  - Instagram
+  - WhatsApp
+  - Facebook
+  - LinkedIn
+  - YouTube Shorts
+- Product/category
+- Post type:
+  - Educational
+  - Awareness
+  - Product intro
+  - Safe testimonial-style
+  - Distributor branding
+- Output:
+  - Caption
+  - Hashtags
+  - CTA
+  - Compliance warning
+
+Customer Conversation Simulator:
+- AI acts as customer
+- Distributor replies
+- AI gives feedback:
+  - clarity
+  - trust
+  - compliance
+  - next step
+
+PAGE 9: KNOWLEDGE BASE
+
+Use uploaded knowledge base screenshot as reference.
+
+Elements:
+- Upload Documentation hero card
+- Drag and drop upload area
+- Browse files button
+- Import from URL button
+- Accepted files:
+  - PDF
+  - CSV
+  - TXT
+  - DOCX
+  - XLSX
+- Sync status card:
+  - Active
+  - Processing files
+- Storage card:
+  - Total storage used
+- File category filters:
+  - All Files
+  - Guidelines
+  - Product Brochures
+  - Policies
+  - Training
+  - Research
+  - Data
+- Document cards:
+  - File icon
+  - File name
+  - Type badge
+  - Date
+  - Size
+  - Status
+  - More menu
+- Search knowledge base
+- Search result card:
+  - Document name
+  - Page number
+  - Text snippet
+  - Source citation
+  - Approval status
+
+PAGE 10: KNOWLEDGE APPROVAL QUEUE
+
+Use uploaded knowledge approval queue screenshot as reference.
+
+Elements:
+- Page title: Knowledge Approval
+- Tabs:
+  - Approval Queue
+  - Active Knowledge
+  - Review History
+- Filter chips:
+  - All
+  - Pending Review
+  - Flagged
+  - Approved
+  - Rejected
+- Pending document cards:
+  - File name
+  - Type
+  - Status
+  - Date
+  - Size
+  - Review document button
+- Right review drawer:
+  - Review document
+  - Confidence score
+  - Document preview
+  - AI insights
+  - Approve & Index button
+  - Request Re-index button
+  - Reject Document button
+
+PAGE 11: KNOWLEDGE REVIEW HISTORY
+
+Use uploaded review history screenshot as reference.
+
+Elements:
+- Table:
+  - Document name
+  - Review date
+  - Action
+  - Reviewed by
+  - Confidence
+- Filters:
+  - Search documents
+  - Date range
+  - Status
+- Pagination
+- Status badges:
+  - Approved
+  - Re-indexed
+  - Rejected
+
+PAGE 12: TRAINING ACADEMY
+
+Use uploaded training module detail screenshot as reference.
+
+Elements:
+- Training course detail page
+- Course title
+- Progress bar
+- Video/lesson card
+- Course outline on right
+- Completed / playing / locked status
+- Lesson content section
+- Pro tip card
+- Caution card
+- Download workbook button
+- Community discussion button
+- Complete and continue button
+- Previous lesson link
+
+Training categories:
+- New Distributor Onboarding
+- Product Knowledge
+- Ethical Selling
+- Compliance Training
+- Customer Communication
+- Leadership
+- Social Media Training
+
+PAGE 13: TRAINING QUIZ
+
+Use uploaded training quiz screenshot as reference.
+
+Elements:
+- Quiz title
+- Progress bar
+- Question count
+- Large question card
+- Multiple choice options
+- Previous button
+- Next button
+- Submit button
+- Correct/incorrect feedback
+- Final score page
+- Recommended next lesson
+- Certificate placeholder
+
+PAGE 14: LEAD CAPTURE / CRM
+
+Use uploaded lead capture screenshot as reference but adapt to Dayjoy business.
+
+Elements:
+- Hero section:
+  “Start your Dayjoy journey today”
+- Lead capture form:
+  - Full name
+  - Phone number
+  - Email
+  - City
+  - State
+  - Region
+  - Interested category
+  - Customer or distributor
+  - Preferred language
+  - Notes
+- Submit button
+- Privacy note
+- Bonus card:
+  “Free product guide”
+- Lead management table:
+  - Name
+  - Phone
+  - Category
+  - Type
+  - Status
+  - Assigned distributor
+  - Follow-up date
+- Status:
+  - New
+  - Contacted
+  - Follow-up needed
+  - Converted
+  - Not interested
+
+PAGE 15: EMPLOYEE DASHBOARD
+
+Use uploaded employee dashboard screenshot as reference.
+
+Elements:
+- Employee welcome card
+- Today’s focus
+- Date
+- KPI cards:
+  - Training Progress
+  - AI Accuracy
+  - Tasks Done
+  - Pending Approvals
+- Learning path card
+- Recent AI sessions
+- Action items checklist
+- Support queue
+- Product verification requests
+- Knowledge approval tasks
+- Add new task button
+
+PAGE 16: ADMIN PANEL
+
+Use uploaded admin panel screenshot as reference.
+
+Elements:
+- Page title: Admin Control Panel
+- Tabs:
+  - Products
+  - FAQs
+  - Leads
+  - Users
+  - Policies
+  - Training
+  - Documents
+  - AI Rules
+- Table layout:
+  - Item details
+  - Category
+  - Status
+  - Created
+  - Actions
+- Filters:
+  - Status
+  - Sort date
+  - Search
+- Add new entry button
+- Pagination
+- Edit icon
+- Delete icon
+- Status badges:
+  - Active
+  - Draft
+  - Pending
+  - Out of Stock
+  - Approved
+  - Rejected
+
+PAGE 17: USER PERMISSIONS
+
+Use uploaded admin user permissions screenshot as reference.
+
+Elements:
+- Page title: User Permissions & Roles
+- Stats cards:
+  - Total users
+  - Active now
+  - Admin roles
+  - Pending invitations
+- Search users
+- Add user button
+- User table:
+  - User
+  - Email
+  - Current role
+  - Permissions
+  - Status
+  - Last active
+  - Actions
+- Permission badges:
+  - Knowledge Base
+  - Product Catalog
+  - Leads
+  - Analytics
+  - Admin
+  - Training
+- Edit user modal
+- Delete user confirmation
+
+PAGE 18: ANALYTICS DASHBOARD
+
+Use uploaded analytics dashboard screenshots as reference.
+
+Elements:
+- Page title: Analytics Overview
+- Date filters:
+  - Today
+  - Last 7 Days
+  - Last 30 Days
+  - 12 Months
+  - Custom
+- KPI cards:
+  - Total Queries
+  - Lead Conversion
+  - Unanswered Queries
+  - Average Response Time
+  - New Leads
+  - Active Sessions
+- Charts:
+  - Query volume by role
+  - Category donut chart
+  - Top 5 trending products
+  - Language usage bars
+  - Growth trends line chart
+  - Engagement split
+- Unanswered questions table:
+  - Question text
+  - Role
+  - Date
+  - Action
+  - Add to Knowledge Base button
+- Export report button
+
+PAGE 19: COMPLIANCE CENTER
+
+Very important for Dayjoy.
+
+Elements:
+- Page title: Compliance Center
+- Cards:
+  - Medical Claim Rules
+  - Income Claim Rules
+  - Direct Selling Compliance
+  - Product Communication Rules
+  - Social Media Guidelines
+- Approved phrases list
+- Restricted phrases list
+- Risky query log
+- Compliance training status
+- AI safety guard status
+- Flagged answers table
+- Review and approve button
+
+PAGE 20: HUMAN SUPPORT HANDOFF
+
+This component appears when:
+- AI is unsure
+- Query is unsafe
+- Query needs medical/legal/account support
+- User asks outside knowledge base
+
+Elements:
+- Card title: Human Support Required
+- Reason:
+  - AI cannot safely answer this query
+- Query summary
+- Issue category
+- Priority
+- Contact options:
+  - Contact Dayjoy support
+  - Ask authorized distributor
+  - Raise ticket
+- Form:
+  - Name
+  - Phone/email
+  - Message
+- Submit button
+
+PAGE 21: MANAGEMENT DASHBOARD
+
+For Dayjoy leadership.
+
+Elements:
+- Business insight hero card
+- KPI cards:
+  - Total AI usage
+  - Product demand
+  - Lead growth
+  - Distributor training gaps
+  - High-risk claim attempts
+  - Unanswered product questions
+- Charts:
+  - Regional query trends
+  - Most demanded categories
+  - Training completion
+  - Lead conversion
+  - Risk alerts
+- Recommendation cards:
+  - Add more product data
+  - Update FAQ
+  - Add Hindi content
+  - Train distributors on compliance
+- Export executive report button
+
+PAGE 22: SETTINGS PAGE
+
+Elements:
+- Profile settings
+- Role and permission settings
+- Language settings
+- Notification preferences
+- Theme settings
+- API settings placeholder
+- Supabase settings placeholder
+- WhatsApp integration settings placeholder
+- CRM settings placeholder
+- Data backup/export
+- Change password
+
+PAGE 23: FUTURE INTEGRATIONS PAGE
+
+Elements:
+- Roadmap cards:
+  - WhatsApp Bot
+  - Website Chat Widget
+  - Voice Assistant
+  - CRM Integration
+  - Mobile App
+  - Supabase Cloud Database
+  - Regional Distributor Support
+  - Multi-language Expansion
+- Status labels:
+  - Planned
+  - In Progress
+  - Ready
+- Integration preview cards
+
+PAGE 24: WEBSITE WIDGET PREVIEW
+
+Elements:
+- Mock Dayjoy website page
+- Floating chat bubble bottom-right
+- Open chat widget panel
+- Product suggestion inside widget
+- Language selector
+- Handoff button
+- “Powered by Dayjoy AI Assistant”
+- Widget settings panel
+
+PAGE 25: WHATSAPP BOT PREVIEW
+
+Elements:
+- WhatsApp-style chat interface
+- Quick reply buttons
+- Product suggestion format
+- Distributor handoff
+- Safety disclaimer message
+- Message template list
+- Status: Integration planned
+
+PAGE 26: VOICE ASSISTANT PREVIEW
+
+Elements:
+- Microphone button
+- Voice wave animation
+- Transcript card
+- AI spoken response card
+- Language selector
+- Voice status:
+  - Listening
+  - Processing
+  - Responding
+- Status: Integration planned
+
+MOBILE RESPONSIVE SCREENS
+
+Create mobile versions for:
+- Login
+- Role selection
+- Dashboard
+- AI Chat
+- Product Explorer
+- Distributor Coach
+- Knowledge Base
+- Lead Capture
+- Analytics summary
+
+USER FLOWS TO INCLUDE
+
+Create user flow diagrams for:
+1. Customer asks product question
+2. Distributor generates follow-up message
+3. Admin uploads product brochure
+4. Admin approves knowledge document
+5. AI blocks unsafe medical claim
+6. Lead capture to CRM
+7. Training quiz completion
+8. Management reviews analytics
+
+FINAL OUTPUT REQUIRED
+
+Create:
+- Complete desktop UI screens
+- Mobile responsive screens
+- Design system page
+- Component library page
+- User flow page
+- Admin approval flow
+- AI answer flow
+- Lead capture flow
+- Knowledge upload flow
+- Distributor coaching flow
+
+Use realistic placeholder data.
+Use Dayjoy-related labels, not generic WellnessCore names.
+Replace WellnessCore branding with Dayjoy AI / Dayjoy AI Assistant.
+Do not use disease cure claims or income guarantee language.
+Keep all health/product suggestions safe and compliant.
+Make this design production-level, investor-ready, and suitable for conversion into React / Next.js / Tailwind / shadcn UI.

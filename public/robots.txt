@@ -1,0 +1,17 @@
+# Dayjoy AI Assist — robots.txt
+# Allow indexing of public pages (login, lead capture), disallow authenticated app.
+
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /lead-capture
+Disallow: /admin
+Disallow: /chat
+Disallow: /products
+Disallow: /distributor
+Disallow: /training
+Disallow: /support
+Disallow: /settings
+
+# Sitemap (when deployed)
+# Sitemap: https://app.dayjoy.in/sitemap.xml

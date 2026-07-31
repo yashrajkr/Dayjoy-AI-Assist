@@ -1,0 +1,429 @@
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================================
+   Dayjoy AI Assist — Design Tokens
+   ----------------------------------------------------------------------------
+   Light: warm cream background + deep Dayjoy green primary + gold accent
+   Dark:  deep charcoal-green + brighter primary + soft gold highlights
+   Glass: rgba-based tokens for backdrop-blur surfaces
+   Motion: standard durations + easing curves
+   ============================================================================ */
+
+:root {
+  --font-size: 16px;
+
+  /* Light mode — Dayjoy wellness palette */
+  --background: #F8F7EE;
+  --background-rgb: 248, 247, 238;
+  --foreground: #1F1F1F;
+  --foreground-rgb: 31, 31, 31;
+  --card: #FFFFFF;
+  --card-rgb: 255, 255, 255;
+  --card-foreground: #1F1F1F;
+  --card-beige: #F3EAD8;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F1F1F;
+
+  --primary: #234F1E;
+  --primary-rgb: 35, 79, 30;
+  --primary-foreground: #FFFFFF;
+  --secondary: #4F6F46;
+  --secondary-foreground: #FFFFFF;
+  --muted: #6B6B6B;
+  --muted-foreground: #6B6B6B;
+  --accent: #DDEDD5;
+  --accent-foreground: #234F1E;
+  --destructive: #C62828;
+  --destructive-foreground: #FFFFFF;
+  --warning: #B7791F;
+  --warning-foreground: #FFFFFF;
+  --gold-accent: #FFC98B;
+  --gold-accent-rgb: 255, 201, 139;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --input: #FFFFFF;
+  --input-background: #FFFFFF;
+  --switch-background: #E5E5E5;
+
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: #234F1E;
+
+  --chart-1: #234F1E;
+  --chart-2: #4F6F46;
+  --chart-3: #DDEDD5;
+  --chart-4: #FFC98B;
+  --chart-5: #B7791F;
+
+  --radius: 0.75rem;
+
+  --sidebar: #FFFFFF;
+  --sidebar-rgb: 255, 255, 255;
+  --sidebar-foreground: #1F1F1F;
+  --sidebar-primary: #234F1E;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F8F7EE;
+  --sidebar-accent-foreground: #1F1F1F;
+  --sidebar-border: rgba(0, 0, 0, 0.06);
+  --sidebar-ring: #234F1E;
+
+  /* Glassmorphism — light */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 8px 32px -8px rgba(35, 79, 30, 0.12);
+  --glass-blur: 16px;
+
+  /* Motion tokens */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 400ms;
+  --dur-xslow: 700ms;
+
+  /* AI orb state colors (shared across light/dark) */
+  --orb-idle: #234F1E;
+  --orb-listening: #4F6F46;
+  --orb-thinking: #FFC98B;
+  --orb-answering: #DDEDD5;
+  --orb-error: #B7791F;
+  --orb-blocked: #C62828;
+  --orb-verified: #234F1E;
+}
+
+/* ============================================================================
+   Dark mode — deep charcoal-green + brighter primary + soft gold highlights
+   ============================================================================ */
+.dark {
+  --background: #0F1A0D;
+  --background-rgb: 15, 26, 13;
+  --foreground: #F0EDE2;
+  --foreground-rgb: 240, 237, 226;
+  --card: #1A2A18;
+  --card-rgb: 26, 42, 24;
+  --card-foreground: #F0EDE2;
+  --card-beige: #243820;
+  --popover: #1A2A18;
+  --popover-foreground: #F0EDE2;
+
+  --primary: #6FAE5F;
+  --primary-rgb: 111, 174, 95;
+  --primary-foreground: #0F1A0D;
+  --secondary: #4F6F46;
+  --secondary-foreground: #F0EDE2;
+  --muted: #3A4A36;
+  --muted-foreground: #A8B5A0;
+  --accent: #243820;
+  --accent-foreground: #DDEDD5;
+  --destructive: #E55858;
+  --destructive-foreground: #FFFFFF;
+  --warning: #D9A053;
+  --warning-foreground: #0F1A0D;
+  --gold-accent: #FFD79A;
+  --gold-accent-rgb: 255, 215, 154;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --input: #243820;
+  --input-background: #243820;
+  --switch-background: #3A4A36;
+
+  --ring: #6FAE5F;
+
+  --chart-1: #6FAE5F;
+  --chart-2: #4F6F46;
+  --chart-3: #243820;
+  --chart-4: #FFD79A;
+  --chart-5: #D9A053;
+
+  --sidebar: #131F11;
+  --sidebar-rgb: 19, 31, 17;
+  --sidebar-foreground: #F0EDE2;
+  --sidebar-primary: #6FAE5F;
+  --sidebar-primary-foreground: #0F1A0D;
+  --sidebar-accent: #1A2A18;
+  --sidebar-accent-foreground: #F0EDE2;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: #6FAE5F;
+
+  /* Glassmorphism — dark */
+  --glass-bg: rgba(26, 42, 24, 0.72);
+  --glass-bg-strong: rgba(26, 42, 24, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.5);
+
+  /* AI orb colors brighter in dark */
+  --orb-idle: #6FAE5F;
+  --orb-listening: #8FC77F;
+  --orb-thinking: #FFD79A;
+  --orb-answering: #B5E0A3;
+  --orb-error: #D9A053;
+  --orb-blocked: #E55858;
+  --orb-verified: #6FAE5F;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-card-beige: var(--card-beige);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-gold-accent: var(--gold-accent);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Smooth theme transition */
+    transition: background-color var(--dur-base) var(--ease-out-soft),
+                color var(--dur-base) var(--ease-out-soft);
+  }
+
+  html {
+    font-size: var(--font-size);
+    /* Prevent FOUC for dark mode */
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  h1 { font-size: var(--text-2xl); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  h2 { font-size: var(--text-xl); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  h3 { font-size: var(--text-lg); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  h4 { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  label { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  button { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  input { font-size: var(--text-base); font-weight: var(--font-weight-normal); line-height: 1.5; }
+}
+
+/* ============================================================================
+   Utility classes — glassmorphism, motion, scrollbar
+   ============================================================================ */
+@layer utilities {
+  /* Glass card */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+  .glass-strong {
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(200%);
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(200%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  /* Premium gradient text */
+  .text-gradient {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, var(--gold-accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* Animated mesh gradient background */
+  .bg-mesh {
+    background-color: var(--background);
+    background-image:
+      radial-gradient(at 20% 20%, rgba(var(--primary-rgb), 0.08) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(var(--gold-accent-rgb), 0.10) 0px, transparent 50%),
+      radial-gradient(at 0% 80%, rgba(var(--primary-rgb), 0.06) 0px, transparent 50%),
+      radial-gradient(at 80% 80%, rgba(var(--gold-accent-rgb), 0.06) 0px, transparent 50%);
+  }
+
+  /* Glow effects for AI orb */
+  .glow-soft {
+    box-shadow: 0 0 32px -4px rgba(var(--primary-rgb), 0.4);
+  }
+  .glow-gold {
+    box-shadow: 0 0 32px -4px rgba(var(--gold-accent-rgb), 0.5);
+  }
+
+  /* Animated underline for active nav */
+  .nav-active-glow {
+    box-shadow: inset 2px 0 0 0 var(--primary), 0 4px 16px -4px rgba(var(--primary-rgb), 0.3);
+  }
+
+  /* Custom scrollbar — thin and themed */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--muted);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}
+
+/* ============================================================================
+   Keyframe animations — used by Framer Motion + CSS fallbacks
+   ============================================================================ */
+@keyframes dj-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes dj-pulse-glow {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+@keyframes dj-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes dj-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dj-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-float { animation: dj-float 4s var(--ease-in-out-soft) infinite; }
+.animate-pulse-glow { animation: dj-pulse-glow 2s var(--ease-in-out-soft) infinite; }
+.animate-fade-up { animation: dj-fade-up var(--dur-base) var(--ease-out-soft) both; }
+.animate-scale-in { animation: dj-scale-in var(--dur-base) var(--ease-spring) both; }
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--accent) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: dj-shimmer 1.6s var(--ease-in-out-soft) infinite;
+  border-radius: var(--radius-md);
+}
+
+/* ============================================================================
+   Reduced motion — respect user preference
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-float,
+  .animate-pulse-glow,
+  .skeleton {
+    animation: none !important;
+  }
+}
+
+/* Smooth theme transition for all themed surfaces */
+.theme-transition,
+.theme-transition * {
+  transition: background-color var(--dur-base) var(--ease-out-soft),
+              border-color var(--dur-base) var(--ease-out-soft),
+              color var(--dur-base) var(--ease-out-soft);
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--accent) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: dj-shimmer 1.6s var(--ease-in-out-soft) infinite,
+             dj-skeleton-pulse 2s var(--ease-in-out-soft) infinite;
+  border-radius: var(--radius-md);
+}
+
+/* 1Hz blinking cursor for streaming / typewriter text */
+@keyframes dj-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor-blink { animation: dj-cursor-blink 1s step-end infinite; }
+
+/* Card hover sheen — a soft diagonal light sweep on hover */
+.sheen-hover {
+  position: relative;
+  overflow: hidden;
+}
+.sheen-hover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.06) 50%, transparent 60%);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out-soft);
+  pointer-events: none;
+}
+.sheen-hover:hover::after { opacity: 1; }
+
+/* Growing underline for links */
+.link-underline {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0% 1px;
+  transition: background-size var(--dur-base) var(--ease-out-soft);
+}
+.link-underline:hover { background-size: 100% 1px; }
+
+/* Shake for invalid inputs */
+@keyframes dj-shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+.animate-shake { animation: dj-shake 0.4s var(--ease-out-soft); }

@@ -1,0 +1,28 @@
+# Dayjoy AI Assist — Backend dependencies
+# Pin versions for reproducible builds.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-dotenv==1.0.1
+pydantic==2.10.4
+PyJWT==2.10.1
+cryptography==44.0.0
+
+# ---------------------------------------------------------------------------
+# RAG subsystem dependencies (optional but recommended)
+# ---------------------------------------------------------------------------
+# Text extractors for the knowledge ingestion pipeline. Each is only
+# imported lazily when the corresponding file type is uploaded, so the
+# backend still starts if any of these are missing.
+pypdf==5.1.0
+python-docx==1.1.2
+python-pptx==1.0.2
+openpyxl==3.1.5
+
+# python-multipart is required by FastAPI for file uploads (multipart/form-data)
+python-multipart==0.0.20
+
+# Phase 9 — Production infrastructure
+redis==5.2.1
+ruff==0.8.6
