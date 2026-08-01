@@ -15,7 +15,7 @@
 // to read the payload and call showNotification with dynamic content.
 // ============================================================================
 
-const CACHE_VERSION = "dayjoy-ai-v2";
+const CACHE_VERSION = "dayjoy-ai-v3";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -58,7 +58,31 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for static assets (same-origin)
+  // Network-first for the HTML shell and JS/CSS (same-origin). Vite content-
+  // hashes chunk filenames per build, but index.html's URL never changes —
+  // cache-first here meant a browser that cached index.html once would keep
+  // serving it (and its now-deleted chunk references) forever, even after
+  // new deploys, causing "Failed to fetch dynamically imported module".
+  // Network-first always prefers the current deploy when online, and still
+  // falls back to cache offline.
+  const isAppShellOrScript =
+    req.mode === "navigate" || url.pathname.endsWith(".js") || url.pathname.endsWith(".css");
+  if (url.origin === self.location.origin && isAppShellOrScript) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok && res.type === "basic") {
+            const clone = res.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(req, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req)),
+    );
+    return;
+  }
+
+  // Cache-first for other static assets (same-origin: images, fonts, etc.)
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(req).then((cached) => {

@@ -44,6 +44,20 @@ window.requestAnimationFrame(() => {
   }
 });
 
+// Self-heal stale deploys: Vite's lazy-loaded chunks are content-hashed, so
+// a tab left open across a new deploy (or a cached old index.html — see the
+// PWA cache-strategy fix in sw.js) can reference a chunk file that no longer
+// exists on the server, throwing "Failed to fetch dynamically imported
+// module". Reload once to pick up the current index.html + matching chunks;
+// guard with sessionStorage so a genuinely broken/offline build doesn't loop.
+window.addEventListener("vite:preloadError", () => {
+  const key = "dj-reloaded-after-preload-error";
+  if (!sessionStorage.getItem(key)) {
+    sessionStorage.setItem(key, "1");
+    window.location.reload();
+  }
+});
+
 // Register PWA service worker (production only — skip in dev to avoid caching stale assets)
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
