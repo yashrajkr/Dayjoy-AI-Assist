@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  MessageSquare, Plus, Loader2, Copy, Check, Trash2, Star, Send,
+  MessageSquare, Loader2, Copy, Check, Trash2, Star, Send,
   Mail, Instagram, Facebook, Calendar, FileText, Sparkles,
 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";

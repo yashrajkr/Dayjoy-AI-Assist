@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, X, Users, Package, FileText, FileQuestion, GraduationCap,
-  Headphones, ScrollText, BookOpen, Loader2, ArrowRight,
+  Headphones, ScrollText, Loader2, ArrowRight,
 } from "lucide-react";
 import { adminSearch, type AdminSearchResult } from "../../../lib/api";
 import { Card } from "../common/AdminUI";

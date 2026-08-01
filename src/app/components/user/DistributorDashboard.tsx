@@ -2,13 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   LayoutDashboard, Users, Phone, TrendingUp, Target, Sparkles, Calendar,
-  CheckCircle2, Clock, AlertTriangle, Award, BookOpen, MessageSquare,
-  ArrowRight, Lightbulb,
+  Clock, AlertTriangle, Award, MessageSquare,
+  Lightbulb,
 } from "lucide-react";
-import { BRAND } from "../../lib/brand";
 import { distributorDashboard, type DistributorDashboard as DashboardData } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";
-import { LineChart, ProgressBar, type LineChartPoint } from "../common/Charts";
+import { ProgressBar } from "../common/Charts";
 
 export function DistributorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -48,12 +47,6 @@ export function DistributorDashboard() {
   );
 
   if (!data) return null;
-
-  // Build a simple trend from daily goals progress
-  const trendData: LineChartPoint[] = data.goals.daily.slice(-7).map((g, i) => ({
-    label: `Day ${i + 1}`,
-    value: Number(g.current_value || 0),
-  }));
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-4">

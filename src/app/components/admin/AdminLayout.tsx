@@ -27,9 +27,9 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChevronsLeft,
   Brain,
   Lock,
-  MessageSquare,
   Send,
   Bot,
   Workflow,
@@ -41,6 +41,7 @@ import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { NotificationCenter } from "../notifications/NotificationCenter";
+import { Input } from "../ui/input";
 
 type NavItemDef = {
   to: string;
@@ -83,8 +84,7 @@ const NAV_SECTIONS: { heading: string; items: NavItemDef[] }[] = [
   {
     heading: "Communication",
     items: [
-      { to: "/admin/communication", icon: MessageSquare, label: "Comm Center" },
-      { to: "/admin/comm-hub", icon: Send, label: "Campaigns & Hub" },
+      { to: "/admin/comm-hub", icon: Send, label: "Communication Hub" },
     ],
   },
   {
@@ -128,6 +128,15 @@ export function AdminLayout() {
   const location = useLocation();
   const { role, currentUser, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-admin-sidebar-collapsed") === "1");
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("dj-admin-sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  };
 
   const userInitials =
     currentUser?.email?.slice(0, 2).toUpperCase() ??
@@ -184,7 +193,7 @@ export function AdminLayout() {
 
       <aside
         id="dj-admin-drawer"
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 glass border-r border-border flex flex-col transition-transform duration-200 scrollbar-thin
+        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-80"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
           ${drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           lg:flex`}
         aria-label="Admin navigation"
@@ -202,12 +211,14 @@ export function AdminLayout() {
         </div>
 
         <div className="p-4 border-b border-border hidden lg:block">
-          <div className="flex items-center gap-3">
+          <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : ""}`}>
             <DayjoyLogo variant="mark" size={40} />
-            <div>
-              <h1 className="font-semibold text-sm">{BRAND.name}</h1>
-              <p className="text-xs text-muted-foreground">Admin Console</p>
-            </div>
+            {!collapsed ? (
+              <div className="min-w-0">
+                <h1 className="font-semibold text-sm truncate">{BRAND.name}</h1>
+                <p className="text-xs text-muted-foreground truncate">Admin Console</p>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -217,9 +228,13 @@ export function AdminLayout() {
         >
           {filteredSections.map((section) => (
             <div key={section.heading}>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 mb-1.5">
-                {section.heading}
-              </p>
+              {!collapsed ? (
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 mb-1.5">
+                  {section.heading}
+                </p>
+              ) : (
+                <div className="h-px bg-border mx-2 mb-1.5" aria-hidden="true" />
+              )}
               <div className="space-y-0.5">
                 {section.items.map((item) => (
                   <AdminNavItem
@@ -227,6 +242,7 @@ export function AdminLayout() {
                     to={item.to}
                     icon={item.icon}
                     label={item.label}
+                    collapsed={collapsed}
                     onClick={() => setDrawerOpen(false)}
                   />
                 ))}
@@ -236,34 +252,56 @@ export function AdminLayout() {
         </nav>
 
         <div className="p-3 border-t border-border space-y-2">
-          <div className="flex items-center gap-3 p-2 bg-accent/50 rounded-lg">
+          <div className={`flex items-center gap-3 p-2 bg-accent/50 rounded-lg ${collapsed ? "justify-center" : ""}`}>
             <div
-              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm"
+              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm shrink-0"
               aria-hidden="true"
             >
               {userInitials}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{userName}</p>
-              <p className="text-xs text-muted-foreground">{roleLabel}</p>
-            </div>
+            {!collapsed ? (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{userName}</p>
+                <p className="text-xs text-muted-foreground">{roleLabel}</p>
+              </div>
+            ) : null}
           </div>
 
           <NavLink
             to="/"
             onClick={() => setDrawerOpen(false)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="View User App"
+            className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
-            <span>View User App</span>
-            <ChevronRight className="w-3 h-3 ml-auto" aria-hidden="true" />
+            {!collapsed ? (
+              <>
+                <span>View User App</span>
+                <ChevronRight className="w-3 h-3 ml-auto" aria-hidden="true" />
+              </>
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
           </NavLink>
+
+          <div className={`hidden lg:flex items-center pt-1 ${collapsed ? "justify-center" : "justify-end"}`}>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <ChevronsLeft className={`w-4 h-4 transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`} aria-hidden="true" />
+            </button>
+          </div>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors"
+            title="Sign out"
+            className={`w-full text-left px-3 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors ${collapsed ? "text-center" : ""}`}
           >
-            Sign out
+            {collapsed ? <X className="w-3.5 h-3.5 mx-auto" aria-hidden="true" /> : "Sign out"}
           </button>
         </div>
       </aside>
@@ -280,11 +318,11 @@ export function AdminLayout() {
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
                   aria-hidden="true"
                 />
-                <input
+                <Input
                   id="dj-admin-search"
                   type="search"
                   placeholder="Search products, FAQs, users… (press / to focus)"
-                  className="w-full pl-9 pr-4 py-2 bg-background/60 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm cursor-pointer"
+                  className="w-full pl-9 pr-4 py-2 h-auto bg-background/60 rounded-lg cursor-pointer"
                   onFocus={(e) => {
                     e.target.blur();
                     navigate("/admin/search");
@@ -334,11 +372,13 @@ function AdminNavItem({
   to,
   icon: Icon,
   label,
+  collapsed = false,
   onClick,
 }: {
   to: string;
   icon: LucideIcon;
   label: string;
+  collapsed?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -346,11 +386,12 @@ function AdminNavItem({
       to={to}
       end={to === "/admin"}
       onClick={onClick}
+      title={collapsed ? label : undefined}
       className={({ isActive }) =>
-        `relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+        `relative flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 ${collapsed ? "justify-center" : ""} ${
           isActive
-            ? "bg-primary text-primary-foreground font-medium shadow-sm"
-            : "text-foreground hover:bg-accent/60"
+            ? "bg-primary text-primary-foreground font-medium shadow-raised"
+            : "text-foreground hover:bg-accent/60 hover:translate-x-0.5"
         }`
       }
       aria-current="page"
@@ -365,7 +406,7 @@ function AdminNavItem({
             />
           ) : null}
           <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          <span className="text-sm">{label}</span>
+          {!collapsed ? <span className="text-sm">{label}</span> : null}
         </>
       )}
     </NavLink>

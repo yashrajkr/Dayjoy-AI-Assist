@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Mic, Volume2, VolumeX, Square } from "lucide-react";
 import { useEffect } from "react";
 import type { VoiceState } from "../../lib/useVoice";
+import { Button } from "../ui/button";
 
 /**
  * VoiceControls — chat composer voice toolbar.
@@ -64,13 +65,15 @@ export function VoiceControls({
       ) : null}
 
       {/* Microphone toggle */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         onClick={voice.listening ? voice.stopListening : voice.startListening}
-        className={`p-2 rounded-lg transition-colors ${
+        className={`h-auto w-auto p-2 rounded-lg ${
           voice.listening
-            ? "bg-destructive/15 text-destructive"
-            : "hover:bg-accent/50 text-muted-foreground"
+            ? "bg-destructive/15 text-destructive hover:bg-destructive/20"
+            : "text-muted-foreground"
         }`}
         aria-label={voice.listening ? "Stop listening" : "Start voice input"}
         aria-pressed={voice.listening}
@@ -81,16 +84,18 @@ export function VoiceControls({
         ) : (
           <Mic className="w-4 h-4" aria-hidden="true" />
         )}
-      </button>
+      </Button>
 
       {/* Speak toggle */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         onClick={voice.speaking ? voice.stopSpeaking : undefined}
-        className={`p-2 rounded-lg transition-colors ${
+        className={`h-auto w-auto p-2 rounded-lg ${
           voice.speaking
-            ? "bg-primary/15 text-primary animate-pulse"
-            : "hover:bg-accent/50 text-muted-foreground"
+            ? "bg-primary/15 text-primary animate-pulse hover:bg-primary/20"
+            : "text-muted-foreground"
         }`}
         aria-label={voice.speaking ? "Stop speaking" : "Speaking"}
         aria-pressed={voice.speaking}
@@ -98,16 +103,18 @@ export function VoiceControls({
         disabled={!voice.speaking}
       >
         <Volume2 className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </Button>
 
       {/* Mute toggle */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         onClick={voice.toggleMute}
-        className={`p-2 rounded-lg transition-colors ${
+        className={`h-auto w-auto p-2 rounded-lg ${
           voice.muted
-            ? "bg-warning/15 text-warning"
-            : "hover:bg-accent/50 text-muted-foreground"
+            ? "bg-warning/15 text-warning hover:bg-warning/20"
+            : "text-muted-foreground"
         }`}
         aria-label={voice.muted ? "Unmute voice" : "Mute voice"}
         aria-pressed={voice.muted}
@@ -118,7 +125,7 @@ export function VoiceControls({
         ) : (
           <Volume2 className="w-4 h-4" aria-hidden="true" />
         )}
-      </button>
+      </Button>
 
       {voice.error ? (
         <span role="alert" className="text-[11px] text-destructive ml-1 max-w-[220px] truncate" title={voice.error}>

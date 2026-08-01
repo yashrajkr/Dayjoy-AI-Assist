@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Send, FileText, Zap, Plug, Webhook, BarChart3, Plus, Trash2, Edit,
-  Loader2, CheckCircle, XCircle, Clock, Mail, MessageSquare, Smartphone,
-  Bell, RefreshCw, Download, AlertTriangle, Play,
+  Send, FileText, Zap, Plug, Webhook, BarChart3, Plus, Trash2,
+  Loader2, CheckCircle, XCircle, Mail, MessageSquare, Smartphone,
+  Bell, RefreshCw, Play,
 } from "lucide-react";
 import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
 import { Modal, modalButtonClass } from "../common/Modal";
 import { LineChart, BarChart, DonutChart, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   commListCampaigns, commCreateCampaign, commDeleteCampaign,
-  commListTemplates, commCreateTemplate, commDeleteTemplate,
+  commListTemplates, commDeleteTemplate,
   commListAutomations, commCreateAutomation, commDeleteAutomation, commUpdateAutomation,
   commListIntegrations, commUpdateIntegration,
   commListWebhooks, commCreateWebhook, commDeleteWebhook, commTestWebhook, commWebhookLogs,
@@ -137,7 +137,7 @@ function CampaignsView({ campaigns, onChanged }: { campaigns: Campaign[]; onChan
                     <Icon className="w-4 h-4 text-primary" />
                     <h3 className="text-sm font-medium truncate">{c.name}</h3>
                   </div>
-                  <button type="button" onClick={() => handleDelete(c)} className="p-1 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => handleDelete(c)} className="p-1 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete channel ${c.name}`} title="Delete channel"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <StatusPill status={c.status} />
@@ -216,7 +216,7 @@ function TemplatesView({ templates, onChanged }: { templates: MessageTemplate[];
                     <Icon className="w-4 h-4 text-primary" />
                     <div><h3 className="text-sm font-medium">{t.name}</h3><p className="text-[10px] text-muted-foreground font-mono">{t.template_key}</p></div>
                   </div>
-                  <button type="button" onClick={() => handleDelete(t)} className="p-1 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => handleDelete(t)} className="p-1 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete template ${t.name}`} title="Delete template"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
                 <div className="flex items-center gap-1.5 mb-2">
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground capitalize">{t.category.replace("_", " ")}</span>
@@ -294,7 +294,7 @@ function AutomationsView({ workflows, onChanged }: { workflows: AutomationWorkfl
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button type="button" onClick={() => handleToggle(w)} className={`text-xs px-2 py-1 rounded border ${w.is_active ? "border-warning/30 text-warning" : "border-primary/30 text-primary"}`}>{w.is_active ? "Pause" : "Activate"}</button>
-                  <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete workflow ${w.name}`} title="Delete workflow"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             </Card>
@@ -446,7 +446,7 @@ function WebhooksView({ webhooks, onChanged }: { webhooks: WebhookEndpoint[]; on
                     {testing === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />} Test
                   </button>
                   <button type="button" onClick={() => handleLogs(w)} className="text-xs px-2 py-1 rounded border border-border hover:bg-accent">Logs</button>
-                  <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete webhook ${w.name}`} title="Delete webhook"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
               {logsFor === w.id ? (

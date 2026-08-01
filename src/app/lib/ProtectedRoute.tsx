@@ -3,10 +3,8 @@ import { Navigate } from "react-router-dom";
 import { PermissionDenied } from "./PermissionDenied";
 import { useAuth } from "./AuthContext";
 import type { UserRole } from "./auth";
-import { getSupabaseConfigError, isSupabaseConfigured } from "./supabaseClient";
+import { isSupabaseConfigured } from "./supabaseClient";
 import { AppShellFallback } from "../components/common/AppShellFallback";
-import { BRAND } from "./brand";
-import { DayjoyLogo } from "../components/brand/DayjoyLogo";
 
 /**
  * Client-side route guard. Enforces that the user is signed in and (optionally)

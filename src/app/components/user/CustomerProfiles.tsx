@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, Calendar,
-  Heart, Tag, Loader2, Save, X, Sparkles, MessageCircle,
+  Heart, Loader2, Save, X, Sparkles,
 } from "lucide-react";
 import { Modal, modalButtonClass } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";

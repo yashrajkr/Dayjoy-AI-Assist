@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Users, Target, Phone, Clock, DollarSign, Loader2 } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Target, Phone, Clock, DollarSign } from "lucide-react";
 import { LoadingState, ErrorState } from "../common/AdminUI";
 import { LineChart, BarChart, ProgressBar, type LineChartPoint, type BarChartItem } from "../common/Charts";
 import { distributorAnalytics } from "../../../lib/api";

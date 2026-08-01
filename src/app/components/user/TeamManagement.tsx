@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Users, Award, TrendingUp, Trophy, Star, Loader2, Plus } from "lucide-react";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { Users, Award, Trophy, Star, Loader2 } from "lucide-react";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { Modal, modalButtonClass } from "../common/Modal";
 import { distributorTeamOverview, distributorAddRecognition, type TeamMember } from "../../../lib/api";
 

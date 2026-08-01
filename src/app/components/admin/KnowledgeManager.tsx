@@ -130,7 +130,7 @@ export function KnowledgeManager() {
       });
       setDocs(data.documents);
       setTotal(data.total);
-    } catch (e) {
+    } catch {
       // Fallback to direct Supabase query (legacy path)
       if (!supabase) {
         setError("Supabase is not configured.");

@@ -4,6 +4,8 @@ import { logAnalytics } from "../../lib/db";
 import { useAuth } from "../../lib/AuthContext";
 import { streamChatWithBackend } from "../../../lib/api";
 import { BRAND } from "../../lib/brand";
+import { Button } from "../ui/button";
+import { Textarea } from "../ui/input";
 
 type Tone = "Professional" | "Friendly" | "Hinglish" | "Short WhatsApp reply";
 
@@ -154,7 +156,7 @@ export function DistributorAssistant() {
             return (
               <div
                 key={tool.id}
-                className="bg-card border border-border rounded-2xl p-5 shadow-sm flex flex-col"
+                className="bg-card border border-border rounded-2xl p-5 shadow-flat hover-raise flex flex-col"
               >
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
@@ -165,9 +167,9 @@ export function DistributorAssistant() {
                 <label htmlFor={`dj-dist-input-${tool.id}`} className="sr-only">
                   {tool.title} input
                 </label>
-                <textarea
+                <Textarea
                   id={`dj-dist-input-${tool.id}`}
-                  className="w-full min-h-24 p-3 rounded-xl bg-background border border-border outline-none focus:ring-2 focus:ring-primary/40 text-sm resize-y"
+                  className="w-full min-h-24 rounded-xl bg-background focus-visible:ring-4 focus-visible:ring-primary/10"
                   placeholder={tool.placeholder}
                   value={inputs[tool.id]}
                   onChange={(e) =>
@@ -175,25 +177,27 @@ export function DistributorAssistant() {
                   }
                   maxLength={1000}
                 />
-                <button
+                <Button
                   type="button"
-                  className="mt-3 inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-3 rounded-xl"
                   onClick={() => generate(tool)}
                   disabled={!inputs[tool.id].trim() || loading[tool.id]}
                 >
                   <Sparkles className="w-4 h-4" aria-hidden="true" />
                   {loading[tool.id] ? "Generating…" : "Generate"}
-                </button>
+                </Button>
                 {outputs[tool.id] ? (
-                  <div className="mt-4 bg-background border border-border rounded-xl p-3">
+                  <div className="ai-prose mt-4 bg-background border border-border rounded-xl p-3">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Suggested output
                       </p>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => copyOutput(tool.id)}
-                        className="p-1 rounded hover:bg-accent/60 text-muted-foreground"
+                        className="h-auto w-auto p-1 text-muted-foreground"
                         aria-label="Copy output"
                       >
                         {copied === tool.id ? (
@@ -201,7 +205,7 @@ export function DistributorAssistant() {
                         ) : (
                           <Copy className="w-3.5 h-3.5" aria-hidden="true" />
                         )}
-                      </button>
+                      </Button>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{outputs[tool.id]}</p>
                   </div>

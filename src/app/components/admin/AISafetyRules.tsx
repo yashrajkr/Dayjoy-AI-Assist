@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Shield, RefreshCw, Save, ToggleLeft, ToggleRight } from "lucide-react";
+import { Shield, RefreshCw, ToggleLeft, ToggleRight } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import {
   PageHeader,

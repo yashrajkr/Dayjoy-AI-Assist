@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileQuestion, Plus, Search, Edit, Trash2, CheckCircle, Clock, Loader2, Save, X, Tag } from "lucide-react";
+import { FileQuestion, Plus, Search, Edit, Trash2, Loader2, Save, X, Tag } from "lucide-react";
 import {
   type FAQ,
   createFaq,

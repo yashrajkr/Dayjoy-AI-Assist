@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Settings as SettingsIcon, Save, ToggleLeft, ToggleRight, Building2, Palette,
-  KeyRound, Plus, Trash2, Copy, Check, Loader2, Bell, Languages, Shield, Database,
+  KeyRound, Plus, Trash2, Copy, Check, Loader2, Bell, Shield,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { BRAND } from "../../lib/brand";
 import {
   PageHeader, Card, LoadingState, ErrorState, EmptyState, btnClass,
 } from "../common/AdminUI";
+import { Input, Textarea } from "../ui/input";
 import {
   adminGetOrgSettings, adminUpdateOrgSettings, adminListAPIKeys, adminCreateAPIKey,
   adminRevokeAPIKey, adminListNotificationTemplates, adminBroadcastNotification,
@@ -216,21 +217,21 @@ export function AdminSettings() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Company Name</label>
-                <input type="text" value={orgSettings.company_name ?? ""}
+                <Input type="text" value={orgSettings.company_name ?? ""}
                   onChange={(e) => setOrgSettings({ ...orgSettings, company_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Support Email</label>
-                <input type="email" value={orgSettings.support_email ?? ""}
+                <Input type="email" value={orgSettings.support_email ?? ""}
                   onChange={(e) => setOrgSettings({ ...orgSettings, support_email: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Support Phone</label>
-                <input type="tel" value={orgSettings.support_phone ?? ""}
+                <Input type="tel" value={orgSettings.support_phone ?? ""}
                   onChange={(e) => setOrgSettings({ ...orgSettings, support_phone: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Default Language</label>
@@ -248,15 +249,15 @@ export function AdminSettings() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Enabled Languages (comma-separated)</label>
-                <input type="text" value={(orgSettings.enabled_languages ?? ["en"]).join(", ")}
+                <Input type="text" value={(orgSettings.enabled_languages ?? ["en"]).join(", ")}
                   onChange={(e) => setOrgSettings({ ...orgSettings, enabled_languages: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Storage Quota (MB)</label>
-                <input type="number" value={orgSettings.storage_quota_mb ?? 1024}
+                <Input type="number" value={orgSettings.storage_quota_mb ?? 1024}
                   onChange={(e) => setOrgSettings({ ...orgSettings, storage_quota_mb: parseInt(e.target.value) || 1024 })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
             </div>
             <button type="button" className={`${btnClass.primary} mt-4`} onClick={saveOrg} disabled={savingOrg}>
@@ -276,10 +277,10 @@ export function AdminSettings() {
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Logo URL</label>
-              <input type="text" value={orgSettings.logo_url ?? ""}
+              <Input type="text" value={orgSettings.logo_url ?? ""}
                 onChange={(e) => setOrgSettings({ ...orgSettings, logo_url: e.target.value })}
                 placeholder="https://…/logo.png"
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -288,9 +289,9 @@ export function AdminSettings() {
                   <input type="color" value={orgSettings.primary_color ?? "#0f766e"}
                     onChange={(e) => setOrgSettings({ ...orgSettings, primary_color: e.target.value })}
                     className="w-10 h-10 rounded border border-border" />
-                  <input type="text" value={orgSettings.primary_color ?? "#0f766e"}
+                  <Input type="text" value={orgSettings.primary_color ?? "#0f766e"}
                     onChange={(e) => setOrgSettings({ ...orgSettings, primary_color: e.target.value })}
-                    className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono" />
+                    className="flex-1 px-3 py-2 h-auto rounded-lg font-mono" />
                 </div>
               </div>
               <div>
@@ -299,9 +300,9 @@ export function AdminSettings() {
                   <input type="color" value={orgSettings.accent_color ?? "#f59e0b"}
                     onChange={(e) => setOrgSettings({ ...orgSettings, accent_color: e.target.value })}
                     className="w-10 h-10 rounded border border-border" />
-                  <input type="text" value={orgSettings.accent_color ?? "#f59e0b"}
+                  <Input type="text" value={orgSettings.accent_color ?? "#f59e0b"}
                     onChange={(e) => setOrgSettings({ ...orgSettings, accent_color: e.target.value })}
-                    className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono" />
+                    className="flex-1 px-3 py-2 h-auto rounded-lg font-mono" />
                 </div>
               </div>
             </div>
@@ -342,9 +343,9 @@ export function AdminSettings() {
               <KeyRound className="w-4 h-4 text-primary" /> Generate New API Key
             </h2>
             <div className="flex gap-2">
-              <input type="text" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)}
+              <Input type="text" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)}
                 placeholder="Key name (e.g. Mobile App, Zapier)"
-                className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="flex-1 px-3 py-2 h-auto rounded-lg" />
               <button type="button" className={btnClass.primary} onClick={createKey} disabled={creatingKey || !newKeyName.trim()}>
                 {creatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Generate
               </button>
@@ -415,13 +416,13 @@ export function AdminSettings() {
               <Bell className="w-4 h-4 text-primary" /> Broadcast Announcement
             </h2>
             <div className="space-y-3">
-              <input type="text" value={broadcastTitle} onChange={(e) => setBroadcastTitle(e.target.value)}
+              <Input type="text" value={broadcastTitle} onChange={(e) => setBroadcastTitle(e.target.value)}
                 placeholder="Announcement title"
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-              <textarea value={broadcastBody} onChange={(e) => setBroadcastBody(e.target.value)}
+                className="w-full px-3 py-2 h-auto rounded-lg" />
+              <Textarea value={broadcastBody} onChange={(e) => setBroadcastBody(e.target.value)}
                 placeholder="Announcement body…"
                 rows={3}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 rounded-lg" />
               <button type="button" className={btnClass.primary} onClick={sendBroadcast} disabled={broadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}>
                 {broadcasting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />} Send to all users
               </button>
@@ -470,17 +471,17 @@ export function AdminSettings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Password Minimum Length</label>
-              <input type="number" value={orgSettings.password_min_length ?? 8}
+              <Input type="number" value={orgSettings.password_min_length ?? 8}
                 onChange={(e) => setOrgSettings({ ...orgSettings, password_min_length: parseInt(e.target.value) || 8 })}
                 min={6} max={64}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Session Timeout (minutes)</label>
-              <input type="number" value={orgSettings.session_timeout_minutes ?? 60}
+              <Input type="number" value={orgSettings.session_timeout_minutes ?? 60}
                 onChange={(e) => setOrgSettings({ ...orgSettings, session_timeout_minutes: parseInt(e.target.value) || 60 })}
                 min={5} max={1440}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
           </div>
           <button type="button" className={`${btnClass.primary} mt-4`} onClick={saveOrg} disabled={savingOrg}>

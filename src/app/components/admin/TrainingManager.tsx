@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   GraduationCap, Plus, Search, Edit, Trash2, CheckCircle, Clock, Loader2,
-  Save, X, BookOpen, Award, Users, Play, FileText, HelpCircle, Archive,
+  Save, X, BookOpen, Award, Users, Play, FileText,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";

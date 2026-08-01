@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Phone, Calendar, Clock, Plus, Edit, Trash2, Check, X, AlertTriangle,
+  Phone, Clock, Plus, Edit, Trash2, Check, X,
   Loader2, Save, MessageSquare, Mail, MapPin, Bell,
 } from "lucide-react";
 import { Modal, modalButtonClass } from "../common/Modal";

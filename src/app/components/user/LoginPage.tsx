@@ -192,28 +192,85 @@ export function LoginPage() {
   const pwStrength = mode === "signup" ? passwordStrength(password) : null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative theme-transition">
-      <AnimatedBackground variant="subtle" />
+    <div className="min-h-screen flex relative theme-transition">
+      {/* Branded left panel — desktop only, sets the enterprise tone before the form */}
+      <div className="hidden lg:flex lg:w-[42%] xl:w-[38%] relative flex-col justify-between p-10 xl:p-14 overflow-hidden bg-primary text-primary-foreground">
+        <div
+          className="absolute inset-0 opacity-90"
+          aria-hidden="true"
+          style={{ background: "linear-gradient(160deg, var(--primary) 0%, color-mix(in oklab, var(--primary) 70%, black) 100%)" }}
+        />
+        <div
+          className="absolute -right-24 -top-24 w-96 h-96 rounded-full opacity-20 pointer-events-none"
+          aria-hidden="true"
+          style={{ background: "radial-gradient(circle, var(--gold-accent) 0%, transparent 70%)" }}
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="relative z-10 flex items-center gap-3"
+        >
+          <DayjoyLogo variant="mark" size={40} />
+          <span className="font-semibold text-lg">{BRAND.name}</span>
+        </motion.div>
 
-      {/* Top-right controls */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
-        <LanguageSwitcher className="glass" />
-        <ThemeToggle className="glass" />
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="relative z-10 space-y-6"
+        >
+          <h2 className="text-3xl xl:text-4xl font-semibold leading-tight tracking-tight">
+            Trusted knowledge.
+            <br />
+            Safe answers.
+            <br />
+            One assistant.
+          </h2>
+          <p className="text-primary-foreground/80 max-w-sm text-sm">
+            {BRAND.tagline} — approved knowledge, safety-filtered responses, and human escalation whenever it matters.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {["Approved knowledge", "Cited answers", "Human escalation"].map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/10 border border-white/15 backdrop-blur-sm"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+
+        <p className="relative z-10 text-xs text-primary-foreground/60">
+          © {new Date().getFullYear()} {BRAND.name}. Internal enterprise platform.
+        </p>
       </div>
 
-      <a
-        href="#login-form"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
-      >
-        Skip to login form
-      </a>
+      {/* Form panel */}
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 relative">
+        <AnimatedBackground variant="subtle" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-md glass rounded-3xl shadow-2xl p-6 sm:p-8 relative"
-      >
+        {/* Top-right controls */}
+        <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
+          <LanguageSwitcher className="glass" />
+          <ThemeToggle className="glass" />
+        </div>
+
+        <a
+          href="#login-form"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+        >
+          Skip to login form
+        </a>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="w-full max-w-md glass rounded-3xl shadow-overlay p-6 sm:p-8 relative"
+        >
         {/* 3D AI orb — lazy loaded */}
         <div className="flex flex-col items-center mb-5 text-center">
           <motion.div
@@ -464,7 +521,8 @@ export function LoginPage() {
         <p className="text-xs text-muted-foreground mt-5 text-center">
           By continuing you agree to use {BRAND.name} only for approved Dayjoy business.
         </p>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }

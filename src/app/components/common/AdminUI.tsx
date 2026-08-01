@@ -1,12 +1,16 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
+import { cn } from "../../lib/cn";
+import { buttonVariants } from "../ui/button";
 
 /**
  * Shared layout primitives for admin pages. Keeps typography, spacing,
  * and status visuals consistent across the admin routes.
  *
- * Premium animation layer: spring hover-lift on cards, sheen sweep,
- * animated PageHeader entrance, and a reusable <Button> component.
+ * Built on top of the shared `ui/` primitives layer (`buttonVariants`) so
+ * admin screens and the rest of the app render from one design system,
+ * with a premium animation layer on top: spring hover-lift on cards,
+ * sheen sweep, animated PageHeader entrance.
  */
 
 export function PageHeader({
@@ -61,15 +65,15 @@ export function Card({
 }) {
   if (!hover) {
     return (
-      <div className={`rounded-2xl border border-border bg-card p-5 ${className}`}>
+      <div className={cn("rounded-2xl border border-border bg-card p-5 shadow-flat", className)}>
         {children}
       </div>
     );
   }
   return (
     <motion.div
-      className={`rounded-2xl border border-border bg-card p-5 sheen-hover ${className}`}
-      whileHover={{ y: -3, boxShadow: "0 10px 28px -8px rgba(0,0,0,0.10)" }}
+      className={cn("rounded-2xl border border-border bg-card p-5 shadow-flat sheen-hover", className)}
+      whileHover={{ y: -3, boxShadow: "var(--shadow-overlay)" }}
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
@@ -101,6 +105,7 @@ export function Button({
   type?: "button" | "submit";
   "aria-label"?: string;
 }) {
+  const uiVariant = { primary: "default", secondary: "secondary", ghost: "ghost", danger: "destructive" } as const;
   return (
     <motion.button
       type={type}
@@ -110,7 +115,7 @@ export function Button({
       whileHover={disabled ? undefined : { scale: 1.02 }}
       whileTap={disabled ? undefined : { scale: 0.97 }}
       transition={{ duration: 0.15 }}
-      className={`${btnClass[variant]} ${size === "sm" ? btnClass.size.sm : ""} transition-colors duration-200 ${className}`}
+      className={cn(buttonVariants({ variant: uiVariant[variant], size: size === "sm" ? "sm" : "default" }), className)}
     >
       {children}
     </motion.button>

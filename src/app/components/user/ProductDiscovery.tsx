@@ -7,6 +7,9 @@ import { Modal, modalButtonClass } from "../common/Modal";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { OcrScanner } from "../tools/OcrScanner";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Input } from "../ui/input";
 
 /** Recently viewed products — persisted in localStorage (max 8). */
 const RECENT_KEY = "dayjoy_recent_products";
@@ -207,7 +210,7 @@ export function ProductDiscovery() {
           </p>
         </div>
 
-        <div className="bg-card rounded-2xl border border-border p-4 sm:p-5 shadow-sm">
+        <div className="bg-card rounded-2xl border border-border p-4 sm:p-5 shadow-flat">
           <label htmlFor="dj-product-search" className="sr-only">
             Search products
           </label>
@@ -217,43 +220,46 @@ export function ProductDiscovery() {
                 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"
                 aria-hidden="true"
               />
-              <input
+              <Input
                 id="dj-product-search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+                className="w-full pl-12 pr-4 py-3 h-auto rounded-xl focus-visible:ring-4 focus-visible:ring-primary/10"
                 placeholder="Search skin care, agriculture, respiratory wellness, home care…"
               />
             </div>
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setQrOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-3 rounded-xl border border-border bg-background hover:bg-accent/60 text-sm font-medium shrink-0"
+              className="h-auto py-3 rounded-xl shrink-0"
               aria-label="Scan QR code to find a product"
               title="Scan QR code"
             >
               <QrCode className="w-4 h-4" aria-hidden="true" />
               <span className="hidden sm:inline">Scan QR</span>
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setCameraOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-3 rounded-xl border border-border bg-background hover:bg-accent/60 text-sm font-medium shrink-0"
+              className="h-auto py-3 rounded-xl shrink-0"
               aria-label="Take a photo of a product label"
               title="Take a photo"
             >
               <Camera className="w-4 h-4" aria-hidden="true" />
               <span className="hidden sm:inline">Photo</span>
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setOcrOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-3 rounded-xl border border-border bg-background hover:bg-accent/60 text-sm font-medium shrink-0"
+              className="h-auto py-3 rounded-xl shrink-0"
               aria-label="Extract text from a product label image"
               title="Extract text from image (OCR)"
             >
               <span className="text-xs">OCR</span>
-            </button>
+            </Button>
           </div>
 
           {scanError ? (
@@ -322,9 +328,8 @@ export function ProductDiscovery() {
                         hidden: { opacity: 0, y: 16 },
                         visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
                       }}
-                      whileHover={{ y: -3, boxShadow: "0 10px 28px -8px rgba(0,0,0,0.10)" }}
                       transition={{ duration: 0.2 }}
-                      className="bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col"
+                      className="bg-card border border-border rounded-2xl p-4 shadow-flat hover-raise flex flex-col"
                     >
                       <div className="h-32 rounded-xl bg-gradient-to-br from-accent to-card-beige mb-4 flex items-center justify-center">
                         <span className="text-3xl font-semibold text-primary">
@@ -333,9 +338,7 @@ export function ProductDiscovery() {
                       </div>
 
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs px-2 py-0.5 bg-accent text-accent-foreground rounded-full font-medium">
-                          {p.category}
-                        </span>
+                        <Badge variant="default">{p.category}</Badge>
                         <CheckCircle2
                           className="w-5 h-5 text-primary"
                           aria-label="Approved"
@@ -351,32 +354,19 @@ export function ProductDiscovery() {
                       ) : null}
 
                       <div className="flex gap-2 mt-auto">
-                        <motion.button
-                          type="button"
-                          onClick={() => openDetail(p)}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 bg-primary text-primary-foreground rounded-xl px-3 py-2 text-sm font-medium transition-colors duration-200 hover:opacity-90"
-                        >
+                        <Button type="button" onClick={() => openDetail(p)} className="flex-1 rounded-xl">
                           <Eye className="w-4 h-4" aria-hidden="true" /> Details
-                        </motion.button>
-                        <motion.button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="outline"
                           onClick={() => toggleCompare(p)}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
-                          className={`px-3 py-2 rounded-xl border text-sm flex items-center gap-1.5 transition-colors duration-200 ${
-                            compared
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:bg-accent/60"
-                          }`}
+                          className={`rounded-xl ${compared ? "border-primary bg-primary/10 text-primary hover:bg-primary/15" : ""}`}
                           aria-pressed={compared}
                         >
                           <GitCompareArrows className="w-4 h-4" aria-hidden="true" />
                           {compared ? "In compare" : "Compare"}
-                        </motion.button>
+                        </Button>
                       </div>
                     </motion.div>
                   );
@@ -406,14 +396,16 @@ export function ProductDiscovery() {
                           <p className="text-sm font-medium truncate">{p.product_name}</p>
                           <p className="text-[11px] text-muted-foreground">{p.category}</p>
                         </div>
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => toggleCompare(p)}
-                          className="p-1 rounded hover:bg-destructive/10 text-destructive"
+                          className="h-auto w-auto p-1 hover:bg-destructive/10 text-destructive"
                           aria-label={`Remove ${p.product_name} from comparison`}
                         >
                           <X className="w-3.5 h-3.5" aria-hidden="true" />
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <span>Select product {slot + 1}</span>
@@ -422,14 +414,14 @@ export function ProductDiscovery() {
                 );
               })}
             </div>
-            <button
+            <Button
               type="button"
               onClick={() => setCompareOpen(true)}
               disabled={compareSet.length < 2}
-              className="w-full bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+              className="w-full rounded-xl"
             >
               Compare side-by-side ({compareSet.length}/3)
-            </button>
+            </Button>
 
             {/* Recently viewed products */}
             {recentProducts.length > 0 ? (

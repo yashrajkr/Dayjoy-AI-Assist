@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Shield, AlertTriangle, CheckCircle, XCircle, Clock, Activity, Lock,
-  Brain, FileText, Server, Bug, RefreshCw, Loader2, Plus, Trash2, X,
-  Globe, Smartphone, Monitor, Zap, TrendingUp, Database,
+  Brain, FileText, Server, Bug, RefreshCw, Loader2, Plus, Trash2,
+  Smartphone, Monitor, Zap, Database,
 } from "lucide-react";
 import {
   PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill,
 } from "../common/AdminUI";
 import { Modal, modalButtonClass } from "../common/Modal";
-import { LineChart, DonutChart, ProgressBar, type LineChartPoint, type DonutSlice } from "../common/Charts";
+import { DonutChart, type DonutSlice } from "../common/Charts";
 import {
   securityDashboard, securityEvents, securitySessions, securityRevokeSession,
   securityDevices, securityToggleDeviceTrust, securityIncidents, securityCreateIncident,
-  securityUpdateIncident, securityIncidentTimeline, securityAddTimelineEntry,
+  securityUpdateIncident, securityIncidentTimeline,
   securityAIGovernance, securityComplianceRequests, securityUpdateCompliance,
-  securityConsentRecords, securityRetentionPolicies, securityABACPolicies, securityCreateABAC,
+  securityABACPolicies,
   securityDeleteABAC, securityMonitoring, securityBackups, securityVulnerabilities,
   securityAuditLog, securityPenTestChecklist,
   type SecurityDashboard as SecDash,
@@ -493,7 +493,7 @@ function ABACTab({ policies, onChanged }: { policies: Array<Record<string, unkno
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Resource: {String(p.resource_type || "")}/{String(p.resource_id || "*")} · Action: {String(p.action || "")} · Priority: {String(p.priority || "")}</p>
                 </div>
-                <button type="button" onClick={async () => { await securityDeleteABAC(String(p.id)); onChanged(); }} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={async () => { await securityDeleteABAC(String(p.id)); onChanged(); }} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0" aria-label="Delete ABAC policy" title="Delete policy"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </Card>
           ))}
