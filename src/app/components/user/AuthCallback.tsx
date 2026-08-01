@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabaseClient";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
+import { Button } from "../ui/button";
 
 /**
  * OAuth redirect target (see `redirectTo` in `signInWithGoogle`).
@@ -75,15 +76,15 @@ export function AuthCallback() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="flex flex-col items-center gap-4 text-center">
-        <DayjoyLogo variant="mark" size={48} />
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+      <div className="flex flex-col items-center gap-4 text-center rounded-3xl glass shadow-overlay px-8 py-10 max-w-sm">
+        <DayjoyLogo variant="mark" size={48} className={error ? "" : "animate-pulse-glow"} />
         {error ? (
           <>
-            <p className="text-sm text-destructive max-w-sm">{error}</p>
-            <a href="/login" className="text-sm text-primary underline">
-              Back to login
-            </a>
+            <p className="text-sm text-destructive">{error}</p>
+            <Button asChild variant="secondary" size="sm">
+              <a href="/login">Back to login</a>
+            </Button>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">Signing you in to {BRAND.name}…</p>
