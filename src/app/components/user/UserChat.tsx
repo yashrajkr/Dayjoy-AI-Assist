@@ -1318,7 +1318,7 @@ export function UserChat() {
                       <span className="ml-1 text-muted-foreground">writing</span>
                     </span>
                   </div>
-                  <div className="relative prose prose-sm max-w-none rounded-2xl rounded-tl-md bg-card border border-gold-accent/30 px-4 py-3 overflow-hidden">
+                  <div className="ai-prose relative prose prose-sm max-w-none rounded-2xl rounded-tl-md bg-card border border-gold-accent/30 px-4 py-3 overflow-hidden">
                     {/* Shimmering top edge while writing */}
                     <motion.span
                       className="absolute top-0 left-0 right-0 h-px origin-left"
@@ -2151,7 +2151,7 @@ function MessageBubble({
           ) : null}
         </div>
         <div
-          className={`prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
+          className={`ai-prose prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
             isBlocked
               ? "border-destructive/30 bg-destructive/5"
               : "border-border bg-card group-hover:border-primary/20"

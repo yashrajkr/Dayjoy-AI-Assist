@@ -45,7 +45,7 @@ export function CustomerDashboard() {
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4">
       {/* Welcome header */}
-      <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-accent/30 p-4 sm:p-6">
+      <div className="rounded-2xl surface-gradient border border-border/60 p-4 sm:p-6">
         <h1 className="text-xl sm:text-2xl font-semibold">{greeting}, {userName}! 👋</h1>
         <p className="text-sm text-muted-foreground mt-1">Here's what's happening with your Dayjourney today.</p>
         <div className="flex flex-wrap gap-2 mt-3">
@@ -189,12 +189,12 @@ export function CustomerDashboard() {
 
 function KpiCard({ label, value, icon, link }: { label: string; value: number; icon: React.ReactNode; link?: string }) {
   const content = (
-    <div className="rounded-xl border border-border bg-card p-3 hover:shadow-sm transition-shadow">
-      <div className="flex items-center justify-between mb-1">
+    <div className="rounded-xl border border-border bg-card shadow-flat hover-raise p-3.5">
+      <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
-        <span className="text-primary">{icon}</span>
+        <span className="w-7 h-7 rounded-lg bg-accent text-primary flex items-center justify-center shrink-0">{icon}</span>
       </div>
-      <p className="text-xl font-semibold">{value}</p>
+      <p className="text-2xl font-semibold tabular tracking-tight">{value}</p>
     </div>
   );
   return link ? <Link to={link}>{content}</Link> : content;
@@ -202,7 +202,7 @@ function KpiCard({ label, value, icon, link }: { label: string; value: number; i
 
 function Section({ title, icon, link, children }: { title: string; icon: React.ReactNode; link?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="rounded-2xl border border-border bg-card shadow-flat p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold flex items-center gap-1.5">{icon} {title}</h2>
         {link ? <Link to={link} className="text-xs text-primary hover:underline flex items-center gap-0.5">View all <ArrowRight className="w-3 h-3" /></Link> : null}
