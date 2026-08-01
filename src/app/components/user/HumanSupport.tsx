@@ -3,6 +3,8 @@ import { LifeBuoy, Send, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
+import { Button } from "../ui/button";
+import { Textarea } from "../ui/input";
 
 const CATEGORIES = [
   "Product question",
@@ -54,20 +56,16 @@ export function HumanSupport() {
   if (submitted) {
     return (
       <div className="p-4 sm:p-8 max-w-2xl mx-auto">
-        <div className="rounded-2xl border border-primary/30 bg-accent/30 p-8 text-center">
+        <div className="rounded-2xl border border-primary/30 surface-gradient p-8 text-center">
           <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" aria-hidden="true" />
           <h1 className="text-xl font-semibold mb-1">Ticket submitted</h1>
           <p className="text-sm text-muted-foreground mb-4">
             A Dayjoy support team member will follow up shortly. You can track progress in the
             Support Tickets page of the admin console.
           </p>
-          <button
-            type="button"
-            onClick={() => setSubmitted(false)}
-            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-          >
+          <Button type="button" onClick={() => setSubmitted(false)}>
             Submit another ticket
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -100,7 +98,7 @@ export function HumanSupport() {
           <label htmlFor="dj-support-query" className="block text-xs font-medium text-muted-foreground mb-1">
             What do you need help with?
           </label>
-          <textarea
+          <Textarea
             id="dj-support-query"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -108,7 +106,7 @@ export function HumanSupport() {
             maxLength={2000}
             required
             placeholder="Describe your question or issue in as much detail as you can…"
-            className="w-full px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-y"
+            className="w-full rounded-xl bg-card resize-y focus-visible:ring-4 focus-visible:ring-primary/10"
           />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -147,17 +145,13 @@ export function HumanSupport() {
             </select>
           </div>
         </div>
-        <button
-          type="submit"
-          disabled={submitting || !query.trim()}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <Button type="submit" disabled={submitting || !query.trim()} className="rounded-xl">
           <Send className="w-4 h-4" aria-hidden="true" />
           {submitting ? "Submitting…" : "Raise support ticket"}
-        </button>
+        </Button>
       </form>
 
-      <div className="mt-6 rounded-xl border border-border bg-card p-4">
+      <div className="mt-6 rounded-xl border border-border bg-card p-4 shadow-flat">
         <p className="text-xs text-muted-foreground">
           <strong className="text-foreground">Prefer to talk to someone?</strong>
           <br />
