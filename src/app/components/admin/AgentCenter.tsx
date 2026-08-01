@@ -230,7 +230,7 @@ export function AgentCenter() {
               <div key={String(m.id)} className="rounded-lg border border-border p-2 text-xs">
                 <div className="flex items-center justify-between mb-0.5">
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground capitalize">{String(m.memory_type || "memory")}</span>
-                  <button type="button" onClick={async () => { if (selectedAgent) { await agentMemoryDelete(selectedAgent.id, String(m.id)); const mem = await agentMemory(selectedAgent.id); setMemories(mem); } }} className="p-0.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3 h-3" /></button>
+                  <button type="button" onClick={async () => { if (selectedAgent) { await agentMemoryDelete(selectedAgent.id, String(m.id)); const mem = await agentMemory(selectedAgent.id); setMemories(mem); } }} className="p-0.5 rounded hover:bg-destructive/10 text-destructive" aria-label="Delete memory entry" title="Delete memory entry"><Trash2 className="w-3 h-3" /></button>
                 </div>
                 <p className="text-muted-foreground">{String(m.value || "").slice(0, 200)}</p>
                 <p className="text-[9px] text-muted-foreground mt-0.5">{m.created_at ? new Date(String(m.created_at)).toLocaleString() : ""}</p>

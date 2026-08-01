@@ -10,6 +10,7 @@ import {
   type Channel, type Conversation,
 } from "../../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
+import { Input } from "../ui/input";
 
 const CHANNEL_ICONS: Record<string, typeof MessageSquare> = {
   whatsapp: MessageSquare, email: Mail, sms: Smartphone, push: Bell, in_app: Inbox,
@@ -235,10 +236,10 @@ export function CommunicationCenter() {
                 </div>
                 {/* Reply box */}
                 <div className="px-3 py-2 border-t border-border flex gap-2">
-                  <input type="text" value={replyText} onChange={(e) => setReplyText(e.target.value)}
+                  <Input type="text" value={replyText} onChange={(e) => setReplyText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                    placeholder="Type a reply…" className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                  <button type="button" onClick={handleSend} disabled={sending || !replyText.trim()} className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 disabled:opacity-50">
+                    placeholder="Type a reply…" className="flex-1 px-3 py-1.5 h-auto rounded-lg" />
+                  <button type="button" onClick={handleSend} disabled={sending || !replyText.trim()} className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 disabled:opacity-50" aria-label="Send reply" title="Send reply">
                     {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                   </button>
                 </div>
