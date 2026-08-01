@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Download, TrendingUp, Users, MessageSquare, ShieldAlert, AlertCircle } from "lucide-react";
 import { getAnalytics, type AnalyticsEvent } from "../../lib/db";
 import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
-import { BarChart, LineChart, DonutChart } from "../charts/SVGCharts";
+import { BarChart, LineChart, DonutChart } from "../common/Charts";
 import { adminKnowledgeGaps } from "../../../lib/api";
 
 function computeStats(events: AnalyticsEvent[]) {
