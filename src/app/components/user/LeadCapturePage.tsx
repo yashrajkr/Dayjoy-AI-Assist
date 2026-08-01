@@ -8,6 +8,9 @@ import {
   type AnalyticsEvent,
 } from "../../lib/db";
 import { getCurrentUser } from "../../lib/auth";
+import { Button } from "../ui/button";
+import { Input, Textarea } from "../ui/input";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
 
 type LeadType = "customer" | "distributor";
 
@@ -182,33 +185,33 @@ export function LeadCapturePage() {
           </p>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-flat">
           {submitMessage ? (
-            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
+            <div className="mb-4 rounded-xl border border-primary/30 bg-accent/40 px-4 py-3 text-sm text-accent-foreground">
               {submitMessage}
             </div>
           ) : null}
 
           {submitError ? (
-            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {submitError}
             </div>
           ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
+              <Input
                 placeholder="Full name"
                 value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
               <select
                 value={form.lead_type}
                 onChange={(e) =>
                   setForm({ ...form, lead_type: e.target.value as LeadType })
                 }
-                className="border rounded-xl p-3 w-full bg-background"
+                className="border border-border rounded-xl p-3 w-full bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="customer">Customer</option>
                 <option value="distributor">Distributor</option>
@@ -216,54 +219,54 @@ export function LeadCapturePage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
+              <Input
                 placeholder="Phone"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
-              <input
+              <Input
                 placeholder="Email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input
+              <Input
                 placeholder="City"
                 value={form.city}
                 onChange={(e) => setForm({ ...form, city: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
-              <input
+              <Input
                 placeholder="State"
                 value={form.state}
                 onChange={(e) => setForm({ ...form, state: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
-              <input
+              <Input
                 placeholder="Region"
                 value={form.region}
                 onChange={(e) => setForm({ ...form, region: e.target.value })}
-                className="border rounded-xl p-3 w-full bg-background"
+                className="h-auto p-3 rounded-xl"
               />
             </div>
 
-            <input
+            <Input
               placeholder="Interested category"
               value={form.interested_category}
               onChange={(e) =>
                 setForm({ ...form, interested_category: e.target.value })
               }
-              className="border rounded-xl p-3 w-full bg-background"
+              className="h-auto p-3 rounded-xl"
             />
 
             <select
               value={form.preferred_language}
               onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}
-              className="border rounded-xl p-3 w-full bg-background"
+              className="border border-border rounded-xl p-3 w-full bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               disabled={loadingUser}
             >
               <option value="English">English</option>
@@ -271,20 +274,16 @@ export function LeadCapturePage() {
               <option value="Hinglish">Hinglish</option>
             </select>
 
-            <textarea
+            <Textarea
               placeholder="Notes"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="border rounded-xl p-3 w-full min-h-28 bg-background"
+              className="p-3 rounded-xl min-h-28"
             />
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="bg-primary text-primary-foreground rounded-xl px-5 py-3 w-full font-medium disabled:opacity-60"
-            >
+            <Button type="submit" disabled={submitting} className="w-full rounded-xl py-3 h-auto">
               {submitting ? "Saving..." : "Save Lead"}
-            </button>
+            </Button>
           </form>
 
           <p className="text-xs text-muted-foreground mt-4">
@@ -300,7 +299,7 @@ export function LeadCapturePage() {
           </p>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-flat">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold">Leads</h2>
             <p className="text-xs text-muted-foreground">
@@ -309,7 +308,7 @@ export function LeadCapturePage() {
           </div>
 
           {leadsError ? (
-            <div className="text-sm text-red-600 bg-background border border-border rounded-xl p-3">
+            <div className="text-sm text-destructive bg-destructive/5 border border-destructive/20 rounded-xl p-3">
               {leadsError}
             </div>
           ) : leadsLoading ? (
@@ -317,32 +316,30 @@ export function LeadCapturePage() {
           ) : leads.length === 0 ? (
             <div className="text-sm text-muted-foreground py-6">No leads found.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b border-border">
-                    <th className="py-3 pr-3">Name</th>
-                    <th className="py-3 pr-3">Phone</th>
-                    <th className="py-3 pr-3">Email</th>
-                    <th className="py-3 pr-3">Category</th>
-                    <th className="py-3 pr-3">Type</th>
-                    <th className="py-3 pr-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.slice(0, 50).map((l) => (
-                    <tr key={String(l.id ?? l.full_name)} className="border-b border-border">
-                      <td className="py-3 pr-3 font-medium">{l.full_name}</td>
-                      <td className="py-3 pr-3">{l.phone ?? "-"}</td>
-                      <td className="py-3 pr-3">{l.email ?? "-"}</td>
-                      <td className="py-3 pr-3">{l.interested_category ?? "-"}</td>
-                      <td className="py-3 pr-3">{l.lead_type ?? "-"}</td>
-                      <td className="py-3 pr-3">{l.status ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads.slice(0, 50).map((l) => (
+                  <TableRow key={String(l.id ?? l.full_name)}>
+                    <TableCell className="font-medium">{l.full_name}</TableCell>
+                    <TableCell>{l.phone ?? "-"}</TableCell>
+                    <TableCell>{l.email ?? "-"}</TableCell>
+                    <TableCell>{l.interested_category ?? "-"}</TableCell>
+                    <TableCell>{l.lead_type ?? "-"}</TableCell>
+                    <TableCell>{l.status ?? "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </div>
       </div>

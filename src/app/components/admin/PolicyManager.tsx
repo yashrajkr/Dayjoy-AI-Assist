@@ -7,6 +7,9 @@ import {
   getPoliciesForManager,
   updatePolicy,
 } from "../../lib/db";
+import { PageHeader, Card, StatusPill, EmptyState, LoadingState, ErrorState } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 
 type ApprovalStatus = "approved" | "pending" | "rejected";
 
@@ -137,52 +140,43 @@ export function PolicyManager() {
   return (
     <div className="p-8 bg-background min-h-full">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-3xl font-semibold">Policy Manager</h1>
-            <p className="text-muted-foreground">Control approved rules used by Dayjoy AI Assist.</p>
-          </div>
-          <button
-            className="bg-primary text-primary-foreground rounded-xl px-5 py-3 flex items-center gap-2"
-            type="button"
-            onClick={handleAdd}
-          >
-            <Plus className="w-4 h-4" />
-            Add Policy
-          </button>
-        </div>
+        <PageHeader
+          title="Policy Manager"
+          description="Control approved rules used by Dayjoy AI Assist."
+          icon={<ShieldCheck className="w-5 h-5" />}
+          actions={
+            <Button type="button" onClick={handleAdd}>
+              <Plus className="w-4 h-4" />
+              Add Policy
+            </Button>
+          }
+        />
 
         <div className="relative max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-          <input
-            className="w-full pl-12 pr-4 py-3 bg-card border border-border rounded-xl outline-none focus:ring-2 focus:ring-ring"
+          <Input
+            className="w-full pl-12 pr-4 py-3 h-auto rounded-xl focus-visible:ring-4 focus-visible:ring-primary/10"
             placeholder="Search policies..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
-        {error ? (
-          <div className="bg-card border border-border rounded-2xl p-4 text-red-600 text-sm">{error}</div>
-        ) : null}
+        {error ? <ErrorState message={error} /> : null}
 
         {loading ? (
-          <div className="text-sm text-muted-foreground py-6">Loading policies…</div>
+          <LoadingState label="Loading policies…" />
         ) : filteredPolicies.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-6">No policies found.</div>
+          <Card>
+            <EmptyState title="No policies found" icon={<ShieldCheck className="w-5 h-5" />} />
+          </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredPolicies.map((p) => {
               const status = p.approval_status ?? "pending";
-              const pill =
-                status === "approved"
-                  ? "bg-green-100 text-green-700"
-                  : status === "pending"
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-slate-100 text-slate-700";
 
               return (
-                <div key={p.id ?? p.topic} className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+                <Card key={p.id ?? p.topic} hover>
                   <div className="flex items-center gap-3 mb-3">
                     <ShieldCheck className="w-6 h-6 text-primary" />
                     <h2 className="text-xl font-semibold">{p.topic}</h2>
@@ -193,54 +187,59 @@ export function PolicyManager() {
                   </p>
 
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <span className={`px-3 py-1 ${pill} text-xs rounded-full`}>
-                      {status}
-                    </span>
+                    <StatusPill status={status} />
 
                     <div className="flex items-center gap-2">
-                      <button
+                      <Button
                         type="button"
-                        className="px-2 py-1 text-xs border border-border rounded-lg hover:border-primary"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => handleSetStatus(p, "pending")}
                       >
                         Pending
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
-                        className="px-2 py-1 text-xs border border-border rounded-lg hover:border-primary"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => handleSetStatus(p, "approved")}
                       >
                         Approved
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
-                        className="px-2 py-1 text-xs border border-border rounded-lg hover:border-primary"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => handleSetStatus(p, "rejected")}
                       >
                         Rejected
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
                   <div className="mt-4 flex items-center justify-end gap-2">
-                    <button
+                    <Button
                       type="button"
-                      className="p-2 hover:bg-accent rounded-lg transition-colors"
+                      variant="ghost"
+                      size="icon"
+                      className="h-auto w-auto p-2"
                       onClick={() => handleEdit(p)}
                       aria-label="Edit policy"
                     >
                       <Edit className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="p-2 hover:bg-accent rounded-lg transition-colors"
+                      variant="ghost"
+                      size="icon"
+                      className="h-auto w-auto p-2"
                       onClick={() => handleDelete(p)}
                       aria-label="Delete policy"
                     >
                       <Trash2 className="w-4 h-4 text-muted-foreground" />
-                    </button>
+                    </Button>
                   </div>
-                </div>
+                </Card>
               );
             })}
           </div>
