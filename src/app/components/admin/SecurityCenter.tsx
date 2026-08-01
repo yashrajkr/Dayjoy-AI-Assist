@@ -493,7 +493,7 @@ function ABACTab({ policies, onChanged }: { policies: Array<Record<string, unkno
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Resource: {String(p.resource_type || "")}/{String(p.resource_id || "*")} · Action: {String(p.action || "")} · Priority: {String(p.priority || "")}</p>
                 </div>
-                <button type="button" onClick={async () => { await securityDeleteABAC(String(p.id)); onChanged(); }} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={async () => { await securityDeleteABAC(String(p.id)); onChanged(); }} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0" aria-label="Delete ABAC policy" title="Delete policy"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </Card>
           ))}

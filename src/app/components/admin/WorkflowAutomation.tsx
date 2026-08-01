@@ -225,9 +225,9 @@ function WorkflowsView({ workflows, onChanged }: { workflows: WorkflowType[]; on
               </div>
               <div className="flex gap-1">
                 <button type="button" onClick={() => openBuilder(wf)} className="flex-1 text-xs px-2 py-1.5 rounded border border-border hover:bg-accent">Builder</button>
-                <button type="button" onClick={() => handleExecute(wf)} className="text-xs px-2 py-1.5 rounded border border-primary/30 text-primary hover:bg-primary/10" title="Execute"><Play className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => handleExecute(wf)} className="text-xs px-2 py-1.5 rounded border border-primary/30 text-primary hover:bg-primary/10" title="Execute" aria-label={`Execute workflow ${wf.name}`}><Play className="w-3.5 h-3.5" /></button>
                 <button type="button" onClick={() => handleToggleStatus(wf)} className={`text-xs px-2 py-1.5 rounded border ${wf.status === "active" ? "border-warning/30 text-warning" : "border-primary/30 text-primary"}`}>{wf.status === "active" ? "Pause" : "Activate"}</button>
-                <button type="button" onClick={() => handleDelete(wf)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => handleDelete(wf)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete workflow ${wf.name}`} title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </Card>
           ))}
@@ -293,7 +293,7 @@ function WorkflowsView({ workflows, onChanged }: { workflows: WorkflowType[]; on
                         <p className="text-xs font-medium">{String(node.label || node.type)}</p>
                         <p className="text-[9px] text-muted-foreground capitalize">{String(node.type)}</p>
                       </div>
-                      <button type="button" onClick={() => removeNode(String(node.id))} className="p-1 rounded hover:bg-destructive/10 text-destructive"><X className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => removeNode(String(node.id))} className="p-1 rounded hover:bg-destructive/10 text-destructive" aria-label={`Remove node ${String(node.label || node.type)}`} title="Remove node"><X className="w-3.5 h-3.5" /></button>
                       {i < nodes.length - 1 ? <ChevronDown className="w-3 h-3 text-muted-foreground absolute" /> : null}
                     </div>
                   );
@@ -431,7 +431,7 @@ function RulesView({ rules, onChanged }: { rules: BusinessRule[]; onChanged: () 
                     {r.else_actions && r.else_actions.length > 0 ? <><span className="text-muted-foreground">ELSE</span><span className="px-1.5 py-0.5 rounded bg-accent/50">{r.else_actions.length}</span></> : null}
                   </div>
                 </div>
-                <button type="button" onClick={() => handleDelete(r)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => handleDelete(r)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0" aria-label={`Delete rule ${r.name}`} title="Delete rule"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </Card>
           ))}
@@ -471,7 +471,7 @@ function SchedulerView({ jobs, onChanged }: { jobs: Array<Record<string, unknown
                   </p>
                   {j.next_run_at ? <p className="text-[10px] text-primary mt-0.5">Next: {new Date(String(j.next_run_at)).toLocaleString()}</p> : null}
                 </div>
-                <button type="button" onClick={() => handleDelete(String(j.id))} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => handleDelete(String(j.id))} className="p-1.5 rounded hover:bg-destructive/10 text-destructive shrink-0" aria-label={`Delete job ${String(j.name || "Job")}`} title="Delete job"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </Card>
           ))}
