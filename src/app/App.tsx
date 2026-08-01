@@ -4,6 +4,7 @@ import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "./lib/AuthContext";
 import { ProtectedRoute } from "./lib/ProtectedRoute";
 import { AppShellFallback } from "./components/common/AppShellFallback";
+import { InstallAppPrompt } from "./components/common/InstallAppPrompt";
 import { ThemeProvider } from "./components/common/ThemeProvider";
 import { I18nProvider } from "./lib/i18n/I18nContext";
 import { subscribeToNotificationClicks } from "./lib/pushNotifications";
@@ -184,6 +185,7 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
         <NotificationClickBridge />
+        <InstallAppPrompt />
         <Routes>
           {/* Public */}
           <Route path="/select" element={<AppSelector />} />
