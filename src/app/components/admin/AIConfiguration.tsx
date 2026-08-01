@@ -6,6 +6,7 @@ import {
 import {
   PageHeader, Card, LoadingState, ErrorState, btnClass,
 } from "../common/AdminUI";
+import { Input } from "../ui/input";
 import { Modal, modalButtonClass } from "../common/Modal";
 import {
   adminGetAIConfig, adminUpdateAIConfig, adminGetSafetyRules, adminUpdateSafetyRule,
@@ -144,20 +145,20 @@ export function AIConfiguration() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Groq Model" icon={<Hash className="w-3 h-3" />}>
-                <input
+                <Input
                   type="text"
                   value={config.groq_model ?? ""}
                   onChange={(e) => update({ groq_model: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2 h-auto rounded-lg"
                   placeholder="llama-3.3-70b-versatile"
                 />
               </Field>
               <Field label="OpenAI Model (fallback)" icon={<Hash className="w-3 h-3" />}>
-                <input
+                <Input
                   type="text"
                   value={config.openai_model ?? ""}
                   onChange={(e) => update({ openai_model: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2 h-auto rounded-lg"
                   placeholder="gpt-4o-mini"
                 />
               </Field>
@@ -324,11 +325,11 @@ export function AIConfiguration() {
                 </select>
               </Field>
               <Field label="Supported Languages" hint="Comma-separated ISO codes">
-                <input
+                <Input
                   type="text"
                   value={(config.supported_languages ?? ["en"]).join(", ")}
                   onChange={(e) => update({ supported_languages: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                  className="w-full px-3 py-2 h-auto rounded-lg"
                 />
               </Field>
             </div>

@@ -12,6 +12,7 @@ import {
   updateProduct,
 } from "../../lib/db";
 import { Modal, modalButtonClass } from "../common/Modal";
+import { Input, Textarea } from "../ui/input";
 import { btnClass } from "../common/AdminUI";
 import { adminCreateProduct, adminUpdateProduct, adminDeleteProduct } from "../../../lib/api";
 
@@ -303,10 +304,10 @@ export function ProductDatabase() {
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
+          <Input
             type="text"
             placeholder="Search by name, SKU, category…"
-            className="w-full pl-9 pr-4 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+            className="w-full pl-9 pr-4 py-2 h-auto rounded-lg"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -397,29 +398,29 @@ export function ProductDatabase() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Product Name *</label>
-              <input type="text" value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <Input type="text" value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })}
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">SKU</label>
-              <input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })}
+              <Input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })}
                 placeholder="DJ-001"
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 h-auto rounded-lg font-mono" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Brand</label>
-              <input type="text" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <Input type="text" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
-              <input type="text" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <Input type="text" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Sub-Category</label>
-              <input type="text" value={form.sub_category} onChange={(e) => setForm({ ...form, sub_category: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <Input type="text" value={form.sub_category} onChange={(e) => setForm({ ...form, sub_category: e.target.value })}
+                className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Approval Status</label>
@@ -434,29 +435,29 @@ export function ProductDatabase() {
 
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Benefits</label>
-            <textarea value={form.benefits} onChange={(e) => setForm({ ...form, benefits: e.target.value })} rows={2}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Textarea value={form.benefits} onChange={(e) => setForm({ ...form, benefits: e.target.value })} rows={2}
+              className="w-full px-3 py-2 rounded-lg" />
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Ingredients</label>
-            <textarea value={form.ingredients} onChange={(e) => setForm({ ...form, ingredients: e.target.value })} rows={2}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Textarea value={form.ingredients} onChange={(e) => setForm({ ...form, ingredients: e.target.value })} rows={2}
+              className="w-full px-3 py-2 rounded-lg" />
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Usage</label>
-            <textarea value={form.usage} onChange={(e) => setForm({ ...form, usage: e.target.value })} rows={2}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Textarea value={form.usage} onChange={(e) => setForm({ ...form, usage: e.target.value })} rows={2}
+              className="w-full px-3 py-2 rounded-lg" />
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Warnings</label>
-            <textarea value={form.warnings} onChange={(e) => setForm({ ...form, warnings: e.target.value })} rows={2}
+            <Textarea value={form.warnings} onChange={(e) => setForm({ ...form, warnings: e.target.value })} rows={2}
               placeholder="e.g. Not for pregnant women. Keep out of reach of children."
-              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              className="w-full px-3 py-2 rounded-lg" />
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Safety Note</label>
-            <textarea value={form.safety_note} onChange={(e) => setForm({ ...form, safety_note: e.target.value })} rows={2}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Textarea value={form.safety_note} onChange={(e) => setForm({ ...form, safety_note: e.target.value })} rows={2}
+              className="w-full px-3 py-2 rounded-lg" />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.is_archived} onChange={(e) => setForm({ ...form, is_archived: e.target.checked })} className="rounded" />
