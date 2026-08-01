@@ -146,18 +146,25 @@ async def verify_jwt(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid token header")
 
     jwks = await fetch_jwks()
-    key = next(
+    jwk_data = next(
         (k for k in jwks.get("keys", []) if k.get("kid") == unverified_header.get("kid")),
         None,
     )
-    if not key:
+    if not jwk_data:
         raise HTTPException(status_code=401, detail="Signing key not found")
 
     try:
+        # Supabase projects may sign with RS256 or ES256 depending on when the
+        # project was created / whether it's migrated to asymmetric JWT
+        # signing keys. The JWK's own "alg" is authoritative — don't hardcode
+        # one algorithm, and don't pass the raw JWK dict to decode(): PyJWT
+        # needs it converted to an actual key object first.
+        signing_key = pyjwt.PyJWK.from_dict(jwk_data).key
+        alg = jwk_data.get("alg") or unverified_header.get("alg") or "RS256"
         claims = pyjwt.decode(
             token,
-            key,
-            algorithms=["RS256"],
+            signing_key,
+            algorithms=[alg],
             audience="authenticated",
             options={"verify_aud": True},
         )
