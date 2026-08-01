@@ -25,6 +25,7 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
@@ -101,6 +102,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v2.sql
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
@@ -479,16 +481,77 @@ async def retrieve_context(
     return merged_context, merged_sources[:8], best_category, rag_metadata
 
 
+def current_time_context() -> str:
+    """Real, always-accurate current time — avoids the LLM either refusing
+    date/time questions outright or hallucinating an answer from stale
+    training data."""
+    now = datetime.now(timezone.utc)
+    return f"Current date/time: {now.strftime('%A, %B %d, %Y, %H:%M')} UTC."
+
+
+async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSource]]:
+    """General-knowledge / current-events fallback via Tavily's search API.
+
+    Returns ("", []) — never raises — when TAVILY_API_KEY isn't configured
+    or the request fails, so callers can treat it identically to an empty
+    Dayjoy-knowledge match.
+    """
+    if not TAVILY_API_KEY:
+        return "", []
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": TAVILY_API_KEY,
+                    "query": query,
+                    "search_depth": "basic",
+                    "max_results": max_results,
+                    "include_answer": False,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"[web_search] Tavily request failed: {e}")
+        return "", []
+
+    context_parts: List[str] = []
+    sources: List[ChatSource] = []
+    for r in data.get("results", [])[:max_results]:
+        content = str(r.get("content") or "").strip()
+        if not content:
+            continue
+        title = r.get("title") or r.get("url") or "Web result"
+        url = r.get("url")
+        # "[web]" label lets the system prompt tell this apart from
+        # approved Dayjoy knowledge context.
+        context_parts.append(f"[web] {title} ({url or 'no url'})\n{content[:600]}")
+        sources.append(ChatSource(table="web", id=str(url or title), title=title, url=url))
+
+    return "\n\n".join(context_parts), sources
+
+
 # ----------------------------------------------------------------------------
 # LLM providers
 # ----------------------------------------------------------------------------
 SYSTEM_PROMPT = (
     "You are Dayjoy AI Assist, an enterprise assistant for the Dayjoy wellness, healthcare, "
-    "agriculture, lifestyle, and direct-selling ecosystem. Use ONLY the provided context from "
-    "approved company knowledge. Do NOT make medical claims, diagnosis, or treatment promises. "
-    "Do NOT provide guaranteed income claims. If the question is not answerable from the context, "
-    "say that you need a human handoff and recommend contacting Dayjoy support. Be concise, "
-    "professional, and helpful. Cite source IDs where relevant."
+    "agriculture, lifestyle, and direct-selling ecosystem.\n\n"
+    "The context you're given below may contain two kinds of material, each labeled:\n"
+    "- Approved Dayjoy knowledge (products, FAQs, policies, training) — treat as authoritative "
+    "for anything about Dayjoy itself.\n"
+    "- Lines marked \"[web]\" — general/current-events web search results, NOT Dayjoy-approved. "
+    "Use these only for general knowledge questions unrelated to Dayjoy's own products or "
+    "business (e.g. the current date/time, world news, general facts), and say the information "
+    "comes from a web search, not from Dayjoy's own materials.\n\n"
+    "For anything about Dayjoy products, health, or business: use ONLY the approved Dayjoy "
+    "knowledge, never the web results, even if a web result seems relevant. Do NOT make medical "
+    "claims, diagnosis, or treatment promises. Do NOT provide guaranteed income claims. If a "
+    "Dayjoy-related question isn't answerable from the approved context, say you need a human "
+    "handoff and recommend contacting Dayjoy support — do not fill the gap with a web result or "
+    "your own general knowledge.\n\n"
+    "Be concise, professional, and helpful. Cite source IDs/URLs where relevant."
 )
 
 
@@ -650,6 +713,7 @@ async def health() -> Dict[str, Any]:
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_ANON_KEY),
         "groq_configured": bool(GROQ_API_KEY),
         "openai_configured": bool(OPENAI_API_KEY),
+        "web_search_configured": bool(TAVILY_API_KEY),
         "rag_available": RAG_AVAILABLE,
         "rag_import_error": RAG_IMPORT_ERROR,
         "jwks_url": SUPABASE_JWKS_URL,
@@ -717,9 +781,24 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     context, sources, category, rag_metadata = await retrieve_context(token, req.message)
 
+    # No approved Dayjoy knowledge matched — fall back to a live web search
+    # for general questions (current time, world events, general facts)
+    # instead of the model refusing outright. Dayjoy-specific questions are
+    # unaffected: this only runs when `context` is already empty.
+    web_context = ""
+    web_sources: List[ChatSource] = []
+    used_web_search = False
+    if not context and TAVILY_API_KEY:
+        web_context, web_sources = await web_search(req.message)
+        if web_context:
+            used_web_search = True
+            category = "general"
+
+    full_context = "\n\n".join(p for p in [current_time_context(), context, web_context] if p)
+
     # Collect streamed tokens into a single string
     answer_parts: List[str] = []
-    async for tok in stream_response(req.message, history, context, req.language):
+    async for tok in stream_response(req.message, history, full_context, req.language):
         answer_parts.append(tok)
     answer = "".join(answer_parts).strip()
 
@@ -727,14 +806,18 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if rag_metadata and rag_metadata.get("confidence") is not None:
         confidence = rag_metadata["confidence"]
         verification_status = rag_metadata.get("verification_status", "unverified")
+    elif used_web_search:
+        confidence = 0.6
+        verification_status = "unverified"
     else:
         confidence = 0.85 if context else 0.4
         verification_status = "verified" if context else "unverified"
-    handoff_required = (
+    handoff_required = not used_web_search and (
         verification_status == "unverified"
         or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
         or not bool(context)
     )
+    sources = sources + web_sources
 
     # NOTE: message persistence is owned by the frontend (see UserChat.tsx's
     # handleSend -> appendMessage), which needs the real DB-assigned row ids
@@ -790,23 +873,39 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
         context, sources, category, rag_metadata = await retrieve_context(token, req.message)
+
+        # See the matching comment in the non-streaming /chat handler.
+        web_context = ""
+        web_sources: List[ChatSource] = []
+        used_web_search = False
+        if not context and TAVILY_API_KEY:
+            web_context, web_sources = await web_search(req.message)
+            if web_context:
+                used_web_search = True
+                category = "general"
+
+        full_context = "\n\n".join(p for p in [current_time_context(), context, web_context] if p)
         aggregated = ""
 
-        async for tok in stream_response(req.message, history, context, req.language):
+        async for tok in stream_response(req.message, history, full_context, req.language):
             aggregated += tok
             yield _sse({"token": tok})
 
         if rag_metadata and rag_metadata.get("confidence") is not None:
             confidence = rag_metadata["confidence"]
             verification_status = rag_metadata.get("verification_status", "unverified")
+        elif used_web_search:
+            confidence = 0.6
+            verification_status = "unverified"
         else:
             confidence = 0.85 if context else 0.4
             verification_status = "verified" if context else "unverified"
-        handoff_required = (
+        handoff_required = not used_web_search and (
             verification_status == "unverified"
             or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
             or not bool(context)
         )
+        sources = sources + web_sources
         handoff_msg = None
         if handoff_required:
             handoff_msg = (

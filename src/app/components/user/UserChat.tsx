@@ -1520,7 +1520,7 @@ export function UserChat() {
               ) : null}
             </div>
             <p className="text-[11px] text-muted-foreground text-center mt-2">
-              {BRAND.name} answers from approved Dayjoy knowledge only. For medical advice, consult a healthcare professional.
+              {BRAND.name} answers Dayjoy questions from approved company knowledge only, and may use general web search for unrelated questions. For medical advice, consult a healthcare professional.
             </p>
           </div>
         </div>
