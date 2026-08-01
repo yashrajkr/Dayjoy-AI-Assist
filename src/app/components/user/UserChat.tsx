@@ -323,14 +323,30 @@ export function UserChat() {
       setError(null);
       setInput("");
       setStreamingText("");
-setSending(true);
+      setSending(true);
 
-      //
-        if (conv) {
-          setConversations((prev) => [conv as Conversation, ...prev]);
-          setActiveConv(conv);
-          navigate(`/chat/${conv!.id}`);
+      let convId = chatId ?? activeConv?.id;
+      let conv: Conversation | null = activeConv;
+
+      if (!convId) {
+        if (!currentUser) {
+          setError("Unable to start a conversation without a logged-in user.");
+          setSending(false);
+          return;
         }
+
+        const createdConv = await createConversation(currentUser.id, "New conversation", language);
+        if (!createdConv) {
+          setError("Could not create a new conversation. Please try again.");
+          setSending(false);
+          return;
+        }
+
+        conv = createdConv;
+        convId = createdConv.id;
+        setConversations((prev) => [createdConv, ...prev]);
+        setActiveConv(createdConv);
+        navigate(`/chat/${createdConv.id}`);
       }
 
       const userMsg: ChatMessage = {

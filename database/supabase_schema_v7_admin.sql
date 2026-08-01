@@ -43,6 +43,37 @@ create table if not exists role_permissions (
   unique (role, page, action)
 );
 
+-- role_permissions already exists from v2 with a different shape
+-- (feature, can_view, can_create, can_update, can_delete). Add the v7
+-- columns without breaking the v2 ones.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='role_permissions'
+                 and column_name='page') then
+    alter table role_permissions add column page text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='role_permissions'
+                 and column_name='action') then
+    alter table role_permissions add column action text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='role_permissions'
+                 and column_name='allowed') then
+    alter table role_permissions add column allowed boolean default true;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema='public' and table_name='role_permissions'
+                 and column_name='updated_at') then
+    alter table role_permissions add column updated_at timestamptz default now();
+  end if;
+end$$;
+
+create unique index if not exists idx_rp_role_page_action
+  on role_permissions (role, page, action)
+  where page is not null and action is not null;
+
 alter table role_permissions enable row level security;
 
 drop policy if exists "Staff can read role permissions" on role_permissions;
@@ -73,6 +104,7 @@ do $$
 declare
   r text;
   p text;
+  a text;
   pages text[] := array[
     'admin/dashboard','admin/analytics','admin/knowledge','admin/products',
     'admin/faqs','admin/policies','admin/training','admin/approvals',
@@ -716,11 +748,11 @@ select
 from faqs f
 union all
 select
-  dt.id::text, 'training', dt.title, dt.category, dt.id::text, dt.created_at
+  dt.id::text, 'training', dt.title, null::text, dt.id::text, dt.created_at
 from distributor_training dt
 union all
 select
-  pol.id::text, 'policy', pol.topic, pol.category, pol.id::text, pol.created_at
+  pol.id::text, 'policy', pol.topic, null::text, pol.id::text, pol.created_at
 from policies pol
 union all
 select

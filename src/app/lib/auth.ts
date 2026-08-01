@@ -90,6 +90,21 @@ export async function signInUser(params: { email: string; password: string }) {
   return data;
 }
 
+export async function signInWithGoogle() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Missing Supabase URL / anon key.");
+  }
+
+  const { error } = await requireClient().auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+
+  if (error) throw new Error(mapSupabaseAuthErrorToMessage(error));
+}
+
 export async function signOutUser() {
   if (!isSupabaseConfigured()) {
     throw new Error("Missing Supabase URL / anon key.");

@@ -638,7 +638,7 @@ $$;
 -- This function is created only when pgvector is installed. It uses the
 -- `<=>` operator for cosine distance, which is far faster than the JSONB
 -- fallback above.
-do $$
+do $outer$
 begin
   if exists (select 1 from pg_extension where extname = 'vector') then
     execute $f$
@@ -661,7 +661,7 @@ begin
       stable
       security definer
       set search_path = public
-      as $$
+      as $func$
         select
           ke.chunk_id,
           ke.document_id,
@@ -680,10 +680,10 @@ begin
           and (1 - (ke.embedding_vector <=> p_query_embedding)) >= p_min_similarity
         order by ke.embedding_vector <=> p_query_embedding
         limit p_match_count;
-      $$;
+      $func$;
     $f$;
   end if;
-end$$;
+end$outer$;
 
 -- ============================================================================
 -- 11. SQL function: keyword_search_chunks — token overlap fallback

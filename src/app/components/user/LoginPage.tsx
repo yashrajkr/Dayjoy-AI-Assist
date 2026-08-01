@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   signInUser,
   signUpUser,
+  signInWithGoogle,
   getCurrentUser,
   getCurrentSession,
   getUserRoleFromMetadata,
@@ -67,6 +68,7 @@ export function LoginPage() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<SignupRole>("customer");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "info" | "success"; text: string } | null>(null);
 
   const supabaseReady = isSupabaseConfigured();
@@ -162,6 +164,28 @@ export function LoginPage() {
       setMessage({ kind: "error", text: normalizeAuthErrorToUi(err) });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGoogleLogin() {
+    if (googleLoading || loading) return;
+    setMessage(null);
+
+    if (!supabaseReady) {
+      setMessage({
+        kind: "error",
+        text: "Google sign-in requires Supabase to be configured.",
+      });
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      // Browser navigates to Google now; this component unmounts.
+    } catch (err) {
+      setMessage({ kind: "error", text: normalizeAuthErrorToUi(err) });
+      setGoogleLoading(false);
     }
   }
 
@@ -307,6 +331,27 @@ export function LoginPage() {
           >
             Sign up
           </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={googleLoading || loading}
+          className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-5 py-3 font-medium text-foreground shadow-sm hover:bg-accent/50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mb-5"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z" />
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.58-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z" />
+            <path fill="#FBBC05" d="M3.95 10.71A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.27-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l2.99-2.33z" />
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l2.99 2.33C4.66 5.16 6.65 3.58 9 3.58z" />
+          </svg>
+          {googleLoading ? "Redirecting…" : "Continue with Google"}
+        </button>
+
+        <div className="flex items-center gap-3 mb-5" aria-hidden="true">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">or continue with email</span>
+          <div className="h-px flex-1 bg-border" />
         </div>
 
         <form id="login-form" onSubmit={handleSubmit} className="space-y-4">

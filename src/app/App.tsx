@@ -11,6 +11,7 @@ import { subscribeToNotificationClicks } from "./lib/pushNotifications";
 // Eager-loaded: critical-path UI (login + selector + layout shells)
 import { AppSelector } from "./components/AppSelector";
 import { LoginPage } from "./components/user/LoginPage";
+import { AuthCallback } from "./components/user/AuthCallback";
 import { UserLayout } from "./components/user/UserLayout";
 import { AdminLayout } from "./components/admin/AdminLayout";
 
@@ -187,6 +188,7 @@ export default function App() {
           {/* Public */}
           <Route path="/select" element={<AppSelector />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/lead-capture" element={<LeadCapturePage />} />
 
           {/* User app */}

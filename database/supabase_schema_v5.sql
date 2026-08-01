@@ -287,7 +287,7 @@ where not exists (select 1 from integration_configs where integration_key = 'pus
 create or replace function public.log_chat_attachment_audit()
 returns trigger as $$
 begin
-  insert into audit_logs (user_id, action, entity_type, entity_id, metadata)
+  insert into audit_logs (created_by, action, entity_type, entity_id, metadata)
   values (
     new.user_id,
     'INSERT',
@@ -313,7 +313,7 @@ for each row execute procedure public.log_chat_attachment_audit();
 create or replace function public.log_ocr_audit()
 returns trigger as $$
 begin
-  insert into audit_logs (user_id, action, entity_type, entity_id, metadata)
+  insert into audit_logs (created_by, action, entity_type, entity_id, metadata)
   values (
     new.user_id,
     'INSERT',
