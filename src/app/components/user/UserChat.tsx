@@ -59,7 +59,7 @@ import {
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
-import { streamChatWithBackend, type ChatSource } from "../../../lib/api";
+import { streamChatWithBackend, SessionExpiredError, type ChatSource } from "../../../lib/api";
 import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
 import { VoiceControls } from "../voice/VoiceControls";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
@@ -466,6 +466,11 @@ export function UserChat() {
             });
             if (m) setMessages((prev) => [...prev, m as ChatMessage]);
           }
+        } else if (e instanceof SessionExpiredError) {
+          // No/expired Supabase session — sending would otherwise 401 with an
+          // opaque "Authentication required" and leave the user stuck here.
+          setError(e.message);
+          navigate("/login");
         } else {
           console.error("[chat] send failed", e);
           setError(

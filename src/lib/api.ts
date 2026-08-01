@@ -156,6 +156,27 @@ async function getBearerToken(): Promise<string | null> {
   }
 }
 
+/** Thrown by `requireBearerToken` so callers can distinguish "logged out" from other failures. */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("Your session has expired. Please log in again.");
+    this.name = "SessionExpiredError";
+  }
+}
+
+/**
+ * Like `getBearerToken`, but throws `SessionExpiredError` when Supabase is
+ * configured yet no session is present. Without this, requests to backend
+ * routes that require auth (e.g. /chat) silently went out with no
+ * Authorization header and came back as an opaque "401 Authentication
+ * required" — indistinguishable from a real config/backend problem.
+ */
+async function requireBearerToken(): Promise<string | null> {
+  const token = await getBearerToken();
+  if (!token && supabase) throw new SessionExpiredError();
+  return token;
+}
+
 /**
  * Send a chat message and return the full AI response.
  *
@@ -165,7 +186,7 @@ async function getBearerToken(): Promise<string | null> {
 export async function chatWithBackend(req: ChatRequest): Promise<ChatResponse> {
   const apiBaseUrl = getApiBaseUrl();
   const url = `${apiBaseUrl}/chat`;
-  const token = await getBearerToken();
+  const token = await requireBearerToken();
 
   let res: Response;
   try {
@@ -205,7 +226,7 @@ export async function streamChatWithBackend(
 ): Promise<ChatResponse> {
   const apiBaseUrl = getApiBaseUrl();
   const streamUrl = `${apiBaseUrl}/chat/stream`;
-  const token = await getBearerToken();
+  const token = await requireBearerToken();
 
   try {
     const res = await fetch(streamUrl, {
@@ -278,6 +299,7 @@ export async function streamChatWithBackend(
     };
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
+    if (e instanceof SessionExpiredError) throw e;
     // Fall back to non-streaming.
     console.warn("[chat api] streaming failed, falling back to non-stream.", e);
     const fallback = await chatWithBackend(req);
