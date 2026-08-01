@@ -6,7 +6,7 @@ import {
 import { PageHeader, Card, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
 import { Modal, modalButtonClass } from "../common/Modal";
 import {
-  agentList, agentGet, agentUpdate, agentChat, agentCollaborate, agentMemory, agentMemoryDelete,
+  agentList, agentUpdate, agentChat, agentCollaborate, agentMemory, agentMemoryDelete,
   type AIAgent,
 } from "../../../lib/api";
 

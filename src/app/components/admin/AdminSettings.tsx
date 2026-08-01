@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Settings as SettingsIcon, Save, ToggleLeft, ToggleRight, Building2, Palette,
-  KeyRound, Plus, Trash2, Copy, Check, Loader2, Bell, Languages, Shield, Database,
+  KeyRound, Plus, Trash2, Copy, Check, Loader2, Bell, Shield,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { BRAND } from "../../lib/brand";

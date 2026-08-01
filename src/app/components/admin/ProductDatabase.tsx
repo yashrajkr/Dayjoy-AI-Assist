@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Package, Plus, Search, Edit, Trash2, CheckCircle, Clock, Upload,
-  Archive, RotateCcw, Loader2, X, Save, Tag,
+  Archive, RotateCcw, Loader2, X, Save,
 } from "lucide-react";
 import {
   type Product,

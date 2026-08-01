@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Headphones, RefreshCw, User, MessageSquare, Send, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { Headphones, RefreshCw, User, MessageSquare, Send, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import {

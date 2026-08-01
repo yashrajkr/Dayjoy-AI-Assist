@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  MessageSquare, Mail, Smartphone, Bell, Inbox, Send, Search, Filter,
-  CheckCircle, Clock, AlertTriangle, Loader2, RefreshCw, User, Phone,
-  Mail as MailIcon, Trash2, Edit, Plus, X, Zap,
+  MessageSquare, Mail, Smartphone, Bell, Inbox, Send, Search,
+  Loader2, RefreshCw, Zap,
 } from "lucide-react";
 import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
 import {
   commListChannels, commListConversations, commListMessages, commSendMessage,
   commAssignConversation, commUpdateConversationStatus,
@@ -35,7 +33,7 @@ export function CommunicationCenter() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
+  const [channelFilter] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [msgLoading, setMsgLoading] = useState(false);

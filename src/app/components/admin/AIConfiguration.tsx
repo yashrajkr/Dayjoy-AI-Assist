@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Brain, Save, RotateCcw, Loader2, AlertCircle, CheckCircle2, Sliders, MessageSquare,
-  Shield, Languages, Database, Zap, Thermometer, Hash,
+  Brain, Save, RotateCcw, Loader2, CheckCircle2, Sliders, MessageSquare,
+  Shield, Database, Zap, Thermometer, Hash,
 } from "lucide-react";
 import {
   PageHeader, Card, LoadingState, ErrorState, btnClass,

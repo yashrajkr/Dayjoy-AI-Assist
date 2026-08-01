@@ -20,7 +20,7 @@ import {
  * access via existing policies).
  */
 export function LeaderDashboard() {
-  const { currentUser } = useAuth();
+  useAuth();
   const [stats, setStats] = useState({
     teamSize: 0,
     teamChats: 0,

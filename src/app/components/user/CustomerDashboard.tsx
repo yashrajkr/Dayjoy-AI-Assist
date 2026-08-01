@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  LayoutDashboard, Heart, Clock, Target, Headphones, Bell, Sparkles,
-  Package, MessageSquare, TrendingUp, ArrowRight, Megaphone, Star,
+  Heart, Clock, Target, Headphones, Bell, Sparkles,
+  Package, MessageSquare, ArrowRight, Megaphone,
 } from "lucide-react";
 import { customerDashboard, type CustomerDashboard as DashboardData } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";

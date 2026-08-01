@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  LayoutDashboard, Users, ClipboardList, Headphones, BarChart3, AlertCircle,
-  TrendingUp, TrendingDown, FileText, Package, Brain, Clock, Target,
-  CheckCircle2, XCircle, MessageSquare, GraduationCap,
+  LayoutDashboard, Users, Headphones, BarChart3, AlertCircle,
+  TrendingUp, FileText, Package, Brain, Clock, Target,
+  XCircle, MessageSquare, GraduationCap,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import {
   PageHeader, Card, StatCard, LoadingState, ErrorState, btnClass,
 } from "../common/AdminUI";
-import { LineChart, BarChart, DonutChart, ProgressBar, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
+import { LineChart, BarChart, DonutChart, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   adminGetStats, adminAnalyticsSummary, adminTopProducts, adminTopQuestions,
   type AdminStats,
