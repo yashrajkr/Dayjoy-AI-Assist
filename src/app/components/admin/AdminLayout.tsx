@@ -30,7 +30,6 @@ import {
   ChevronsLeft,
   Brain,
   Lock,
-  MessageSquare,
   Send,
   Bot,
   Workflow,
@@ -85,8 +84,7 @@ const NAV_SECTIONS: { heading: string; items: NavItemDef[] }[] = [
   {
     heading: "Communication",
     items: [
-      { to: "/admin/communication", icon: MessageSquare, label: "Comm Center" },
-      { to: "/admin/comm-hub", icon: Send, label: "Campaigns & Hub" },
+      { to: "/admin/comm-hub", icon: Send, label: "Communication Hub" },
     ],
   },
   {

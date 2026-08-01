@@ -155,9 +155,6 @@ const ExecutiveDashboard = lazy(() =>
 const AnalyticsHub = lazy(() =>
   import("./components/admin/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })),
 );
-const CommunicationCenter = lazy(() =>
-  import("./components/admin/CommunicationCenter").then((m) => ({ default: m.CommunicationCenter })),
-);
 const CommunicationHub = lazy(() =>
   import("./components/admin/CommunicationHub").then((m) => ({ default: m.CommunicationHub })),
 );
@@ -416,16 +413,10 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="communication"
-              element={
-                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
-                  <Suspense fallback={<AppShellFallback />}>
-                    <CommunicationCenter />
-                  </Suspense>
-                </ProtectedRoute>
-              }
-            />
+            {/* CommunicationCenter was superseded by CommunicationHub (superset:
+                channels+templates+campaigns+webhooks+automations). Redirect
+                the old route so no bookmarked/linked URL 404s. */}
+            <Route path="communication" element={<Navigate to="/admin/comm-hub" replace />} />
             <Route
               path="comm-hub"
               element={
