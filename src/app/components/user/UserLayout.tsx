@@ -21,6 +21,7 @@ import {
   Heart,
   Target,
   Search,
+  AudioLines,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -166,6 +167,7 @@ export function UserLayout() {
           ) : null}
           <div className="space-y-1">
             <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+            <NavItem to="/voice" icon={AudioLines} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             <NavItem to="/products" icon={Package} label="Product Discovery" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />

@@ -149,6 +149,9 @@ const WellnessJourney = lazy(() =>
 const KnowledgeCenter = lazy(() =>
   import("./components/user/KnowledgeCenter").then((m) => ({ default: m.KnowledgeCenter })),
 );
+const VoiceAssistant = lazy(() =>
+  import("./components/voice/VoiceAssistant").then((m) => ({ default: m.VoiceAssistant })),
+);
 const ExecutiveDashboard = lazy(() =>
   import("./components/admin/ExecutiveDashboard").then((m) => ({ default: m.ExecutiveDashboard })),
 );
@@ -355,6 +358,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <KnowledgeCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="voice"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <VoiceAssistant />
                   </Suspense>
                 </ProtectedRoute>
               }
