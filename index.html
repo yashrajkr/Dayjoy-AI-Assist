@@ -32,7 +32,13 @@
 
     <!-- Boot loader: prevents white flash + shows branded splash until React mounts -->
     <style>
+      /* This unlayered background always outranks the app's `@layer base`
+         body rule (unlayered CSS beats layered CSS regardless of source
+         order/specificity), so it must react to `.dark` directly — next-themes
+         adds/removes that class on <html> — or the page stays pinned to the
+         light color forever, including after switching to dark mode. */
       html, body { height: 100%; margin: 0; background: #F8F7EE; }
+      html.dark, html.dark body { background: #0F1A0D; }
       #root { height: 100%; min-height: 100vh; }
       .dj-boot-splash {
         position: fixed; inset: 0;
