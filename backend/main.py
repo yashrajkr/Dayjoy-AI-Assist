@@ -736,18 +736,11 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         or not bool(context)
     )
 
-    # Persist messages
-    if token and conv_id:
-        await supabase_insert(token, "chat_messages", {
-            "conversation_id": conv_id, "role": "user", "content": req.message,
-            "safety_status": "safe", "handoff_required": False,
-        })
-        await supabase_insert(token, "chat_messages", {
-            "conversation_id": conv_id, "role": "assistant", "content": answer,
-            "sources": [s.model_dump() for s in sources],
-            "safety_status": "safe", "handoff_required": handoff_required,
-            "confidence": confidence,
-        })
+    # NOTE: message persistence is owned by the frontend (see UserChat.tsx's
+    # handleSend -> appendMessage), which needs the real DB-assigned row ids
+    # for its optimistic-UI reconciliation, feedback, and regenerate
+    # features. Inserting here too duplicated every message in
+    # chat_messages — this endpoint only needs conv_id for history/context.
 
     await _log_analytics(token, user_id, req, category, sources, confidence)
 
@@ -821,17 +814,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 "Please create a support ticket for a verified response."
             )
 
-        if token and conv_id:
-            await supabase_insert(token, "chat_messages", {
-                "conversation_id": conv_id, "role": "user", "content": req.message,
-                "safety_status": "safe", "handoff_required": False,
-            })
-            await supabase_insert(token, "chat_messages", {
-                "conversation_id": conv_id, "role": "assistant", "content": aggregated,
-                "sources": [s.model_dump() for s in sources],
-                "safety_status": "safe", "handoff_required": handoff_required,
-                "confidence": confidence,
-            })
+        # NOTE: message persistence is owned by the frontend — see the same
+        # note in the non-streaming /chat handler above.
 
         await _log_analytics(token, user_id, req, category, sources, confidence)
 
