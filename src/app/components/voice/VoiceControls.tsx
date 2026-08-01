@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Mic, MicOff, Volume2, VolumeX, Square } from "lucide-react";
+import { Mic, Volume2, VolumeX, Square } from "lucide-react";
 import { useEffect } from "react";
 import type { VoiceState } from "../../lib/useVoice";
 
@@ -26,12 +26,15 @@ export function VoiceControls({
   onTranscript: (text: string) => void;
   className?: string;
 }) {
-  // When recognition produces a final transcript, push it to the composer.
+  // When recognition produces a final transcript, push it to the composer
+  // and immediately clear it — otherwise it lingers in hook state and can
+  // leak back into the input box (and get re-sent) on a later render.
   useEffect(() => {
     if (voice.transcript) {
       onTranscript(voice.transcript);
+      voice.clearTranscript();
     }
-  }, [voice.transcript, onTranscript]);
+  }, [voice.transcript, voice.clearTranscript, onTranscript]);
 
   if (!voice.supported) {
     // Hide entirely when unsupported — no broken buttons.
@@ -113,9 +116,15 @@ export function VoiceControls({
         {voice.muted ? (
           <VolumeX className="w-4 h-4" aria-hidden="true" />
         ) : (
-          <MicOff className="w-4 h-4" aria-hidden="true" />
+          <Volume2 className="w-4 h-4" aria-hidden="true" />
         )}
       </button>
+
+      {voice.error ? (
+        <span role="alert" className="text-[11px] text-destructive ml-1 max-w-[220px] truncate" title={voice.error}>
+          {voice.error}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -42,14 +42,34 @@ export type VoiceState = {
   muted: boolean;
   transcript: string;
   interimTranscript: string;
+  /** Human-readable message when mic start or recognition fails; null otherwise. */
+  error: string | null;
   startListening: () => void;
   stopListening: () => void;
+  /** Clears the current transcript — call after consuming it so a stale value can't leak into a later render. */
+  clearTranscript: () => void;
   speak: (text: string) => void;
   stopSpeaking: () => void;
   toggleMute: () => void;
   /** Amplitude 0..1 for waveform animation (updated during speaking). */
   amplitude: number;
 };
+
+function describeRecognitionError(code: string): string {
+  switch (code) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone access was denied. Allow microphone access in your browser settings to use voice input.";
+    case "no-speech":
+      return "No speech detected. Try again.";
+    case "audio-capture":
+      return "No microphone was found.";
+    case "network":
+      return "Voice recognition needs an internet connection.";
+    default:
+      return "Voice input failed. Please try again.";
+  }
+}
 
 const LANG_MAP: Record<string, string> = {
   en: "en-US",
@@ -64,6 +84,7 @@ export function useVoice(language: string = "en"): VoiceState {
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [amplitude, setAmplitude] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -92,12 +113,17 @@ export function useVoice(language: string = "en"): VoiceState {
       }
       setInterimTranscript(interim);
       if (final) {
+        setError(null);
         setTranscript((prev) => prev + final);
       }
     };
     rec.onerror = (event) => {
       console.warn("[voice] recognition error:", event.error);
       setListening(false);
+      // "aborted" fires on our own stop()/unmount calls — not a real failure.
+      if (event.error !== "aborted") {
+        setError(describeRecognitionError(event.error));
+      }
     };
     rec.onend = () => {
       setListening(false);
@@ -127,13 +153,22 @@ export function useVoice(language: string = "en"): VoiceState {
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current || listening) return;
+    // Starting the mic while TTS is still playing risks the mic picking up
+    // the speaker's own audio and transcribing it back as user input —
+    // interrupt playback first instead of letting the two run concurrently.
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeaking(false);
     setTranscript("");
     setInterimTranscript("");
+    setError(null);
     try {
       recognitionRef.current.start();
       setListening(true);
     } catch (e) {
       console.warn("[voice] start failed:", e);
+      setError("Couldn't start voice input. Please try again.");
     }
   }, [listening]);
 
@@ -142,9 +177,20 @@ export function useVoice(language: string = "en"): VoiceState {
     setListening(false);
   }, []);
 
+  const clearTranscript = useCallback(() => {
+    setTranscript("");
+  }, []);
+
   const speak = useCallback(
     (text: string) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window) || muted) return;
+      // Symmetric guard to the one in startListening: don't let TTS play
+      // into an open mic, or the recognizer can pick up and transcribe the
+      // response it's currently speaking.
+      if (listening) {
+        recognitionRef.current?.stop();
+        setListening(false);
+      }
       // Strip markdown for cleaner speech
       const clean = text
         .replace(/```[\s\S]*?```/g, " code block ")
@@ -182,7 +228,7 @@ export function useVoice(language: string = "en"): VoiceState {
       };
       window.speechSynthesis.speak(utterance);
     },
-    [language, muted, trackAmplitude],
+    [language, muted, listening, trackAmplitude],
   );
 
   const stopSpeaking = useCallback(() => {
@@ -215,8 +261,10 @@ export function useVoice(language: string = "en"): VoiceState {
     muted,
     transcript,
     interimTranscript,
+    error,
     startListening,
     stopListening,
+    clearTranscript,
     speak,
     stopSpeaking,
     toggleMute,
