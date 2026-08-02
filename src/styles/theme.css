@@ -71,14 +71,14 @@
 
   --radius: 0.75rem;
 
-  --sidebar: #FFFFFF;
-  --sidebar-rgb: 255, 255, 255;
+  --sidebar: #EEF6E9;
+  --sidebar-rgb: 238, 246, 233;
   --sidebar-foreground: #1F1F1F;
   --sidebar-primary: #234F1E;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F8F7EE;
-  --sidebar-accent-foreground: #1F1F1F;
-  --sidebar-border: rgba(0, 0, 0, 0.06);
+  --sidebar-accent: #DDEDD5;
+  --sidebar-accent-foreground: #234F1E;
+  --sidebar-border: rgba(35, 79, 30, 0.1);
   --sidebar-ring: #234F1E;
 
   /* Glassmorphism — light */

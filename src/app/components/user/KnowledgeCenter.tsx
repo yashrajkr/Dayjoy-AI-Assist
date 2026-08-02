@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { Search, FileQuestion, ScrollText, Package, GraduationCap, FileText, Loader2, AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Search, FileQuestion, ScrollText, Package, GraduationCap, FileText, Loader2, AlertCircle, BadgeCheck, BookOpen } from "lucide-react";
 import { ErrorState, EmptyState } from "../common/AdminUI";
 import { customerKnowledgeSearch, type KnowledgeSearchResult } from "../../../lib/api";
 
@@ -52,22 +53,27 @@ export function KnowledgeCenter() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <div className="mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Search className="w-5 h-5 text-primary" /> Knowledge Center</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Search FAQs, policies, products, training, and documents — all from verified Dayjoy sources.</p>
+      <div className="mb-5 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+          <Search className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold">Knowledge Center</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Search FAQs, policies, products, training, and documents — all from verified Dayjoy sources.</p>
+        </div>
       </div>
 
       <div className="relative mb-3">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
           autoFocus placeholder="Search for anything… (e.g. ashwagandha, refund policy, distributor)"
-          className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-card text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-4">
+      <div className="flex flex-wrap gap-1.5 mb-5">
         {FILTERS.map((f) => (
           <button key={f.value} type="button" onClick={() => { setFilter(f.value); search(query); }}
-            className={`text-xs px-2.5 py-1 rounded-full ${filter === f.value ? "bg-primary text-primary-foreground" : "bg-accent text-muted-foreground hover:bg-accent/80"}`}>{f.label}</button>
+            className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === f.value ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground hover:bg-accent/70"}`}>{f.label}</button>
         ))}
       </div>
 
@@ -90,10 +96,25 @@ export function KnowledgeCenter() {
                   </h2>
                   <div className="space-y-2">
                     {items.map((r, i) => (
-                      <div key={`${type}-${r.entity_id}-${i}`} className="rounded-xl border border-border bg-card p-3">
-                        <p className="text-sm font-medium">{r.title || "Untitled"}</p>
-                        {r.snippet ? <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.snippet}</p> : null}
-                        {r.category ? <span className="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground">{r.category}</span> : null}
+                      <div key={`${type}-${r.entity_id}-${i}`} className="rounded-xl border border-border bg-card p-4 hover:shadow-sm transition-shadow">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium">{r.title || "Untitled"}</p>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-accent text-accent-foreground">
+                                <BadgeCheck className="w-3 h-3" /> Verified
+                              </span>
+                            </div>
+                            {r.snippet ? <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.snippet}</p> : null}
+                            <p className="text-[11px] text-muted-foreground mt-2">
+                              {ENTITY_LABELS[type] || type}
+                              {r.category ? ` · ${r.category}` : ""}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -107,6 +128,17 @@ export function KnowledgeCenter() {
           <EmptyState title="Start searching" description="The Knowledge Center searches across FAQs, policies, products, training, and approved documents — all verified Dayjoy sources." icon={<Search className="w-5 h-5" />} />
         </div>
       )}
+
+      <div className="mt-6 rounded-2xl border border-dashed border-border bg-accent/30 p-6 text-center">
+        <div className="w-10 h-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center mx-auto mb-3">
+          <BookOpen className="w-5 h-5" />
+        </div>
+        <p className="text-sm font-semibold">Can't find what you need?</p>
+        <p className="text-xs text-muted-foreground mt-1">Reach out to our support team and we'll help you find an answer.</p>
+        <Link to="/support" className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent/60 transition-colors">
+          Contact support
+        </Link>
+      </div>
     </div>
   );
 }
