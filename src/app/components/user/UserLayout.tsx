@@ -28,8 +28,6 @@ import {
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
-import { ThemeToggle } from "../common/ThemeToggle";
-import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { Onboarding } from "../onboarding/Onboarding";
 import { CommandPalette, type CommandPaletteItem } from "../common/CommandPalette";
 import {
@@ -154,10 +152,7 @@ export function UserLayout() {
             <Menu className="w-5 h-5" aria-hidden="true" />
           </button>
           <DayjoyLogo variant="full" size={28} />
-          <div className="flex items-center gap-1">
-            <LanguageSwitcher />
-            <ThemeToggle />
-          </div>
+          <div className="w-9" aria-hidden="true" />
         </header>
 
         {/* Mobile drawer overlay */}
@@ -260,18 +255,22 @@ export function UserLayout() {
 
             {!collapsed && recentChats.length > 0 ? (
               <div className="pt-5">
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Recent chats
-                </p>
-                {recentChats.map((c) => (
-                  <NavLink
-                    key={c.id}
-                    to={`/chat/${c.id}`}
-                    onClick={() => setDrawerOpen(false)}
-                    className="block truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-                  >
-                    {c.title}
-                  </NavLink>
+                {groupChatsByDate(recentChats).map((group) => (
+                  <div key={group.label} className="mb-2">
+                    <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {group.label}
+                    </p>
+                    {group.items.map((c) => (
+                      <NavLink
+                        key={c.id}
+                        to={`/chat/${c.id}`}
+                        onClick={() => setDrawerOpen(false)}
+                        className="block truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                      >
+                        {c.title}
+                      </NavLink>
+                    ))}
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -332,14 +331,8 @@ export function UserLayout() {
               </NavLink>
             ) : null}
 
-            {/* Desktop theme toggle + language + collapse */}
+            {/* Desktop collapse control — theme toggle + notifications now live in the shared PageHeader */}
             <div className={`hidden lg:flex items-center gap-1 pt-1 ${collapsed ? "justify-center flex-col" : "justify-end"}`}>
-              {!collapsed ? (
-                <>
-                  <LanguageSwitcher />
-                  <ThemeToggle />
-                </>
-              ) : null}
               <button
                 type="button"
                 onClick={toggleCollapsed}
@@ -356,7 +349,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0 pb-16 lg:pb-0"
+          className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto pt-14 lg:pt-0 pb-16 lg:pb-0"
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">
@@ -366,7 +359,7 @@ export function UserLayout() {
               animate="animate"
               exit="exit"
               variants={pageTransition}
-              className="h-full flex flex-col min-w-0"
+              className="flex-1 flex flex-col min-w-0 min-h-0"
             >
               <Outlet />
             </motion.div>
@@ -409,6 +402,35 @@ export function UserLayout() {
       </div>
     </TooltipProvider>
   );
+}
+
+/** Buckets conversations into Today / Yesterday / Previous 7 days / Older groups. */
+function groupChatsByDate(chats: Conversation[]): { label: string; items: Conversation[] }[] {
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = startOfDay(now);
+  const yesterday = today - 86400000;
+  const weekAgo = today - 7 * 86400000;
+
+  const buckets: Record<string, Conversation[]> = {
+    Today: [],
+    Yesterday: [],
+    "Previous 7 days": [],
+    Older: [],
+  };
+
+  for (const c of chats) {
+    const ts = c.updated_at ?? c.created_at;
+    const day = ts ? startOfDay(new Date(ts)) : today;
+    if (day >= today) buckets.Today.push(c);
+    else if (day >= yesterday) buckets.Yesterday.push(c);
+    else if (day >= weekAgo) buckets["Previous 7 days"].push(c);
+    else buckets.Older.push(c);
+  }
+
+  return Object.entries(buckets)
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, items }));
 }
 
 function NavItem({
