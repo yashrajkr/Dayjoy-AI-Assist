@@ -690,10 +690,10 @@ export function UserChat() {
     const title = activeConv?.title ?? "Conversation";
     const lines: string[] = [
       `<html><head><title>${title}</title>`,
-      `<style>body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1F1F1F}h1{color:#2F7D3A}.msg{margin:16px 0;padding:12px;border-radius:8px}.user{background:#E4F4DC}.ai{background:#F3EAD8}.role{font-weight:600;font-size:12px;color:#6B6B6B;margin-bottom:4px}.ts{font-size:10px;color:#999}.src{font-size:11px;color:#666;margin-top:8px}</style>`,
+      `<style>body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#2A2019}h1{color:#DD6B3D}.msg{margin:16px 0;padding:12px;border-radius:8px}.user{background:#FBE7D8}.ai{background:#F3EAD8}.role{font-weight:600;font-size:12px;color:#7A6D63;margin-bottom:4px}.ts{font-size:10px;color:#999}.src{font-size:11px;color:#666;margin-top:8px}</style>`,
       `</head><body>`,
       `<h1>${BRAND.name}</h1>`,
-      `<p style="color:#6B6B6B">Conversation: ${title}</p>`,
+      `<p style="color:#7A6D63">Conversation: ${title}</p>`,
       `<hr/>`,
     ];
     for (const m of messages) {

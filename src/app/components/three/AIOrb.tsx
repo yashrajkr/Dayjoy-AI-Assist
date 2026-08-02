@@ -36,9 +36,9 @@ interface StatePalette {
 
 const STATE_PALETTES: Record<AIOrbState, StatePalette> = {
   idle: {
-    outer: new THREE.Color("#2F7D3A"),
+    outer: new THREE.Color("#DD6B3D"),
     inner: new THREE.Color("#FFC98B"),
-    rim: new THREE.Color("#5A9350"),
+    rim: new THREE.Color("#E8965A"),
   },
   thinking: {
     outer: new THREE.Color("#FFC98B"),
@@ -46,14 +46,14 @@ const STATE_PALETTES: Record<AIOrbState, StatePalette> = {
     rim: new THREE.Color("#FFC98B"),
   },
   answering: {
-    outer: new THREE.Color("#E4F4DC"),
-    inner: new THREE.Color("#5A9350"),
-    rim: new THREE.Color("#2F7D3A"),
+    outer: new THREE.Color("#FBE7D8"),
+    inner: new THREE.Color("#E8965A"),
+    rim: new THREE.Color("#DD6B3D"),
   },
   listening: {
-    outer: new THREE.Color("#5A9350"),
-    inner: new THREE.Color("#8FC77F"),
-    rim: new THREE.Color("#E4F4DC"),
+    outer: new THREE.Color("#E8965A"),
+    inner: new THREE.Color("#F0B27E"),
+    rim: new THREE.Color("#FBE7D8"),
   },
   error: {
     outer: new THREE.Color("#B7791F"),
@@ -66,9 +66,9 @@ const STATE_PALETTES: Record<AIOrbState, StatePalette> = {
     rim: new THREE.Color("#C62828"),
   },
   verified: {
-    outer: new THREE.Color("#2F7D3A"),
+    outer: new THREE.Color("#DD6B3D"),
     inner: new THREE.Color("#FFC98B"),
-    rim: new THREE.Color("#2F7D3A"),
+    rim: new THREE.Color("#DD6B3D"),
   },
 };
 

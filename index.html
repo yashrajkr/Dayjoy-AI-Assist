@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Dayjoy AI Assist — Enterprise AI Assistant for Dayjoy wellness, healthcare, agriculture, and direct-selling ecosystem. Approved knowledge. Safe answers. Human escalation when needed." />
-    <meta name="theme-color" content="#234F1E" />
+    <meta name="theme-color" content="#DD6B3D" />
     <meta name="application-name" content="Dayjoy AI Assist" />
     <meta name="apple-mobile-web-app-title" content="Dayjoy AI Assist" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -21,9 +21,9 @@
     <meta name="twitter:title" content="Dayjoy AI Assist" />
     <meta name="twitter:description" content="Enterprise AI Assistant for Dayjoy." />
 
-    <!-- Favicon: inline SVG (leaf + chat bubble in Dayjoy green) -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23234F1E'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3Cpath d='M24 30c4-1.3 8-1.3 12 0M24 35c4-1 8-1 12 0' stroke='%23234F1E' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3Cpath d='M40 40c2 4 6 6 10 6-1-3-2-6-4-8-2-2-4-3-6-2z' fill='%23FFC98B'/%3E%3C/svg%3E" />
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23234F1E'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3C/svg%3E" />
+    <!-- Favicon: inline SVG (lotus mark in Dayjoy coral-orange) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23DD6B3D'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3Cpath d='M24 30c4-1.3 8-1.3 12 0M24 35c4-1 8-1 12 0' stroke='%23DD6B3D' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3Cpath d='M40 40c2 4 6 6 10 6-1-3-2-6-4-8-2-2-4-3-6-2z' fill='%23FFC98B'/%3E%3C/svg%3E" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23DD6B3D'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3C/svg%3E" />
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
@@ -45,17 +45,17 @@
          order/specificity), so it must react to `.dark` directly — next-themes
          adds/removes that class on <html> — or the page stays pinned to the
          light color forever, including after switching to dark mode. */
-      html, body { min-height: 100%; margin: 0; background: #F8F7EE; }
-      html.dark, html.dark body { background: #0F1A0D; }
+      html, body { min-height: 100%; margin: 0; background: #FBF7F1; }
+      html.dark, html.dark body { background: #1C130E; }
       #root { min-height: 100vh; }
       .dj-boot-splash {
         position: fixed; inset: 0;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
         gap: 18px;
-        background: linear-gradient(180deg, #F8F7EE 0%, #F3EAD8 100%);
+        background: linear-gradient(180deg, #FBF7F1 0%, #F3EAD8 100%);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-        color: #1F1F1F;
+        color: #2A2019;
         z-index: 9999;
         transition: opacity 240ms ease-out;
       }
@@ -63,23 +63,23 @@
       .dj-boot-logo {
         width: 64px; height: 64px;
         border-radius: 14px;
-        background: #234F1E;
+        background: #DD6B3D;
         display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 12px 32px -8px rgba(35, 79, 30, 0.35);
+        box-shadow: 0 12px 32px -8px rgba(221, 107, 61, 0.35);
         animation: dj-pulse 1.6s ease-in-out infinite;
       }
       .dj-boot-logo svg { width: 38px; height: 38px; }
       .dj-boot-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-      .dj-boot-subtitle { font-size: 13px; color: #6B6B6B; }
+      .dj-boot-subtitle { font-size: 13px; color: #7A6D63; }
       .dj-boot-bar {
         width: 160px; height: 3px;
-        background: rgba(35, 79, 30, 0.12);
+        background: rgba(221, 107, 61, 0.12);
         border-radius: 999px; overflow: hidden;
       }
       .dj-boot-bar::after {
         content: ''; display: block;
         width: 40%; height: 100%;
-        background: #234F1E;
+        background: #DD6B3D;
         border-radius: 999px;
         animation: dj-slide 1.1s ease-in-out infinite;
       }
@@ -97,7 +97,7 @@
         <div class="dj-boot-logo" aria-hidden="true">
           <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
             <path d="M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z" fill="#FFFFFF"/>
-            <path d="M24 30c4-1.3 8-1.3 12 0M24 35c4-1 8-1 12 0" stroke="#234F1E" stroke-width="2" stroke-linecap="round" fill="none"/>
+            <path d="M24 30c4-1.3 8-1.3 12 0M24 35c4-1 8-1 12 0" stroke="#DD6B3D" stroke-width="2" stroke-linecap="round" fill="none"/>
             <path d="M40 40c2 4 6 6 10 6-1-3-2-6-4-8-2-2-4-3-6-2z" fill="#FFC98B"/>
           </svg>
         </div>
