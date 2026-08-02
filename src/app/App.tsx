@@ -25,6 +25,9 @@ const UserChat = lazy(() =>
 const ProductDiscovery = lazy(() =>
   import("./components/user/ProductDiscovery").then((m) => ({ default: m.ProductDiscovery })),
 );
+const VoiceAssistant = lazy(() =>
+  import("./components/user/VoiceAssistant").then((m) => ({ default: m.VoiceAssistant })),
+);
 const DistributorAssistant = lazy(() =>
   import("./components/user/DistributorAssistant").then((m) => ({
     default: m.DistributorAssistant,
@@ -225,6 +228,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <ProductDiscovery />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="voice"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <VoiceAssistant />
                   </Suspense>
                 </ProtectedRoute>
               }

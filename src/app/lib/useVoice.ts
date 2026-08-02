@@ -53,6 +53,8 @@ export type VoiceState = {
   toggleMute: () => void;
   /** Amplitude 0..1 for waveform animation (updated during speaking). */
   amplitude: number;
+  /** System voices available for TTS, filtered to nothing until the browser reports them. */
+  voices: SpeechSynthesisVoice[];
 };
 
 function describeRecognitionError(code: string): string {
@@ -74,9 +76,26 @@ function describeRecognitionError(code: string): string {
 const LANG_MAP: Record<string, string> = {
   en: "en-US",
   hi: "hi-IN",
+  mr: "mr-IN",
+  bn: "bn-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  gu: "gu-IN",
+  pa: "pa-IN",
 };
 
-export function useVoice(language: string = "en"): VoiceState {
+export type VoiceOptions = {
+  /** Speech rate 0.5–2 (SpeechSynthesisUtterance.rate). Default 1. */
+  rate?: number;
+  /** Speech pitch 0–2 (SpeechSynthesisUtterance.pitch). Default 1. */
+  pitch?: number;
+  /** Output volume 0–1 (SpeechSynthesisUtterance.volume). Default 1. */
+  volume?: number;
+  /** Exact system voice name to use, from speechSynthesis.getVoices(). */
+  voiceName?: string;
+};
+
+export function useVoice(language: string = "en", options: VoiceOptions = {}): VoiceState {
   const [supported] = useState(() => getRecognitionCtor() !== null && typeof window !== "undefined" && "speechSynthesis" in window);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -85,11 +104,25 @@ export function useVoice(language: string = "en"): VoiceState {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [amplitude, setAmplitude] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
+  // Kept in a ref (not state) so `speak()` always reads the latest values
+  // without needing to be recreated — settings can change mid-conversation.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  // Load available system TTS voices — the list is async and browser-dependent.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const load = () => setVoices(window.speechSynthesis.getVoices());
+    load();
+    window.speechSynthesis.addEventListener("voiceschanged", load);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", load);
+  }, []);
 
   // Initialize recognition
   useEffect(() => {
@@ -199,8 +232,15 @@ export function useVoice(language: string = "en"): VoiceState {
         .slice(0, 1000);
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(clean);
+      const opts = optionsRef.current;
       utterance.lang = LANG_MAP[language] ?? "en-US";
-      utterance.rate = 1.0;
+      utterance.rate = opts.rate ?? 1.0;
+      utterance.pitch = opts.pitch ?? 1.0;
+      utterance.volume = opts.volume ?? 1.0;
+      if (opts.voiceName) {
+        const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
+        if (match) utterance.voice = match;
+      }
       utterance.onstart = () => {
         setSpeaking(true);
         // Set up audio analysis for waveform
@@ -269,5 +309,6 @@ export function useVoice(language: string = "en"): VoiceState {
     stopSpeaking,
     toggleMute,
     amplitude,
+    voices,
   };
 }
