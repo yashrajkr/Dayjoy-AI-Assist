@@ -25,6 +25,9 @@ const UserChat = lazy(() =>
 const ProductDiscovery = lazy(() =>
   import("./components/user/ProductDiscovery").then((m) => ({ default: m.ProductDiscovery })),
 );
+const VoiceAssistant = lazy(() =>
+  import("./components/user/VoiceAssistant").then((m) => ({ default: m.VoiceAssistant })),
+);
 const DistributorAssistant = lazy(() =>
   import("./components/user/DistributorAssistant").then((m) => ({
     default: m.DistributorAssistant,
@@ -119,8 +122,8 @@ const RolePermissions = lazy(() =>
 const UniversalSearch = lazy(() =>
   import("./components/admin/UniversalSearch").then((m) => ({ default: m.UniversalSearch })),
 );
-const DistributorDashboard = lazy(() =>
-  import("./components/user/DistributorDashboard").then((m) => ({ default: m.DistributorDashboard })),
+const BusinessIntelligence = lazy(() =>
+  import("./components/user/BusinessIntelligence").then((m) => ({ default: m.BusinessIntelligence })),
 );
 const CustomerProfiles = lazy(() =>
   import("./components/user/CustomerProfiles").then((m) => ({ default: m.CustomerProfiles })),
@@ -230,6 +233,16 @@ export default function App() {
               }
             />
             <Route
+              path="voice"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <VoiceAssistant />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="distributor"
               element={
                 <ProtectedRoute allowedRoles={["distributor", ...STAFF_ONLY]}>
@@ -244,7 +257,7 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
                   <Suspense fallback={<AppShellFallback />}>
-                    <DistributorDashboard />
+                    <BusinessIntelligence />
                   </Suspense>
                 </ProtectedRoute>
               }

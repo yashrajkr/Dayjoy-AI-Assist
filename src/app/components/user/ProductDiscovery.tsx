@@ -277,7 +277,7 @@ export function ProductDiscovery() {
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors ${
                     selectedCategory === cat
                       ? "bg-primary text-primary-foreground"
                       : "bg-accent text-accent-foreground hover:bg-accent/70"
@@ -297,161 +297,139 @@ export function ProductDiscovery() {
               onChange={(e) => setSortKey(e.target.value as SortKey)}
               className="text-xs sm:text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
-              <option value="newest">Newest</option>
-              <option value="name_asc">Name (A→Z)</option>
-              <option value="name_desc">Name (Z→A)</option>
+              <option value="newest">Sort: Newest</option>
+              <option value="name_asc">Sort: Name (A→Z)</option>
+              <option value="name_desc">Sort: Name (Z→A)</option>
             </select>
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div>
-            {loading ? (
-              <div className="text-muted-foreground py-8 text-sm">Loading products…</div>
-            ) : filteredProducts.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="text-sm font-medium">No products found</p>
-                <p className="text-xs mt-1">Try a different search or category filter.</p>
-              </div>
-            ) : (
-              <motion.div
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                initial="hidden"
-                animate="visible"
-                variants={{ visible: { transition: { staggerChildren: 0.06 } } }}
+        {/* Recently viewed — horizontal strip */}
+        {recentProducts.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
+              <History className="w-3.5 h-3.5" aria-hidden="true" /> Recently viewed:
+            </span>
+            {recentProducts.slice(0, 6).map((p, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => openDetail(p)}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-full bg-accent text-accent-foreground hover:bg-accent/70 transition-colors"
               >
-                {filteredProducts.map((p) => {
-                  const compared = inCompare(p);
-                  return (
-                    <motion.div
-                      key={String(p.id ?? p.product_name)}
-                      variants={{
-                        hidden: { opacity: 0, y: 16 },
-                        visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
-                      }}
-                      transition={{ duration: 0.2 }}
-                      className="bg-card border border-border rounded-2xl p-4 shadow-flat hover-raise flex flex-col"
-                    >
-                      <div className="h-32 rounded-xl bg-gradient-to-br from-accent to-card-beige mb-4 flex items-center justify-center">
-                        <span className="text-3xl font-semibold text-primary">
-                          {p.product_name?.slice(0, 1)?.toUpperCase() ?? "?"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="default">{p.category}</Badge>
-                        <CheckCircle2
-                          className="w-5 h-5 text-primary"
-                          aria-label="Approved"
-                        />
-                      </div>
-
-                      <h3 className="text-lg font-semibold">{p.product_name}</h3>
-                      {p.brand ? (
-                        <p className="text-xs text-muted-foreground mb-2">{p.brand}</p>
-                      ) : null}
-                      {p.benefits ? (
-                        <p className="text-sm mb-3 line-clamp-2">{p.benefits}</p>
-                      ) : null}
-
-                      <div className="flex gap-2 mt-auto">
-                        <Button type="button" onClick={() => openDetail(p)} className="flex-1 rounded-xl">
-                          <Eye className="w-4 h-4" aria-hidden="true" /> Details
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => toggleCompare(p)}
-                          className={`rounded-xl ${compared ? "border-primary bg-primary/10 text-primary hover:bg-primary/15" : ""}`}
-                          aria-pressed={compared}
-                        >
-                          <GitCompareArrows className="w-4 h-4" aria-hidden="true" />
-                          {compared ? "In compare" : "Compare"}
-                        </Button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            )}
+                {p.product_name}
+              </button>
+            ))}
           </div>
+        ) : null}
 
-          <aside className="bg-card border border-border rounded-2xl p-4 h-fit lg:sticky lg:top-6">
-            <h3 className="text-sm font-semibold mb-2">Comparison Panel</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Select up to 3 products to compare benefits, usage, and safety notes.
-            </p>
-            <div className="space-y-2 mb-4">
-              {[0, 1, 2].map((slot) => {
-                const p = compareSet[slot];
-                return (
-                  <div
-                    key={slot}
-                    className={`rounded-xl border ${
-                      p ? "border-primary/40 bg-primary/5 p-3" : "border-dashed border-border h-20 flex items-center justify-center text-xs text-muted-foreground"
-                    }`}
-                  >
-                    {p ? (
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{p.product_name}</p>
-                          <p className="text-[11px] text-muted-foreground">{p.category}</p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleCompare(p)}
-                          className="h-auto w-auto p-1 hover:bg-destructive/10 text-destructive"
-                          aria-label={`Remove ${p.product_name} from comparison`}
-                        >
-                          <X className="w-3.5 h-3.5" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <span>Select product {slot + 1}</span>
-                    )}
+        {loading ? (
+          <div className="text-muted-foreground py-8 text-sm">Loading products…</div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <p className="text-sm font-medium">No products found</p>
+            <p className="text-xs mt-1">Try a different search or category filter.</p>
+          </div>
+        ) : (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20"
+            initial="hidden"
+            animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.06 } } }}
+          >
+            {filteredProducts.map((p) => {
+              const compared = inCompare(p);
+              return (
+                <motion.div
+                  key={String(p.id ?? p.product_name)}
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+                  }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-card border border-border rounded-2xl overflow-hidden shadow-flat hover-raise flex flex-col"
+                >
+                  <div className="h-28 bg-gradient-to-br from-accent to-card-beige flex items-center justify-center px-4">
+                    <span className="text-xl font-semibold text-primary text-center leading-tight" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
+                      {p.product_name}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-            <Button
-              type="button"
-              onClick={() => setCompareOpen(true)}
-              disabled={compareSet.length < 2}
-              className="w-full rounded-xl"
-            >
-              Compare side-by-side ({compareSet.length}/3)
-            </Button>
 
-            {/* Recently viewed products */}
-            {recentProducts.length > 0 ? (
-              <div className="mt-6 pt-4 border-t border-border">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <History className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Recently viewed
-                  </h3>
-                </div>
-                <ul className="space-y-1">
-                  {recentProducts.slice(0, 5).map((p, i) => (
-                    <li key={i}>
-                      <button
+                  <div className="p-4 flex flex-col flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <Badge variant="default">{p.category}</Badge>
+                      <CheckCircle2
+                        className="w-5 h-5 text-primary"
+                        aria-label="Approved"
+                      />
+                    </div>
+
+                    <h3 className="text-base font-semibold">{p.product_name}</h3>
+                    {p.brand ? (
+                      <p className="text-xs text-muted-foreground mb-2">{p.brand}</p>
+                    ) : null}
+                    {p.benefits ? (
+                      <p className="text-sm mb-3 line-clamp-2 text-muted-foreground">{p.benefits}</p>
+                    ) : null}
+
+                    <div className="flex gap-2 mt-auto">
+                      <Button type="button" onClick={() => openDetail(p)} className="flex-1 rounded-xl">
+                        <Eye className="w-4 h-4" aria-hidden="true" /> Details
+                      </Button>
+                      <Button
                         type="button"
-                        onClick={() => openDetail(p)}
-                        className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-accent/50 transition-colors"
+                        variant="outline"
+                        onClick={() => toggleCompare(p)}
+                        className={`rounded-xl ${compared ? "border-primary bg-primary/10 text-primary hover:bg-primary/15" : ""}`}
+                        aria-pressed={compared}
                       >
-                        <p className="text-sm font-medium truncate">{p.product_name}</p>
-                        <p className="text-[10px] text-muted-foreground">{p.category}</p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </aside>
-        </div>
+                        <GitCompareArrows className="w-4 h-4" aria-hidden="true" />
+                        {compared ? "In compare" : "Compare"}
+                      </Button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
       </div>
+
+      {/* Floating compare bar — appears once at least one product is selected */}
+      {compareSet.length > 0 ? (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-2xl shadow-overlay px-4 py-3 flex items-center gap-3">
+          <div className="flex -space-x-2">
+            {compareSet.map((p) => (
+              <div
+                key={p.id ?? p.product_name}
+                title={p.product_name}
+                className="w-8 h-8 rounded-full bg-accent text-accent-foreground border-2 border-card flex items-center justify-center text-xs font-semibold"
+              >
+                {p.product_name?.slice(0, 1)?.toUpperCase()}
+              </div>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground hidden sm:inline">{compareSet.length} of 3 selected</span>
+          <Button
+            type="button"
+            onClick={() => setCompareOpen(true)}
+            disabled={compareSet.length < 2}
+            className="rounded-xl"
+          >
+            Compare side-by-side
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setCompareSet([])}
+            aria-label="Clear comparison selection"
+            className="rounded-xl"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
 
       {/* Product detail modal */}
       <Modal

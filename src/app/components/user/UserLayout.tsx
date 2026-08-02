@@ -22,6 +22,7 @@ import {
   Target,
   Search,
   MoreHorizontal,
+  Mic,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -101,6 +102,7 @@ export function UserLayout() {
 
   const paletteItems: CommandPaletteItem[] = [
     { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
+    { to: "/voice", icon: Mic, label: "Voice Assistant", group: "Main" },
     { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
     { to: "/products", icon: Package, label: "Product Discovery", group: "Main" },
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
@@ -108,7 +110,7 @@ export function UserLayout() {
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
     ...(canDistributor
       ? [
-          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Distributor Dashboard", group: "Distributor Hub" },
+          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Intelligence", group: "Distributor Hub" },
           { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Distributor Hub" },
           { to: "/distributor/customers", icon: Users, label: "Customers", group: "Distributor Hub" },
           { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Distributor Hub" },
@@ -228,6 +230,7 @@ export function UserLayout() {
             ) : null}
             <div className="space-y-1">
               <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/voice" icon={Mic} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/products" icon={Package} label="Product Discovery" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
@@ -238,7 +241,7 @@ export function UserLayout() {
                   {!collapsed ? (
                     <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
                   ) : <div className="pt-2" />}
-                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Intelligence" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
