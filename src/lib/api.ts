@@ -1356,6 +1356,80 @@ export async function distributorRolePlayHistory(limit = 20): Promise<Array<Reco
 }
 
 // ===========================================================================
+// Business Intelligence — AI Business Operating System dashboard API
+// ===========================================================================
+
+export type BiOverview = {
+  distributor: { id: string; full_name: string | null; distributor_code: string | null; state: string | null; city: string | null; kyc_status: string | null };
+  today: { sales_amount: number; business_volume: number; commission: number; new_customers: number; new_distributors: number; orders: number; revenue: number };
+  period: { weekly_business: number; monthly_business: number; yearly_business: number };
+  rank: { current: string | null; badge_icon: string | null; next: string | null; progress_pct: number; trailing_90d_bv: number; bv_needed_for_next: number };
+  team: { total: number; active: number; inactive: number; retention_pct: number };
+  target: { monthly_target: number; month_to_date: number; achievement_pct: number };
+  incentive: { current: string | null; current_reward: string | null; potential_value: number };
+  projected_income: number;
+  business_health_score: number | null;
+  ai_growth_score: number;
+};
+
+export async function biOverview(): Promise<BiOverview> {
+  return distGet("/distributor/bi/overview");
+}
+
+export async function biInsights(): Promise<{ insights: string[]; generated_by: string; wow_change_pct?: number | null }> {
+  return distGet("/distributor/bi/insights");
+}
+
+export async function biAsk(question: string, sessionId?: string): Promise<{ answer: string; session_id: string | null }> {
+  return distJson("POST", "/distributor/bi/ask", { question, session_id: sessionId });
+}
+
+export async function biAskHistory(sessionId?: string, limit = 50): Promise<Array<Record<string, unknown>>> {
+  const qs = new URLSearchParams();
+  if (sessionId) qs.set("session_id", sessionId);
+  qs.set("limit", String(limit));
+  return distGet(`/distributor/bi/ask/history?${qs.toString()}`);
+}
+
+export async function biTimeline(days = 30): Promise<{ events: Array<{ type: string; title: string; timestamp: string }> }> {
+  return distGet(`/distributor/bi/timeline?days=${days}`);
+}
+
+export async function biForecast(): Promise<{
+  has_enough_data: boolean;
+  message?: string;
+  daily_history?: Array<{ date: string; bv: number }>;
+  trend_direction?: "up" | "down" | "flat";
+  next_30_day_projection: number | null;
+  projected_daily_average?: number;
+}> {
+  return distGet("/distributor/bi/forecast");
+}
+
+export async function biTeamAnalytics(): Promise<{
+  top_leaders: Array<Record<string, unknown>>;
+  inactive_leaders: Array<Record<string, unknown>>;
+  needs_support: Array<Record<string, unknown>>;
+  new_joiners: Array<Record<string, unknown>>;
+  top_customers: Array<{ id: string; name: string; total_spend: number }>;
+  team_size: number;
+  active_count: number;
+}> {
+  return distGet("/distributor/bi/team-analytics");
+}
+
+export async function biAlerts(): Promise<{ alerts: Array<{ type: string; severity: "low" | "medium" | "high"; message: string }>; count: number }> {
+  return distGet("/distributor/bi/alerts");
+}
+
+export async function biGoalsProgress(): Promise<{
+  periods: Record<string, { actual: number; target: number; progress_pct: number | null }>;
+  goals: Array<Record<string, unknown>>;
+}> {
+  return distGet("/distributor/bi/goals-progress");
+}
+
+// ===========================================================================
 // Phase 4 — Customer Experience Platform API
 // ===========================================================================
 
