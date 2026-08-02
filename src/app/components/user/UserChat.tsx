@@ -466,7 +466,7 @@ export function UserChat() {
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
         // Auto-speak the response if TTS is available and not muted
-        if (voice.supported && !voice.muted && aggregated) {
+        if (voice.ttsSupported && !voice.muted && aggregated) {
           voice.speak(aggregated);
         }
 

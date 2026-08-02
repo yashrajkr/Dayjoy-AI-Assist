@@ -256,7 +256,7 @@ export function VoiceAssistant() {
           }
         }
 
-        if (voice.supported && !voice.muted && aggregated) {
+        if (voice.ttsSupported && !voice.muted && aggregated) {
           voice.speak(aggregated);
         }
       } catch (e) {
@@ -290,12 +290,12 @@ export function VoiceAssistant() {
 
   // Hands-free mode: automatically resume listening once the AI stops speaking.
   useEffect(() => {
-    if (!settings.handsFree || !voice.supported) return;
+    if (!settings.handsFree || !voice.sttSupported) return;
     if (!voice.speaking && !voice.listening && !thinking && !ended) {
       const t = window.setTimeout(() => voice.startListening(), 500);
       return () => window.clearTimeout(t);
     }
-  }, [settings.handsFree, voice.supported, voice.speaking, voice.listening, thinking, ended, voice]);
+  }, [settings.handsFree, voice.sttSupported, voice.speaking, voice.listening, thinking, ended, voice]);
 
   const toggleMic = useCallback(() => {
     if (voice.listening) {
@@ -491,7 +491,7 @@ export function VoiceAssistant() {
             <button
               type="button"
               onClick={toggleMic}
-              disabled={!voice.supported}
+              disabled={!voice.sttSupported}
               aria-label={voice.listening ? "Stop listening" : "Start voice input"}
               aria-pressed={voice.listening}
               className="relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
@@ -688,7 +688,7 @@ export function VoiceAssistant() {
           size="icon"
           className="h-11 w-11 rounded-full"
           onClick={toggleMic}
-          disabled={!voice.supported || ended}
+          disabled={!voice.sttSupported || ended}
           aria-label={voice.listening ? "Stop listening" : "Start voice input"}
           aria-pressed={voice.listening}
           title="Toggle microphone (Space)"

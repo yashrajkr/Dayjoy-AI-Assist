@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, Plus, BellRing, BellOff, Smartphone, AlertCircle, Check } from "lucide-react";
+import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, Plus, BellRing, BellOff, Smartphone, AlertCircle, Check, UserRound } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
@@ -27,7 +27,16 @@ type UserPreference = {
 };
 
 export function UserSettings() {
-  const { currentUser } = useAuth();
+  const { currentUser, role } = useAuth();
+  const displayName = currentUser?.user_metadata?.full_name
+    ? String(currentUser.user_metadata.full_name)
+    : currentUser?.email?.split("@")[0] ?? "Dayjoy User";
+  const initials = displayName
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   const [language, setLanguage] = useState<Language>("English");
   const [notifications, setNotifications] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -189,8 +198,28 @@ export function UserSettings() {
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <AppHeader title="Settings" subtitle={`Customize your ${BRAND.name} experience.`} icon={Settings} />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-3xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
       <div className="space-y-4">
+        <Card className="bg-gradient-to-br from-primary/8 to-transparent border-primary/15">
+          <div className="flex items-center gap-4">
+            <div
+              className="w-14 h-14 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-semibold text-lg shrink-0"
+              aria-hidden="true"
+            >
+              {initials || <UserRound className="w-6 h-6" aria-hidden="true" />}
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold truncate">{displayName}</h2>
+              <p className="text-sm text-muted-foreground truncate">{currentUser?.email ?? "Demo session"}</p>
+              {role ? (
+                <span className="inline-flex items-center mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
+                  {role}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+
         <Card>
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
@@ -257,7 +286,7 @@ export function UserSettings() {
               </p>
 
               {/* Status row */}
-              <div className="flex items-center gap-2 mb-3 text-xs">
+              <div className="flex items-center gap-2 mb-3 text-xs flex-wrap">
                 {pushState ? (
                   <>
                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${
@@ -435,13 +464,13 @@ export function UserSettings() {
               </div>
 
               {/* Add new preference */}
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={newPrefKey}
                   onChange={(e) => setNewPrefKey(e.target.value)}
                   placeholder="e.g. Favorite product category"
-                  className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                   aria-label="Memory key"
                 />
                 <input
@@ -449,7 +478,7 @@ export function UserSettings() {
                   value={newPrefValue}
                   onChange={(e) => setNewPrefValue(e.target.value)}
                   placeholder="e.g. Health Care"
-                  className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                   aria-label="Memory value"
                 />
                 <Button
@@ -457,6 +486,7 @@ export function UserSettings() {
                   onClick={addPref}
                   disabled={!newPrefKey.trim()}
                   aria-label="Add memory"
+                  className="shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                   Add
@@ -466,21 +496,26 @@ export function UserSettings() {
           </div>
         </Card>
 
-        <div className="flex items-center gap-3">
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            <Save className="w-4 h-4" aria-hidden="true" />
-            {saving ? "Saving…" : "Save settings"}
-          </Button>
-          {savedMessage ? (
-            <span className="inline-flex items-center gap-1 text-sm text-primary">
-              <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-              {savedMessage}
-            </span>
-          ) : null}
+        <div>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              <Save className="w-4 h-4" aria-hidden="true" />
+              {saving ? "Saving…" : "Save language & notifications"}
+            </Button>
+            {savedMessage ? (
+              <span className="inline-flex items-center gap-1 text-sm text-primary">
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                {savedMessage}
+              </span>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Push notifications and AI Memory save instantly — this button only applies your language and in-app notification preference.
+          </p>
         </div>
       </div>
       </div>
