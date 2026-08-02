@@ -259,6 +259,9 @@ export function UserChat() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Synchronous re-entrancy guard: `sending` state can't be trusted to block a
+  // second handleSend() call fired before React commits the first setSending(true).
+  const sendingRef = useRef(false);
 
   // Close attach menu on outside click
   useEffect(() => {
@@ -318,12 +321,13 @@ export function UserChat() {
   const handleSend = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
-      if (!text || sending) return;
+      if (!text || sending || sendingRef.current) return;
       if (text.length > 4000) {
         setError("Message is too long (max 4000 characters).");
         return;
       }
 
+      sendingRef.current = true;
       setError(null);
       setInput("");
       setStreamingText("");
@@ -335,6 +339,7 @@ export function UserChat() {
       if (!convId) {
         if (!currentUser) {
           setError("Unable to start a conversation without a logged-in user.");
+          sendingRef.current = false;
           setSending(false);
           return;
         }
@@ -342,6 +347,7 @@ export function UserChat() {
         const createdConv = await createConversation(currentUser.id, "New conversation", language);
         if (!createdConv) {
           setError("Could not create a new conversation. Please try again.");
+          sendingRef.current = false;
           setSending(false);
           return;
         }
@@ -438,14 +444,30 @@ export function UserChat() {
           rag_metadata: meta.rag_metadata ?? null,
         });
 
-        if (assistantMsg) {
-          assistantId = assistantMsg.id ?? null;
-          setMessages((prev) => [...prev, assistantMsg as ChatMessage]);
-          setLastAssistantId(assistantId);
-          // Auto-speak the response if TTS is available and not muted
-          if (voice.supported && !voice.muted && aggregated) {
-            voice.speak(aggregated);
-          }
+        // The answer must always render, even if the Supabase write above
+        // failed (network blip, RLS, etc.) — fall back to a locally-built
+        // message so the reply never silently vanishes after streaming.
+        assistantId = assistantMsg?.id ?? null;
+        const displayedAssistantMsg: ChatMessage =
+          (assistantMsg as ChatMessage | null) ?? {
+            conversation_id: convId ?? undefined,
+            role: "assistant",
+            content: aggregated,
+            sources: sourcesSnapshot as unknown,
+            safety_status: meta.safety_status ?? "safe",
+            handoff_required: meta.handoff_required ?? false,
+            confidence: meta.confidence ?? null,
+            verification_status: meta.verification_status ?? null,
+            handoff_message: meta.handoff_message ?? null,
+            rag_metadata: meta.rag_metadata ?? null,
+            created_at: new Date().toISOString(),
+            _unsaved: !assistantMsg,
+          };
+        setMessages((prev) => [...prev, displayedAssistantMsg]);
+        setLastAssistantId(assistantId);
+        // Auto-speak the response if TTS is available and not muted
+        if (voice.supported && !voice.muted && aggregated) {
+          voice.speak(aggregated);
         }
 
         // Auto-rename conversation if it's still "New conversation"
@@ -460,15 +482,27 @@ export function UserChat() {
         await refreshConversations();
       } catch (e) {
         if ((e as Error).name === "AbortError") {
-          // User pressed stop — keep what we have.
+          // User pressed stop — keep what we have, even if persistence fails.
           if (aggregated && convId) {
+            const stoppedContent = aggregated + "\n\n_⃠ Generation stopped by user._";
             const m = await appendMessage(convId!, {
               role: "assistant",
-              content: aggregated + "\n\n_⃠ Generation stopped by user._",
+              content: stoppedContent,
               safety_status: "safe",
               handoff_required: false,
             });
-            if (m) setMessages((prev) => [...prev, m as ChatMessage]);
+            setMessages((prev) => [
+              ...prev,
+              (m as ChatMessage | null) ?? {
+                conversation_id: convId ?? undefined,
+                role: "assistant",
+                content: stoppedContent,
+                safety_status: "safe",
+                handoff_required: false,
+                created_at: new Date().toISOString(),
+                _unsaved: true,
+              },
+            ]);
           }
         } else if (e instanceof SessionExpiredError) {
           // No/expired Supabase session — sending would otherwise 401 with an
@@ -484,6 +518,7 @@ export function UserChat() {
           );
         }
       } finally {
+        sendingRef.current = false;
         setSending(false);
         setStreamingText("");
         abortRef.current = null;
@@ -990,8 +1025,8 @@ export function UserChat() {
       {/* ============================= Chat area ============================= */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat header — branded with logo mark + trust badge */}
-        <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3 border-b border-border bg-card/80 backdrop-blur-sm flex-nowrap">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 overflow-hidden">
             {/* Conversation history toggle — opens the slide-out drawer */}
             <Button
               type="button"
@@ -1015,22 +1050,22 @@ export function UserChat() {
               <h2 className="text-sm sm:text-base font-semibold truncate leading-tight">
                 {activeConv?.title ?? "New conversation"}
               </h2>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground min-w-0">
                 {activeConv ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5" aria-hidden="true" />
-                    {formatTimestamp(activeConv.updated_at ?? activeConv.created_at)}
+                  <span className="inline-flex items-center gap-1 truncate">
+                    <Clock className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{formatTimestamp(activeConv.updated_at ?? activeConv.created_at)}</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-primary font-medium">
-                    <ShieldCheck className="w-2.5 h-2.5" aria-hidden="true" />
-                    Answers from approved knowledge
+                  <span className="inline-flex items-center gap-1 text-primary font-medium truncate">
+                    <ShieldCheck className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">Answers from approved knowledge</span>
                   </span>
                 )}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {activeConv ? (
               <>
                 <Button
@@ -1064,7 +1099,7 @@ export function UserChat() {
               id="dj-chat-language"
               value={language}
               onChange={(e) => setLanguage(e.target.value as Lang)}
-              className="text-xs sm:text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+              className="hidden sm:block text-xs sm:text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
             >
               <option value="English">English</option>
               <option value="Hindi">हिन्दी</option>
@@ -1222,12 +1257,13 @@ export function UserChat() {
                         key={p.title}
                         type="button"
                         onClick={() => handleSend(p.text)}
+                        disabled={sending}
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.35, delay: 0.2 + idx * 0.06 }}
                         whileHover={{ y: -3 }}
                         whileTap={{ scale: 0.98 }}
-                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden ${theme.ring}`}
+                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${theme.ring}`}
                       >
                         {/* Subtle gradient sheen on hover */}
                         <span
@@ -1285,6 +1321,7 @@ export function UserChat() {
                   <FollowUpChips
                     suggestions={generateFollowUps(lastAssistant.content, lastAssistant.sources)}
                     onSelect={handleSend}
+                    disabled={sending}
                   />
                 ) : null}
               </>
@@ -1541,9 +1578,6 @@ export function UserChat() {
                 </div>
               ) : null}
             </div>
-            <p className="text-[11px] text-muted-foreground text-center mt-2">
-              {BRAND.name} answers Dayjoy questions from approved company knowledge only, and may use general web search for unrelated questions. For medical advice, consult a healthcare professional.
-            </p>
           </div>
         </div>
       </div>
@@ -2172,6 +2206,14 @@ function MessageBubble({
           {message.created_at ? (
             <span className="text-muted-foreground">· {formatTimestamp(message.created_at)}</span>
           ) : null}
+          {message._unsaved ? (
+            <span
+              className="text-[10px] text-muted-foreground/80 italic"
+              title="This reply couldn't be saved, but is shown here for this session."
+            >
+              · not saved
+            </span>
+          ) : null}
         </div>
         <div
           className={`ai-prose prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
@@ -2279,9 +2321,11 @@ function ActionButton({
 function FollowUpChips({
   suggestions,
   onSelect,
+  disabled,
 }: {
   suggestions: string[];
   onSelect: (text: string) => void;
+  disabled?: boolean;
 }) {
   if (suggestions.length === 0) return null;
   return (
@@ -2301,12 +2345,13 @@ function FollowUpChips({
             key={i}
             type="button"
             onClick={() => onSelect(s)}
+            disabled={disabled}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.97 }}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, delay: 0.25 + i * 0.05 }}
-            className="group inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all"
+            className="group inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
           >
             <span className="text-foreground">{s}</span>
             <ArrowUp

@@ -166,7 +166,7 @@ export function UserLayout() {
         {/* Sidebar (also mobile drawer) */}
         <aside
           id="dj-user-drawer"
-          className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
+          className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           lg:flex`}
           aria-label="Primary navigation"
@@ -216,7 +216,7 @@ export function UserLayout() {
           ) : null}
 
           {/* Primary nav */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main">
+          <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4" aria-label="Main">
             {!collapsed ? (
               <p className="text-xs font-medium text-muted-foreground mb-2 px-3 uppercase tracking-wide">
                 {BRAND.shortName}
@@ -346,7 +346,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto pt-14 lg:pt-0 pb-16 lg:pb-0"
+          className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 pb-16 lg:pb-0"
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">

@@ -59,7 +59,7 @@ export function HumanSupport() {
     return (
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <AppHeader title="Support Centre" subtitle="Raise a ticket and a Dayjoy team member will respond directly." icon={LifeBuoy} />
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-2xl mx-auto w-full">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
         <Card className="border-primary/30 surface-gradient p-8 text-center shadow-none">
           <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" aria-hidden="true" />
           <h2 className="text-xl font-semibold mb-1">Ticket submitted</h2>
@@ -83,7 +83,7 @@ export function HumanSupport() {
         subtitle={`Can't find what you need from ${BRAND.name}? Raise a ticket and a Dayjoy team member will respond directly.`}
         icon={LifeBuoy}
       />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-2xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
       {error ? (
         <div
           role="alert"

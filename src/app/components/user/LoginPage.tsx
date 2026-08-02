@@ -193,7 +193,7 @@ export function LoginPage() {
   const pwStrength = mode === "signup" ? passwordStrength(password) : null;
 
   return (
-    <div className="min-h-screen flex relative theme-transition">
+    <div className="h-screen flex relative theme-transition overflow-hidden">
       {/* Branded left panel — desktop only, sets the enterprise tone before the form */}
       <div className="hidden lg:flex lg:w-[42%] xl:w-[38%] relative flex-col justify-between p-10 xl:p-14 overflow-hidden bg-primary text-primary-foreground">
         <div
@@ -250,7 +250,7 @@ export function LoginPage() {
       </div>
 
       {/* Form panel */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 relative">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 relative overflow-y-auto">
         <AnimatedBackground variant="subtle" />
 
         {/* Top-right controls */}
@@ -270,10 +270,10 @@ export function LoginPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="w-full max-w-md glass rounded-3xl shadow-overlay p-6 sm:p-8 relative"
+          className="w-full max-w-md glass rounded-3xl shadow-overlay p-5 sm:p-7 relative my-auto"
         >
         {/* 3D AI orb — lazy loaded */}
-        <div className="flex flex-col items-center mb-5 text-center">
+        <div className="flex flex-col items-center mb-3 text-center">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -283,14 +283,14 @@ export function LoginPage() {
             <Suspense
               fallback={
                 <div
-                  className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center"
+                  className="w-24 h-24 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center"
                   aria-hidden="true"
                 >
-                  <DayjoyLogo variant="mark" size={48} />
+                  <DayjoyLogo variant="mark" size={40} />
                 </div>
               }
             >
-              <AIOrb state="idle" size={160} />
+              <AIOrb state="idle" size={112} />
             </Suspense>
           </motion.div>
 
@@ -298,7 +298,7 @@ export function LoginPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.4 }}
-            className="text-xs text-muted-foreground uppercase tracking-wider mt-3"
+            className="text-xs text-muted-foreground uppercase tracking-wider mt-2"
           >
             {getGreeting()}
           </motion.p>
@@ -306,7 +306,7 @@ export function LoginPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.5 }}
-            className="text-2xl sm:text-3xl font-semibold text-foreground mt-1"
+            className="text-xl sm:text-2xl font-semibold text-foreground mt-0.5"
           >
             {BRAND.name}
           </motion.h1>
@@ -322,7 +322,7 @@ export function LoginPage() {
 
         {!supabaseReady && (
           <div
-            className="mb-4 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
+            className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
             role="alert"
           >
             <strong className="font-semibold">Demo mode active.</strong>{" "}
@@ -341,7 +341,7 @@ export function LoginPage() {
                 : { opacity: 1, y: 0 }
             }
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className={`mb-4 rounded-xl border px-3 py-2 text-sm ${
+            className={`mb-3 rounded-xl border px-3 py-2 text-sm ${
               message.kind === "error"
                 ? "border-destructive/30 bg-destructive/10 text-destructive"
                 : message.kind === "success"
@@ -354,7 +354,7 @@ export function LoginPage() {
           </motion.div>
         )}
 
-        <div className="flex gap-2 mb-6" role="tablist" aria-label="Authentication mode">
+        <div className="flex gap-2 mb-4" role="tablist" aria-label="Authentication mode">
           <button
             type="button"
             role="tab"
@@ -396,7 +396,7 @@ export function LoginPage() {
           variant="secondary"
           onClick={handleGoogleLogin}
           disabled={googleLoading || loading}
-          className="w-full h-auto gap-2 rounded-xl px-5 py-3 shadow-sm mb-5"
+          className="w-full h-auto gap-2 rounded-xl px-5 py-3 shadow-sm mb-4"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z" />
@@ -407,13 +407,13 @@ export function LoginPage() {
           {googleLoading ? "Redirecting…" : "Continue with Google"}
         </Button>
 
-        <div className="flex items-center gap-3 mb-5" aria-hidden="true">
+        <div className="flex items-center gap-3 mb-4" aria-hidden="true">
           <div className="h-px flex-1 bg-border" />
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground">or continue with email</span>
           <div className="h-px flex-1 bg-border" />
         </div>
 
-        <form id="login-form" onSubmit={handleSubmit} className="space-y-4">
+        <form id="login-form" onSubmit={handleSubmit} className="space-y-3">
           {mode === "signup" && (
             <>
               <div>
@@ -517,7 +517,7 @@ export function LoginPage() {
           </Button>
         </form>
 
-        <p className="text-xs text-muted-foreground mt-5 text-center">
+        <p className="text-xs text-muted-foreground mt-4 text-center">
           By continuing you agree to use {BRAND.name} only for approved Dayjoy business.
         </p>
         </motion.div>
