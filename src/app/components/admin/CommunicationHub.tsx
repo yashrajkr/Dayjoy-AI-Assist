@@ -4,8 +4,9 @@ import {
   Loader2, CheckCircle, XCircle, Mail, MessageSquare, Smartphone,
   Bell, RefreshCw, Play,
 } from "lucide-react";
-import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, StatusPill } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
 import { LineChart, BarChart, DonutChart, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   commListCampaigns, commCreateCampaign, commDeleteCampaign,
@@ -66,7 +67,7 @@ export function CommunicationHub() {
         title="Communication Hub"
         description="Campaigns, templates, automations, integrations, webhooks, and analytics"
         icon={<Send className="w-5 h-5" />}
-        actions={<button type="button" className={btnClass.secondary} onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</button>}
+        actions={<Button type="button" variant="secondary" onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</Button>}
       />
 
       {error ? <ErrorState message={error} /> : null}
@@ -124,7 +125,7 @@ function CampaignsView({ campaigns, onChanged }: { campaigns: Campaign[]; onChan
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Campaign</button>
+        <Button type="button" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Campaign</Button>
       </div>
       {campaigns.length === 0 ? <Card><EmptyState title="No campaigns" icon={<Send className="w-5 h-5" />} /></Card> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -161,8 +162,8 @@ function CampaignsView({ campaigns, onChanged }: { campaigns: Campaign[]; onChan
       )}
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Campaign" size="md"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
@@ -269,7 +270,7 @@ function AutomationsView({ workflows, onChanged }: { workflows: AutomationWorkfl
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Workflow</button>
+        <Button type="button" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Workflow</Button>
       </div>
       {workflows.length === 0 ? <Card><EmptyState title="No automations" description="Create workflow automations for triggers like user signup, ticket creation, and training completion." icon={<Zap className="w-5 h-5" />} /></Card> : (
         <div className="space-y-2">
@@ -293,7 +294,7 @@ function AutomationsView({ workflows, onChanged }: { workflows: AutomationWorkfl
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <button type="button" onClick={() => handleToggle(w)} className={`text-xs px-2 py-1 rounded border ${w.is_active ? "border-warning/30 text-warning" : "border-primary/30 text-primary"}`}>{w.is_active ? "Pause" : "Activate"}</button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleToggle(w)} className={w.is_active ? "text-warning border-warning/30" : "text-primary border-primary/30"}>{w.is_active ? "Pause" : "Activate"}</Button>
                   <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete workflow ${w.name}`} title="Delete workflow"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
@@ -303,8 +304,8 @@ function AutomationsView({ workflows, onChanged }: { workflows: AutomationWorkfl
       )}
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Automation Workflow" size="md"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. New User Welcome Sequence" className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
@@ -366,9 +367,9 @@ function IntegrationsView({ connectors, onChanged }: { connectors: IntegrationCo
               <div><span className="text-muted-foreground">Last sync:</span> <span className="font-medium">{c.last_sync_at ? new Date(c.last_sync_at).toLocaleDateString() : "Never"}</span></div>
               <div><span className="text-muted-foreground">Status:</span> <span className={`font-medium capitalize ${c.last_sync_status === "success" ? "text-primary" : c.last_sync_status === "failed" ? "text-destructive" : ""}`}>{c.last_sync_status}</span></div>
             </div>
-            <button type="button" onClick={() => handleToggle(c)} className={`mt-2 w-full text-xs px-2 py-1.5 rounded border ${c.is_enabled ? "border-warning/30 text-warning hover:bg-warning/10" : "border-primary/30 text-primary hover:bg-primary/10"}`}>
+            <Button type="button" variant="outline" size="sm" onClick={() => handleToggle(c)} className={`mt-2 w-full ${c.is_enabled ? "text-warning border-warning/30 hover:bg-warning/10" : "text-primary border-primary/30 hover:bg-primary/10"}`}>
               {c.is_enabled ? "Disable" : "Enable"}
-            </button>
+            </Button>
           </Card>
         ))}
       </div>
@@ -417,7 +418,7 @@ function WebhooksView({ webhooks, onChanged }: { webhooks: WebhookEndpoint[]; on
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Webhook</button>
+        <Button type="button" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Webhook</Button>
       </div>
       {webhooks.length === 0 ? <Card><EmptyState title="No webhooks" icon={<Webhook className="w-5 h-5" />} /></Card> : (
         <div className="space-y-2">
@@ -442,10 +443,10 @@ function WebhooksView({ webhooks, onChanged }: { webhooks: WebhookEndpoint[]; on
                   ) : null}
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <button type="button" onClick={() => handleTest(w)} disabled={testing === w.id} className="text-xs px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10">
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleTest(w)} disabled={testing === w.id} className="text-primary border-primary/30 hover:bg-primary/10">
                     {testing === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />} Test
-                  </button>
-                  <button type="button" onClick={() => handleLogs(w)} className="text-xs px-2 py-1 rounded border border-border hover:bg-accent">Logs</button>
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleLogs(w)}>Logs</Button>
                   <button type="button" onClick={() => handleDelete(w)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" aria-label={`Delete webhook ${w.name}`} title="Delete webhook"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
@@ -472,8 +473,8 @@ function WebhooksView({ webhooks, onChanged }: { webhooks: WebhookEndpoint[]; on
       )}
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Webhook" size="md"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />

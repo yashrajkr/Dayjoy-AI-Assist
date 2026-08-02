@@ -7,14 +7,15 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
 import {
-  PageHeader, Card, StatusPill, EmptyState, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, StatusPill, EmptyState, LoadingState, ErrorState,
 } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import type { UserRole } from "../../lib/auth";
 import {
   adminListUsers, adminUpdateUser, adminResetUserPassword, adminExportUsers,
   type AdminUser,
 } from "../../../lib/api";
+import { Button } from "../ui/button";
 
 const ROLES: UserRole[] = ["customer", "distributor", "employee", "trainer", "leader", "support", "management", "admin", "super_admin"];
 
@@ -197,15 +198,15 @@ export function UserManagement() {
         icon={<Users className="w-5 h-5" />}
         actions={
           canManage ? (
-            <button
+            <Button
               type="button"
-              className={btnClass.secondary}
+              variant="secondary"
               onClick={handleExport}
               disabled={exporting}
             >
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               Export CSV
-            </button>
+            </Button>
           ) : null
         }
       />
@@ -252,9 +253,9 @@ export function UserManagement() {
             <option key={r} value={r} className="capitalize">{r.replace("_", " ")}</option>
           ))}
         </select>
-        <button type="button" className={btnClass.secondary} onClick={refresh}>
+        <Button type="button" variant="secondary" onClick={refresh}>
           <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
+        </Button>
       </div>
 
       {loading ? (
@@ -325,12 +326,12 @@ export function UserManagement() {
             <div className="px-4 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <span>Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}</span>
               <div className="flex gap-2">
-                <button type="button" className={btnClass.secondary} disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
+                <Button type="button" variant="secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
                   <ChevronLeft className="w-4 h-4" /> Prev
-                </button>
-                <button type="button" className={btnClass.secondary} disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>
+                </Button>
+                <Button type="button" variant="secondary" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>
                   Next <ChevronRight className="w-4 h-4" />
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -346,10 +347,10 @@ export function UserManagement() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setEditing(null)}>Cancel</button>
-            <button type="button" className={modalButtonClass.primary} onClick={saveEdit} disabled={saving}>
+            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button type="button" onClick={saveEdit} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Save
-            </button>
+            </Button>
           </>
         }
       >

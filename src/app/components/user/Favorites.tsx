@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Heart, Trash2, FolderPlus, Folder, Package, FileQuestion, MessageSquare, Sparkles, Plus, X, Loader2 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 import {
   customerListFavorites, customerRemoveFavorite,
   customerListCollections, customerCreateCollection, customerDeleteCollection,
@@ -81,9 +83,9 @@ export function Favorites() {
           <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Heart className="w-5 h-5 text-rose-500" /> Favorites</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Your saved products, FAQs, and conversations.</p>
         </div>
-        <button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}>
+        <Button type="button" onClick={() => setCreateOpen(true)}>
           <FolderPlus className="w-4 h-4" /> New Collection
-        </button>
+        </Button>
       </div>
 
       {error ? <ErrorState message={error} /> : null}
@@ -99,22 +101,22 @@ export function Favorites() {
       </div>
 
       {loading ? <LoadingState /> : favorites.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card"><EmptyState title="No favorites yet" description="Tap the heart icon on products, FAQs, or conversations to save them here." icon={<Heart className="w-5 h-5" />} /></div>
+        <Card className="shadow-none"><EmptyState title="No favorites yet" description="Tap the heart icon on products, FAQs, or conversations to save them here." icon={<Heart className="w-5 h-5" />} /></Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {favorites.map((f) => {
             const Icon = ENTITY_ICONS[f.entity_type] || Package;
             return (
-              <div key={f.id} className="rounded-xl border border-border bg-card p-3">
+              <Card key={f.id} className="p-3 shadow-none">
                 <div className="flex items-start gap-2">
                   <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shrink-0"><Icon className="w-4 h-4" /></div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{f.entity_name || "Untitled"}</p>
                     <p className="text-[10px] text-muted-foreground capitalize">{f.entity_type}</p>
                   </div>
-                  <button type="button" onClick={() => handleRemove(f)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => handleRemove(f)} className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10" title="Remove" aria-label="Remove favorite"><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>
@@ -126,11 +128,11 @@ export function Favorites() {
           <h2 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Folder className="w-4 h-4 text-primary" /> Collections</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {collections.map((c) => (
-              <div key={c.id} className="rounded-xl border border-border bg-card p-3 text-center relative group">
-                <button type="button" onClick={() => handleDeleteCol(c)} className="absolute top-1 right-1 p-1 rounded hover:bg-destructive/10 text-destructive opacity-0 group-hover:opacity-100" title="Delete"><Trash2 className="w-3 h-3" /></button>
+              <Card key={c.id} className="p-3 text-center relative group shadow-none">
+                <Button type="button" variant="ghost" size="icon" onClick={() => handleDeleteCol(c)} className="absolute top-1 right-1 h-auto w-auto p-1 text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100" title="Delete" aria-label="Delete collection"><Trash2 className="w-3 h-3" /></Button>
                 <div className="text-2xl mb-1">{c.icon || "📁"}</div>
                 <p className="text-xs font-medium truncate">{c.name}</p>
-              </div>
+              </Card>
             ))}
           </div>
         </div>
@@ -138,10 +140,10 @@ export function Favorites() {
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Collection" size="sm"
         footer={<>
-          <button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}><X className="w-4 h-4" /> Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreateCol} disabled={saving || !newColName.trim()}>
+          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}><X className="w-4 h-4" /> Cancel</Button>
+          <Button type="button" onClick={handleCreateCol} disabled={saving || !newColName.trim()}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create
-          </button>
+          </Button>
         </>}>
         <div className="space-y-3">
           <div>

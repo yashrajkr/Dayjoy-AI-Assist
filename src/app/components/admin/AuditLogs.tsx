@@ -7,8 +7,9 @@ import {
   EmptyState,
   LoadingState,
   ErrorState,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Badge, type BadgeProps } from "../ui/badge";
 
 type AuditLog = {
   id: string;
@@ -33,6 +34,13 @@ const AUDIT_ACTIONS = [
   "SUPPORT_TICKET_CREATE", "SUPPORT_TICKET_UPDATE", "SUPPORT_TICKET_ASSIGN", "SUPPORT_TICKET_ESCALATE", "SUPPORT_TICKET_RESOLVE",
   "INTEGRATION_UPDATE", "SETTINGS_UPDATE", "API_KEY_ROTATE",
 ];
+
+function actionBadgeVariant(action: string): BadgeProps["variant"] {
+  if (action === "DELETE" || action.includes("DELETE") || action.includes("REVOKE")) return "destructive";
+  if (action === "INSERT" || action.includes("CREATE") || action.includes("UPLOAD") || action.includes("REGISTER")) return "default";
+  if (action.includes("ESCALATE") || action.includes("SUSPEND") || action.includes("REJECT")) return "warning";
+  return "secondary";
+}
 
 const AUDIT_ENTITIES = [
   "profiles", "products", "faqs", "policies", "distributor_training",
@@ -105,14 +113,14 @@ export function AuditLogs() {
         description="Every create, update, and delete on business data is recorded here."
         icon={<History className="w-5 h-5" />}
         actions={
-          <button
+          <Button
             type="button"
-            className={btnClass.secondary}
+            variant="secondary"
             onClick={exportCsv}
             disabled={logs.length === 0}
           >
             <Download className="w-4 h-4" aria-hidden="true" /> Export CSV
-          </button>
+          </Button>
         }
       />
 
@@ -149,9 +157,9 @@ export function AuditLogs() {
             ))}
           </select>
         </div>
-        <button type="button" className={btnClass.secondary} onClick={refresh}>
+        <Button type="button" variant="secondary" onClick={refresh}>
           <Filter className="w-4 h-4" aria-hidden="true" /> Refresh
-        </button>
+        </Button>
       </div>
 
       {error ? <div className="mb-4"><ErrorState message={error} /></div> : null}
@@ -186,19 +194,9 @@ export function AuditLogs() {
                       {l.created_at ? new Date(l.created_at).toLocaleString() : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                          l.action === "DELETE" || l.action.includes("DELETE") || l.action.includes("REVOKE")
-                            ? "bg-destructive/10 text-destructive"
-                            : l.action === "INSERT" || l.action.includes("CREATE") || l.action.includes("UPLOAD") || l.action.includes("REGISTER")
-                              ? "bg-primary/10 text-primary"
-                              : l.action.includes("ESCALATE") || l.action.includes("SUSPEND") || l.action.includes("REJECT")
-                                ? "bg-warning/15 text-warning"
-                                : "bg-muted text-muted-foreground"
-                        }`}
-                      >
+                      <Badge variant={actionBadgeVariant(l.action)}>
                         {l.action.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{l.entity_type}</div>

@@ -9,9 +9,9 @@ import {
   LoadingState,
   ErrorState,
   StatCard,
-  btnClass,
 } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
 
 type Lead = {
   id: string;
@@ -104,9 +104,9 @@ export function LeadsCRM() {
         description="Track and triage every lead captured from the public lead form."
         icon={<ClipboardList className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -201,9 +201,9 @@ export function LeadsCRM() {
                 <span className="text-[11px] text-muted-foreground">
                   {l.created_at ? new Date(l.created_at).toLocaleDateString() : ""}
                 </span>
-                <button type="button" className={btnClass.secondary} onClick={() => openEdit(l)}>
+                <Button type="button" variant="secondary" onClick={() => openEdit(l)}>
                   Update
-                </button>
+                </Button>
               </div>
             </Card>
           ))}
@@ -218,12 +218,12 @@ export function LeadsCRM() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setEditing(null)}>
+            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
               Cancel
-            </button>
-            <button type="button" className={modalButtonClass.primary} onClick={saveEdit}>
+            </Button>
+            <Button type="button" onClick={saveEdit}>
               Save
-            </button>
+            </Button>
           </>
         }
       >

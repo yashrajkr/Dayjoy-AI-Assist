@@ -69,6 +69,9 @@ import { notifyAIResponseReady } from "../../lib/pushNotifications";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Modal } from "../common/Modal";
 import { useVoice } from "../../lib/useVoice";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -844,24 +847,26 @@ export function UserChat() {
               <p className="text-[10px] text-muted-foreground leading-tight">Personal AI assistant</p>
             </div>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setSidebarOpen(false)}
-            className="p-1.5 rounded-lg hover:bg-accent/50 transition-colors"
+            className="h-auto w-auto p-1.5"
             aria-label="Close conversation history"
           >
             <X className="w-4 h-4" aria-hidden="true" />
-          </button>
+          </Button>
         </div>
         <div className="p-3 border-b border-border">
-          <button
+          <Button
             type="button"
             onClick={handleNewChat}
-            className="group/new w-full flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground px-3 py-2.5 text-sm font-semibold hover:opacity-90 transition-all shadow-sm hover:shadow-md"
+            className="w-full gap-2 rounded-xl py-2.5"
           >
             <MessageSquarePlus className="w-4 h-4" aria-hidden="true" />
             New conversation
-          </button>
+          </Button>
         </div>
         <div className="p-3 border-b border-border">
           <label htmlFor="dj-chat-search" className="sr-only">
@@ -987,10 +992,12 @@ export function UserChat() {
         <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
             {/* Conversation history toggle — opens the slide-out drawer */}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => setSidebarOpen(true)}
-              className={`relative p-2 rounded-lg hover:bg-accent/50 transition-colors ${
+              className={`relative h-auto w-auto p-2 ${
                 sidebarOpen ? "bg-accent/60 text-primary" : "text-muted-foreground"
               }`}
               aria-label="Open conversation history"
@@ -1002,7 +1009,7 @@ export function UserChat() {
                   {conversations.length > 99 ? "99+" : conversations.length}
                 </span>
               ) : null}
-            </button>
+            </Button>
             {/* Brand mark next to title — only on new chat for context */}
             {!activeConv ? (
               <div className="flex items-center gap-2 shrink-0">
@@ -1031,24 +1038,28 @@ export function UserChat() {
           <div className="flex items-center gap-2">
             {activeConv ? (
               <>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={handleExportConversation}
-                  className="p-2 rounded-lg hover:bg-accent/50 hidden sm:inline-flex transition-colors"
+                  className="h-auto w-auto p-2 hidden sm:inline-flex"
                   aria-label="Export conversation as PDF"
                   title="Export as PDF"
                 >
                   <Download className="w-4 h-4" aria-hidden="true" />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={handleShareConversation}
-                  className="p-2 rounded-lg hover:bg-accent/50 hidden sm:inline-flex transition-colors"
+                  className="h-auto w-auto p-2 hidden sm:inline-flex"
                   aria-label="Share conversation link"
                   title="Share link"
                 >
                   <Share2 className="w-4 h-4" aria-hidden="true" />
-                </button>
+                </Button>
               </>
             ) : null}
             <label htmlFor="dj-chat-language" className="sr-only">
@@ -1064,10 +1075,12 @@ export function UserChat() {
               <option value="Hindi">हिन्दी</option>
               <option value="Hinglish">Hinglish</option>
             </select>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => setSourcesPanelOpen((v) => !v)}
-              className={`relative p-2 rounded-lg hover:bg-accent/50 transition-colors ${
+              className={`relative h-auto w-auto p-2 ${
                 sourcesPanelOpen ? "bg-accent/60 text-primary" : "text-muted-foreground"
               }`}
               aria-label={sourcesPanelOpen ? "Close sources panel" : "Open sources panel"}
@@ -1085,7 +1098,7 @@ export function UserChat() {
                   {lastSources.length}
                 </span>
               ) : null}
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -1384,10 +1397,12 @@ export function UserChat() {
                 <div className="flex items-center gap-1">
                   {/* Attach / Tools dropdown */}
                   <div className="relative" ref={attachMenuRef}>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setAttachMenuOpen((v) => !v)}
-                      className="p-2 rounded-lg hover:bg-accent/50 disabled:opacity-50 transition-colors"
+                      className="h-auto w-auto p-2"
                       disabled={sending}
                       aria-label="Open tools menu"
                       aria-expanded={attachMenuOpen}
@@ -1399,7 +1414,7 @@ export function UserChat() {
                       ) : (
                         <Paperclip className="w-4 h-4" aria-hidden="true" />
                       )}
-                    </button>
+                    </Button>
                     {attachMenuOpen ? (
                       <motion.div
                         initial={{ opacity: 0, y: 4 }}
@@ -1466,13 +1481,14 @@ export function UserChat() {
                 </div>
                 <div className="flex items-center gap-2">
                   {sending ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={handleStop}
-                      className="px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-accent/50 transition-colors"
                     >
                       Stop
-                    </button>
+                    </Button>
                   ) : null}
                   <motion.button
                     type="button"
@@ -1777,8 +1793,9 @@ export function UserChat() {
                           || "This answer could not be verified from approved Dayjoy documents. Please create a support ticket for a verified response."}
                       </p>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <button
+                        <Button
                           type="button"
+                          size="sm"
                           onClick={async () => {
                             try {
                               const { ragCreateSupportTicket } = await import("../../../lib/api");
@@ -1798,10 +1815,10 @@ export function UserChat() {
                               setError(e instanceof Error ? e.message : "Failed to create ticket");
                             }
                           }}
-                          className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90"
+                          className="h-auto text-xs px-2 py-1"
                         >
                           <Phone className="w-3 h-3" aria-hidden="true" /> Create support ticket
-                        </button>
+                        </Button>
                         <a
                           href="/support"
                           className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline px-2 py-1"
@@ -1822,14 +1839,15 @@ export function UserChat() {
                 <div className="mt-4 space-y-2">
                   {/* Verified / Unverified badge */}
                   {lastAssistant.verification_status ? (
-                    <div
-                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium ${
+                    <Badge
+                      variant={
                         lastAssistant.verification_status === "verified"
-                          ? "bg-primary/10 text-primary"
+                          ? "default"
                           : lastAssistant.verification_status === "partial"
-                          ? "bg-warning/10 text-warning"
-                          : "bg-destructive/10 text-destructive"
-                      }`}
+                          ? "warning"
+                          : "destructive"
+                      }
+                      className="px-2 py-1 text-[11px]"
                     >
                       {lastAssistant.verification_status === "verified" ? (
                         <><BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" /> Verified from approved Dayjoy source</>
@@ -1838,12 +1856,12 @@ export function UserChat() {
                       ) : (
                         <><AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> No approved source found</>
                       )}
-                    </div>
+                    </Badge>
                   ) : null}
 
                   {/* Confidence meter */}
                   {typeof lastAssistant.confidence === "number" ? (
-                    <div className="rounded-xl border border-border px-3 py-2">
+                    <Card className="px-3 py-2 shadow-none">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">Confidence</span>
                         <span className="font-medium">
@@ -1877,7 +1895,7 @@ export function UserChat() {
                           ) : null}
                         </div>
                       ) : null}
-                    </div>
+                    </Card>
                   ) : null}
                 </div>
               ) : null}
@@ -2037,21 +2055,20 @@ export function UserChat() {
         size="xl"
         footer={
           <>
-            <button
+            <Button
               type="button"
               onClick={() => previewAttachment && handleDownloadAttachment(previewAttachment)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
               <Download className="w-4 h-4" aria-hidden="true" />
               Download
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setPreviewAttachment(null)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border bg-card text-sm font-medium hover:bg-accent/60"
             >
               Close
-            </button>
+            </Button>
           </>
         }
       >

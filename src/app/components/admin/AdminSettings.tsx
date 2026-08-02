@@ -6,9 +6,10 @@ import {
 import { supabase } from "../../lib/supabaseClient";
 import { BRAND } from "../../lib/brand";
 import {
-  PageHeader, Card, LoadingState, ErrorState, EmptyState, btnClass,
+  PageHeader, Card, LoadingState, ErrorState, EmptyState,
 } from "../common/AdminUI";
 import { Input, Textarea } from "../ui/input";
+import { Button } from "../ui/button";
 import {
   adminGetOrgSettings, adminUpdateOrgSettings, adminListAPIKeys, adminCreateAPIKey,
   adminRevokeAPIKey, adminListNotificationTemplates, adminBroadcastNotification,
@@ -260,9 +261,9 @@ export function AdminSettings() {
                   className="w-full px-3 py-2 h-auto rounded-lg" />
               </div>
             </div>
-            <button type="button" className={`${btnClass.primary} mt-4`} onClick={saveOrg} disabled={savingOrg}>
+            <Button type="button" className="mt-4" onClick={saveOrg} disabled={savingOrg}>
               {savingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-            </button>
+            </Button>
           </Card>
         </div>
       ) : null}
@@ -306,9 +307,9 @@ export function AdminSettings() {
                 </div>
               </div>
             </div>
-            <button type="button" className={btnClass.primary} onClick={saveOrg} disabled={savingOrg}>
+            <Button type="button" onClick={saveOrg} disabled={savingOrg}>
               {savingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save branding
-            </button>
+            </Button>
           </div>
         </Card>
       ) : null}
@@ -325,10 +326,10 @@ export function AdminSettings() {
                   <code className="text-sm font-mono font-medium">{f.key}</code>
                   {f.description ? <p className="text-xs text-muted-foreground mt-0.5">{f.description}</p> : null}
                 </div>
-                <button type="button" onClick={() => toggleFlag(f)} disabled={savingKey === f.key} className={btnClass.secondary} aria-pressed={f.enabled}>
+                <Button type="button" variant="secondary" onClick={() => toggleFlag(f)} disabled={savingKey === f.key} aria-pressed={f.enabled}>
                   {f.enabled ? <ToggleRight className="w-4 h-4 text-primary" /> : <ToggleLeft className="w-4 h-4" />}
                   {f.enabled ? "Enabled" : "Disabled"}
-                </button>
+                </Button>
               </Card>
             ))
           )}
@@ -346,26 +347,26 @@ export function AdminSettings() {
               <Input type="text" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)}
                 placeholder="Key name (e.g. Mobile App, Zapier)"
                 className="flex-1 px-3 py-2 h-auto rounded-lg" />
-              <button type="button" className={btnClass.primary} onClick={createKey} disabled={creatingKey || !newKeyName.trim()}>
+              <Button type="button" onClick={createKey} disabled={creatingKey || !newKeyName.trim()}>
                 {creatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Generate
-              </button>
+              </Button>
             </div>
             {newKeyValue ? (
               <div className="mt-3 rounded-lg border border-warning/30 bg-warning/5 p-3">
                 <p className="text-xs font-medium text-warning mb-1">⚠ Copy this key now — it won't be shown again.</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs font-mono break-all bg-card px-2 py-1 rounded">{newKeyValue}</code>
-                  <button type="button" onClick={() => {
+                  <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5" onClick={() => {
                     navigator.clipboard.writeText(newKeyValue);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
-                  }} className="p-1.5 rounded hover:bg-accent" aria-label="Copy key">
+                  }} aria-label="Copy key">
                     {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  </Button>
                 </div>
-                <button type="button" className={`${btnClass.secondary} mt-2 text-xs`} onClick={() => setNewKeyValue(null)}>
+                <Button type="button" variant="secondary" size="sm" className="mt-2 text-xs" onClick={() => setNewKeyValue(null)}>
                   Dismiss
-                </button>
+                </Button>
               </div>
             ) : null}
           </Card>
@@ -395,9 +396,9 @@ export function AdminSettings() {
                       <td className="px-4 py-2 hidden sm:table-cell text-xs text-muted-foreground">{k.scopes.join(", ")}</td>
                       <td className="px-4 py-2 hidden sm:table-cell text-xs text-muted-foreground">{new Date(k.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-2 text-right">
-                        <button type="button" onClick={() => revokeKey(k.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-destructive" title="Revoke" aria-label="Revoke">
+                        <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5 hover:bg-destructive/10 text-destructive" onClick={() => revokeKey(k.id)} title="Revoke" aria-label="Revoke">
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -423,9 +424,9 @@ export function AdminSettings() {
                 placeholder="Announcement body…"
                 rows={3}
                 className="w-full px-3 py-2 rounded-lg" />
-              <button type="button" className={btnClass.primary} onClick={sendBroadcast} disabled={broadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}>
+              <Button type="button" onClick={sendBroadcast} disabled={broadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}>
                 {broadcasting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />} Send to all users
-              </button>
+              </Button>
             </div>
           </Card>
 
@@ -484,9 +485,9 @@ export function AdminSettings() {
                 className="w-full px-3 py-2 h-auto rounded-lg" />
             </div>
           </div>
-          <button type="button" className={`${btnClass.primary} mt-4`} onClick={saveOrg} disabled={savingOrg}>
+          <Button type="button" className="mt-4" onClick={saveOrg} disabled={savingOrg}>
             {savingOrg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-          </button>
+          </Button>
         </Card>
       ) : null}
     </div>

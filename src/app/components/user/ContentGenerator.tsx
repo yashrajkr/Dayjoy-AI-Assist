@@ -3,11 +3,14 @@ import {
   MessageSquare, Loader2, Copy, Check, Trash2, Star, Send,
   Mail, Instagram, Facebook, Calendar, FileText, Sparkles,
 } from "lucide-react";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import {
   distributorGenerateContent, distributorListContent, distributorDeleteContent,
   distributorToggleContentFavorite, type GeneratedContent,
 } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
 
 const CONTENT_TYPES = [
   { value: "whatsapp", label: "WhatsApp", icon: MessageSquare, color: "bg-green-100 text-green-700" },
@@ -133,21 +136,21 @@ export function ContentGenerator() {
         placeholder="Describe what you want to generate… (e.g. 'Follow-up message for a customer who asked about Ashwagandha last week')"
         className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 mb-3" />
 
-      <button type="button" onClick={generate} disabled={generating || !prompt.trim()} className={`${btnClass.primary} w-full justify-center`}>
+      <Button type="button" onClick={generate} disabled={generating || !prompt.trim()} className="w-full justify-center">
         {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</> : <><Sparkles className="w-4 h-4" /> Generate</>}
-      </button>
+      </Button>
 
       {/* Generated content */}
       {generated ? (
-        <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
+        <Card className="mt-4 border-primary/30 bg-primary/5 p-4 shadow-none">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-primary">Generated Content</h3>
-            <button type="button" onClick={() => copyToClipboard(generated)} className="text-xs px-2 py-1 rounded border border-border hover:bg-accent flex items-center gap-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => copyToClipboard(generated)} className="text-xs h-auto py-1">
               {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
-            </button>
+            </Button>
           </div>
           <pre className="whitespace-pre-wrap text-sm font-sans">{generated}</pre>
-        </div>
+        </Card>
       ) : null}
 
       {/* Saved content toggle */}
@@ -157,24 +160,24 @@ export function ContentGenerator() {
         </button>
         {showSaved ? (
           loadingSaved ? <LoadingState /> : savedContent.length === 0 ? (
-            <div className="mt-2 rounded-xl border border-border bg-card p-4"><EmptyState title="No saved content" icon={<FileText className="w-5 h-5" />} /></div>
+            <Card className="mt-2 p-4 shadow-none"><EmptyState title="No saved content" icon={<FileText className="w-5 h-5" />} /></Card>
           ) : (
             <div className="mt-2 space-y-2">
               {savedContent.map((c) => (
-                <div key={c.id} className="rounded-xl border border-border bg-card p-3">
+                <Card key={c.id} className="p-3 shadow-none">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground uppercase">{c.content_type.replace(/_/g, " ")}</span>
+                    <Badge variant="secondary" className="uppercase">{c.content_type.replace(/_/g, " ")}</Badge>
                     <div className="flex gap-0.5">
-                      <button type="button" onClick={() => toggleFav(c)} className="p-1 rounded hover:bg-accent" title="Favorite">
+                      <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1" onClick={() => toggleFav(c)} title="Favorite">
                         <Star className={`w-3.5 h-3.5 ${c.is_favorite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
-                      </button>
-                      <button type="button" onClick={() => copyToClipboard(c.content)} className="p-1 rounded hover:bg-accent" title="Copy"><Copy className="w-3.5 h-3.5 text-muted-foreground" /></button>
-                      <button type="button" onClick={() => handleDelete(c)} className="p-1 rounded hover:bg-destructive/10 text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1" onClick={() => copyToClipboard(c.content)} title="Copy"><Copy className="w-3.5 h-3.5 text-muted-foreground" /></Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(c)} title="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-2">{c.content}</p>
                   <p className="text-[10px] text-muted-foreground mt-1">{c.created_at ? new Date(c.created_at).toLocaleString() : ""}</p>
-                </div>
+                </Card>
               ))}
             </div>
           )

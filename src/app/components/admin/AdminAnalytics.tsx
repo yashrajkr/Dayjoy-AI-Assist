@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Download, TrendingUp, Users, MessageSquare, ShieldAlert, AlertCircle } from "lucide-react";
 import { getAnalytics, type AnalyticsEvent } from "../../lib/db";
-import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { BarChart, LineChart, DonutChart } from "../common/Charts";
+import { Button } from "../ui/button";
 import { adminKnowledgeGaps } from "../../../lib/api";
 
 function computeStats(events: AnalyticsEvent[]) {
@@ -122,14 +123,14 @@ export function AdminAnalytics() {
         description="Track AI performance, user engagement, and business insights."
         icon={<BarChart3 className="w-5 h-5" />}
         actions={
-          <button
+          <Button
             type="button"
-            className={btnClass.secondary}
+            variant="secondary"
             onClick={exportCsv}
             disabled={events.length === 0}
           >
             <Download className="w-4 h-4" aria-hidden="true" /> Export CSV
-          </button>
+          </Button>
         }
       />
 

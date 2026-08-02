@@ -10,7 +10,8 @@ import {
   SwitchCamera,
   Image as ImageIcon,
 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
 
 /**
  * CameraCapture — accessible in-browser camera capture component.
@@ -261,19 +262,19 @@ export function CameraCapture({
             {gallery.length > 0 ? `${gallery.length} captured` : ""}
           </span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose} className={modalButtonClass.secondary}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
-            </button>
+            </Button>
             {status === "captured" ? (
-              <button type="button" onClick={handleAccept} className={modalButtonClass.primary}>
+              <Button type="button" onClick={handleAccept}>
                 <Check className="w-4 h-4" aria-hidden="true" />
                 {multiple && gallery.length > 0 ? "Add another" : "Use photo"}
-              </button>
+              </Button>
             ) : null}
             {multiple && gallery.length > 0 ? (
-              <button type="button" onClick={handleFinishMultiple} className={modalButtonClass.primary}>
+              <Button type="button" onClick={handleFinishMultiple}>
                 Done ({gallery.length})
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>

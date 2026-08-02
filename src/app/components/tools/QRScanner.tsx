@@ -10,7 +10,9 @@ import {
   ExternalLink,
   SwitchCamera,
 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 
 /**
  * QRScanner — in-browser QR code scanner with live camera feed.
@@ -263,11 +265,11 @@ export function QRScanner({
       size="lg"
       footer={
         <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className={modalButtonClass.secondary}>
+          <Button type="button" variant="secondary" onClick={onClose}>
             Close
-          </button>
+          </Button>
           {result ? (
-            <button type="button" onClick={handleCopy} className={modalButtonClass.primary}>
+            <Button type="button" onClick={handleCopy}>
               {copied ? (
                 <>
                   <Check className="w-4 h-4" aria-hidden="true" /> Copied
@@ -277,7 +279,7 @@ export function QRScanner({
                   <ClipboardCopy className="w-4 h-4" aria-hidden="true" /> Copy text
                 </>
               )}
-            </button>
+            </Button>
           ) : null}
         </div>
       }
@@ -377,7 +379,7 @@ export function QRScanner({
 
         {/* Result panel */}
         {result ? (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <Card className="border-primary/30 bg-primary/5 p-3 shadow-none">
             <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">
               Decoded content
             </p>
@@ -410,19 +412,19 @@ export function QRScanner({
                 )}
               </button>
             </div>
-          </div>
+          </Card>
         ) : null}
 
         {/* Error retry */}
         {status === "error" ? (
-          <button
+          <Button
             type="button"
             onClick={startCamera}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            className="w-full"
           >
             <RefreshCw className="w-4 h-4" aria-hidden="true" />
             Try again
-          </button>
+          </Button>
         ) : null}
 
         {/* Helper */}

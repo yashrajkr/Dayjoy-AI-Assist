@@ -11,14 +11,16 @@ import {
   setProductApprovalStatus,
   updateProduct,
 } from "../../lib/db";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { Input, Textarea } from "../ui/input";
-import { btnClass } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
 import { adminCreateProduct, adminUpdateProduct, adminDeleteProduct } from "../../../lib/api";
 
 function StatsCard({ label, value, sublabel }: { label: string; value: string; sublabel: string }) {
   return (
-    <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+    <Card className="p-6 shadow-none">
       <div className="flex items-start justify-between mb-4">
         <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center">
           <Package className="w-6 h-6 text-primary" />
@@ -27,7 +29,7 @@ function StatsCard({ label, value, sublabel }: { label: string; value: string; s
       <h3 className="text-2xl font-semibold mb-1">{value}</h3>
       <p className="text-sm text-foreground mb-1">{label}</p>
       <p className="text-xs text-muted-foreground">{sublabel}</p>
-    </div>
+    </Card>
   );
 }
 
@@ -259,21 +261,20 @@ export function ProductDatabase() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            className={`${btnClass.secondary}`}
+          <Button
+            variant="secondary"
             type="button"
             title="Import CSV (coming soon)"
             disabled
           >
             <Upload className="w-4 h-4" /> Import CSV
-          </button>
-          <button
-            className={`${btnClass.primary}`}
+          </Button>
+          <Button
             type="button"
             onClick={openCreate}
           >
             <Plus className="w-4 h-4" /> Add Product
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -335,7 +336,7 @@ export function ProductDatabase() {
       </div>
 
       {/* Products Table */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+      <Card className="p-0 overflow-hidden shadow-none">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-accent/50 border-b border-border">
@@ -373,7 +374,7 @@ export function ProductDatabase() {
             Showing {filteredProducts.length} of {products.length} products
           </p>
         </div>
-      </div>
+      </Card>
 
       {/* Create / Edit Modal */}
       <Modal
@@ -384,13 +385,13 @@ export function ProductDatabase() {
         size="lg"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               <X className="w-4 h-4" /> Cancel
-            </button>
-            <button type="button" className={modalButtonClass.primary} onClick={handleSave} disabled={saving}>
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {editingId ? "Save changes" : "Create product"}
-            </button>
+            </Button>
           </>
         }
       >
@@ -511,9 +512,7 @@ function ProductRow({
         {sku ? <code className="text-xs font-mono text-muted-foreground">{sku}</code> : <span className="text-xs text-muted-foreground">—</span>}
       </td>
       <td className="px-4 py-3">
-        <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[11px] font-medium">
-          {product.category}
-        </span>
+        <Badge>{product.category}</Badge>
         {product.sub_category ? <div className="text-[10px] text-muted-foreground mt-0.5">{product.sub_category}</div> : null}
       </td>
       <td className="px-4 py-3">
@@ -528,8 +527,8 @@ function ProductRow({
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
           {status === "pending" ? (
-            <button type="button" className="text-[10px] px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10"
-              onClick={() => onApprove("approved")}>Approve</button>
+            <Button type="button" variant="outline" size="sm" className="text-primary border-primary/30 hover:bg-primary/10"
+              onClick={() => onApprove("approved")}>Approve</Button>
           ) : null}
           <button type="button" className="p-1.5 hover:bg-accent rounded-lg" onClick={onEdit} aria-label="Edit" title="Edit">
             <Edit className="w-3.5 h-3.5 text-muted-foreground" />

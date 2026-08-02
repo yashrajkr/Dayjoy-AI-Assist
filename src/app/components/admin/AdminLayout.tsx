@@ -42,6 +42,15 @@ import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { NotificationCenter } from "../notifications/NotificationCenter";
 import { Input } from "../ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 type NavItemDef = {
   to: string;
@@ -159,6 +168,7 @@ export function AdminLayout() {
   };
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="min-h-screen bg-background flex">
       <a
         href="#dj-admin-main"
@@ -252,20 +262,38 @@ export function AdminLayout() {
         </nav>
 
         <div className="p-3 border-t border-border space-y-2">
-          <div className={`flex items-center gap-3 p-2 bg-accent/50 rounded-lg ${collapsed ? "justify-center" : ""}`}>
-            <div
-              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm shrink-0"
-              aria-hidden="true"
-            >
-              {userInitials}
-            </div>
-            {!collapsed ? (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{userName}</p>
-                <p className="text-xs text-muted-foreground">{roleLabel}</p>
-              </div>
-            ) : null}
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title={userName}
+                className={`w-full flex items-center gap-3 p-2 bg-accent/50 rounded-lg transition-colors hover:bg-accent ${collapsed ? "justify-center" : ""}`}
+              >
+                <div
+                  className="w-9 h-9 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-sm shrink-0"
+                  aria-hidden="true"
+                >
+                  {userInitials}
+                </div>
+                {!collapsed ? (
+                  <div className="flex-1 min-w-0 text-left">
+                    <p className="text-sm font-medium truncate">{userName}</p>
+                    <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                  </div>
+                ) : null}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>
+                {userName} · {roleLabel}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/admin/settings")}>Settings</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <NavLink
             to="/"
@@ -365,6 +393,7 @@ export function AdminLayout() {
         </main>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -381,12 +410,11 @@ function AdminNavItem({
   collapsed?: boolean;
   onClick?: () => void;
 }) {
-  return (
+  const link = (
     <NavLink
       to={to}
       end={to === "/admin"}
       onClick={onClick}
-      title={collapsed ? label : undefined}
       className={({ isActive }) =>
         `relative flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 ${collapsed ? "justify-center" : ""} ${
           isActive
@@ -410,5 +438,13 @@ function AdminNavItem({
         </>
       )}
     </NavLink>
+  );
+
+  if (!collapsed) return link;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }

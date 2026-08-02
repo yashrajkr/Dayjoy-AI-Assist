@@ -11,8 +11,10 @@ import {
   Trash2,
   Languages,
 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { CameraCapture, type CapturedImage } from "./CameraCapture";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 
 /**
  * OcrScanner — extract text from images using Tesseract.js (WASM).
@@ -241,12 +243,12 @@ export function OcrScanner({ open, onClose, onExtracted, title = "Extract text f
         size="lg"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
-            <button type="button" onClick={onClose} className={modalButtonClass.secondary}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Close
-            </button>
+            </Button>
             {text ? (
               <>
-                <button type="button" onClick={handleCopy} className={modalButtonClass.secondary}>
+                <Button type="button" variant="secondary" onClick={handleCopy}>
                   {copied ? (
                     <>
                       <Check className="w-4 h-4" aria-hidden="true" /> Copied
@@ -256,11 +258,11 @@ export function OcrScanner({ open, onClose, onExtracted, title = "Extract text f
                       <ClipboardCopy className="w-4 h-4" aria-hidden="true" /> Copy
                     </>
                   )}
-                </button>
+                </Button>
                 {onExtracted ? (
-                  <button type="button" onClick={handleUseText} className={modalButtonClass.primary}>
+                  <Button type="button" onClick={handleUseText}>
                     Use text
-                  </button>
+                  </Button>
                 ) : null}
               </>
             ) : null}
@@ -353,17 +355,19 @@ export function OcrScanner({ open, onClose, onExtracted, title = "Extract text f
               </motion.div>
               <p className="text-sm font-medium">Drop an image here, or click to browse</p>
               <p className="text-xs text-muted-foreground mt-1">PNG, JPG, or WebP. Up to 10MB.</p>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   setCameraOpen(true);
                 }}
-                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium hover:bg-accent/60"
+                className="mt-3"
               >
                 <Camera className="w-3.5 h-3.5" aria-hidden="true" />
                 Use camera
-              </button>
+              </Button>
             </div>
           )}
           <input
@@ -377,13 +381,13 @@ export function OcrScanner({ open, onClose, onExtracted, title = "Extract text f
 
           {/* Error */}
           {status === "error" ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive flex items-start gap-2">
+            <Card className="border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive flex items-start gap-2 shadow-none">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
               <div>
                 <p className="font-medium">OCR failed</p>
                 <p className="text-xs mt-0.5">{errorMsg}</p>
               </div>
-            </div>
+            </Card>
           ) : null}
 
           {/* Extracted text */}
@@ -421,14 +425,15 @@ export function OcrScanner({ open, onClose, onExtracted, title = "Extract text f
 
           {/* Reset button when image present but no text yet */}
           {imageUrl && !text && !isBusy ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={handleReset}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-border bg-card text-sm font-medium hover:bg-accent/60"
+              className="w-full"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
               Choose another image
-            </button>
+            </Button>
           ) : null}
         </div>
       </Modal>

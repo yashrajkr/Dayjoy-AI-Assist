@@ -3,6 +3,7 @@ import { BarChart3, TrendingUp, Users, Target, Phone, Clock, DollarSign } from "
 import { LoadingState, ErrorState } from "../common/AdminUI";
 import { LineChart, BarChart, ProgressBar, type LineChartPoint, type BarChartItem } from "../common/Charts";
 import { distributorAnalytics } from "../../../lib/api";
+import { Card } from "../ui/card";
 
 export function BusinessAnalytics() {
   const [data, setData] = useState<Awaited<ReturnType<typeof distributorAnalytics>> | null>(null);
@@ -57,7 +58,7 @@ export function BusinessAnalytics() {
 
       {/* Health Score */}
       {healthScore != null ? (
-        <div className="rounded-2xl border border-border bg-card p-4 mb-4">
+        <Card className="p-4 mb-4 shadow-none">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1.5"><Target className="w-4 h-4 text-primary" /> Business Health Score</h2>
             <span className={`text-2xl font-bold ${healthScore >= 70 ? "text-primary" : healthScore >= 40 ? "text-warning" : "text-destructive"}`}>{healthScore}/100</span>
@@ -66,7 +67,7 @@ export function BusinessAnalytics() {
           <p className="text-[10px] text-muted-foreground mt-1">
             {healthScore >= 70 ? "Excellent! Your business is thriving." : healthScore >= 40 ? "Good progress. Keep pushing." : "Needs attention. Focus on follow-ups and customer engagement."}
           </p>
-        </div>
+        </Card>
       ) : null}
 
       {/* Aggregates */}
@@ -79,30 +80,30 @@ export function BusinessAnalytics() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-primary" /> Sales Trend ({days}d)</h2>
           {salesTrend.length > 0 ? <LineChart data={salesTrend} height={200} /> : <p className="text-xs text-muted-foreground text-center py-8">No data yet.</p>}
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
+        </Card>
+        <Card className="p-4 shadow-none">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-1.5"><Phone className="w-4 h-4 text-primary" /> Calls (last 7 days)</h2>
           {callsTrend.length > 0 ? <BarChart data={callsTrend} height={200} /> : <p className="text-xs text-muted-foreground text-center py-8">No data yet.</p>}
-        </div>
+        </Card>
       </div>
 
       {/* AI Usage */}
-      <div className="rounded-2xl border border-border bg-card p-4 mt-4">
+      <Card className="p-4 mt-4 shadow-none">
         <h2 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><BarChart3 className="w-4 h-4 text-primary" /> AI Usage</h2>
         <p className="text-2xl font-semibold">{data.aggregates.total_ai_queries} <span className="text-xs text-muted-foreground font-normal">queries in {days} days</span></p>
-      </div>
+      </Card>
     </div>
   );
 }
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
+    <Card className="p-3 shadow-none">
       <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">{icon}<span className="text-[10px] uppercase tracking-wide">{label}</span></div>
       <p className="text-xl font-semibold">{value}</p>
-    </div>
+    </Card>
   );
 }

@@ -15,6 +15,7 @@ import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { AnimatedBackground } from "../common/AnimatedBackground";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
+import { Button } from "../ui/button";
 
 // Lazy-load the 3D orb — it's a heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -390,11 +391,12 @@ export function LoginPage() {
           </button>
         </div>
 
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={handleGoogleLogin}
           disabled={googleLoading || loading}
-          className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-5 py-3 font-medium text-foreground shadow-sm hover:bg-accent/50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mb-5"
+          className="w-full h-auto gap-2 rounded-xl px-5 py-3 shadow-sm mb-5"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z" />
@@ -403,7 +405,7 @@ export function LoginPage() {
             <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l2.99 2.33C4.66 5.16 6.65 3.58 9 3.58z" />
           </svg>
           {googleLoading ? "Redirecting…" : "Continue with Google"}
-        </button>
+        </Button>
 
         <div className="flex items-center gap-3 mb-5" aria-hidden="true">
           <div className="h-px flex-1 bg-border" />
@@ -506,16 +508,13 @@ export function LoginPage() {
             )}
           </div>
 
-          <motion.button
+          <Button
             type="submit"
             disabled={loading}
-            whileHover={loading ? undefined : { scale: 1.01 }}
-            whileTap={loading ? undefined : { scale: 0.98 }}
-            transition={{ duration: 0.15 }}
-            className="w-full bg-primary text-primary-foreground rounded-xl px-5 py-3 font-medium shadow-sm hover:opacity-90 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200"
+            className="w-full h-auto rounded-xl px-5 py-3 shadow-sm"
           >
             {loading ? "Please wait…" : mode === "login" ? "Login" : "Create Account"}
-          </motion.button>
+          </Button>
         </form>
 
         <p className="text-xs text-muted-foreground mt-5 text-center">

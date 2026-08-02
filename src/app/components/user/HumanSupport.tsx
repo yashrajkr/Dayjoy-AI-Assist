@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/input";
+import { Card } from "../ui/card";
 
 const CATEGORIES = [
   "Product question",
@@ -56,7 +57,7 @@ export function HumanSupport() {
   if (submitted) {
     return (
       <div className="p-4 sm:p-8 max-w-2xl mx-auto">
-        <div className="rounded-2xl border border-primary/30 surface-gradient p-8 text-center">
+        <Card className="border-primary/30 surface-gradient p-8 text-center shadow-none">
           <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" aria-hidden="true" />
           <h1 className="text-xl font-semibold mb-1">Ticket submitted</h1>
           <p className="text-sm text-muted-foreground mb-4">
@@ -66,7 +67,7 @@ export function HumanSupport() {
           <Button type="button" onClick={() => setSubmitted(false)}>
             Submit another ticket
           </Button>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -151,7 +152,7 @@ export function HumanSupport() {
         </Button>
       </form>
 
-      <div className="mt-6 rounded-xl border border-border bg-card p-4 shadow-flat">
+      <Card className="mt-6 p-4">
         <p className="text-xs text-muted-foreground">
           <strong className="text-foreground">Prefer to talk to someone?</strong>
           <br />
@@ -159,7 +160,7 @@ export function HumanSupport() {
           {" · "}
           <a href="mailto:support@dayjoy.com" className="text-primary hover:underline">support@dayjoy.com</a>
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

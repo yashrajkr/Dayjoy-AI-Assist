@@ -3,12 +3,15 @@ import {
   Phone, Clock, Plus, Edit, Trash2, Check, X,
   Loader2, Save, MessageSquare, Mail, MapPin, Bell,
 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import {
   distributorListFollowUps, distributorCreateFollowUp, distributorUpdateFollowUp,
   distributorDeleteFollowUp, type FollowUp,
 } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
 
 const TASK_TYPES = [
   { value: "call", label: "📞 Call", icon: Phone },
@@ -102,24 +105,24 @@ export function FollowUpManager() {
           <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Clock className="w-5 h-5" /> Follow-ups</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Track calls, meetings, and reminders.</p>
         </div>
-        <button type="button" className={btnClass.primary} onClick={openCreate}><Plus className="w-4 h-4" /> Add Task</button>
+        <Button type="button" onClick={openCreate}><Plus className="w-4 h-4" /> Add Task</Button>
       </div>
 
       {error ? <ErrorState message={error} /> : null}
 
       <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className={`rounded-xl border p-3 text-center ${overdue.length > 0 ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"}`}>
+        <Card className={`p-3 text-center shadow-none ${overdue.length > 0 ? "border-destructive/30 bg-destructive/5" : ""}`}>
           <p className="text-xl font-semibold text-destructive">{overdue.length}</p>
           <p className="text-[10px] text-muted-foreground">Overdue</p>
-        </div>
-        <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-center">
+        </Card>
+        <Card className="border-warning/30 bg-warning/5 p-3 text-center shadow-none">
           <p className="text-xl font-semibold text-warning">{dueToday.length}</p>
           <p className="text-[10px] text-muted-foreground">Due Today</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
+        </Card>
+        <Card className="p-3 text-center shadow-none">
           <p className="text-xl font-semibold">{followUps.filter((f) => f.status === "pending").length}</p>
           <p className="text-[10px] text-muted-foreground">Pending</p>
-        </div>
+        </Card>
       </div>
 
       <div className="flex gap-2 mb-4">
@@ -131,7 +134,7 @@ export function FollowUpManager() {
       </div>
 
       {loading ? <LoadingState /> : followUps.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card"><EmptyState title="No follow-ups" icon={<Clock className="w-5 h-5" />} /></div>
+        <Card className="shadow-none"><EmptyState title="No follow-ups" icon={<Clock className="w-5 h-5" />} /></Card>
       ) : (
         <div className="space-y-2">
           {followUps.map((f) => {
@@ -140,13 +143,13 @@ export function FollowUpManager() {
             const taskType = TASK_TYPES.find((t) => t.value === f.task_type) ?? TASK_TYPES[0];
             const Icon = taskType.icon;
             return (
-              <div key={f.id} className={`rounded-xl border bg-card p-3 flex items-center gap-3 ${isOverdue ? "border-destructive/30" : f.status === "completed" ? "opacity-60" : "border-border"}`}>
+              <Card key={f.id} className={`p-3 flex items-center gap-3 shadow-none ${isOverdue ? "border-destructive/30" : f.status === "completed" ? "opacity-60" : ""}`}>
                 <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shrink-0"><Icon className="w-4 h-4" /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium truncate">{f.title}</p>
-                    {f.priority === "urgent" ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">URGENT</span> : null}
-                    {f.ai_generated ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">AI</span> : null}
+                    {f.priority === "urgent" ? <Badge variant="destructive">URGENT</Badge> : null}
+                    {f.ai_generated ? <Badge variant="secondary">AI</Badge> : null}
                   </div>
                   {f.customer_name ? <p className="text-xs text-muted-foreground truncate">{f.customer_name}</p> : null}
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
@@ -156,12 +159,12 @@ export function FollowUpManager() {
                 </div>
                 <div className="flex gap-0.5 shrink-0">
                   {f.status === "pending" ? (
-                    <button type="button" onClick={() => handleStatus(f, "completed")} className="p-1.5 rounded hover:bg-primary/10 text-primary" title="Complete"><Check className="w-3.5 h-3.5" /></button>
+                    <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5 text-primary hover:bg-primary/10" onClick={() => handleStatus(f, "completed")} title="Complete"><Check className="w-3.5 h-3.5" /></Button>
                   ) : null}
-                  <button type="button" onClick={() => openEdit(f)} className="p-1.5 rounded hover:bg-accent" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
-                  <button type="button" onClick={() => handleDelete(f)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5" onClick={() => openEdit(f)} title="Edit"><Edit className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(f)} title="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>
@@ -169,10 +172,10 @@ export function FollowUpManager() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Task" : "Add Task"} size="md"
         footer={<>
-          <button type="button" className={modalButtonClass.secondary} onClick={() => setModalOpen(false)}><X className="w-4 h-4" /> Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleSave} disabled={saving}>
+          <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}><X className="w-4 h-4" /> Cancel</Button>
+          <Button type="button" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-          </button>
+          </Button>
         </>}>
         <div className="space-y-3">
           <div>

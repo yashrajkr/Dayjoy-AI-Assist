@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { adminSearch, type AdminSearchResult } from "../../../lib/api";
 import { Card } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 const ENTITY_ICONS: Record<string, typeof Users> = {
   user: Users,
@@ -122,14 +123,16 @@ export function UniversalSearch({ embedded = false }: { embedded?: boolean }) {
           className="w-full pl-9 pr-9 py-2.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
         />
         {query ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setQuery("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-accent"
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-auto w-auto p-1 rounded"
             aria-label="Clear search"
           >
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         ) : null}
       </div>
 

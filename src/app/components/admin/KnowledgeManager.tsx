@@ -28,9 +28,9 @@ import {
   LoadingState,
   ErrorState,
   StatCard,
-  btnClass,
 } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
 import {
   ragListDocuments,
   ragUploadDocument,
@@ -340,17 +340,16 @@ export function KnowledgeManager() {
         icon={<Database className="w-5 h-5" />}
         actions={
           <>
-            <button type="button" className={btnClass.secondary} onClick={refresh}>
+            <Button type="button" variant="secondary" onClick={refresh}>
               <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={btnClass.primary}
               onClick={() => setUploadOpen(true)}
               disabled={ragAvailable === false}
             >
               <Upload className="w-4 h-4" aria-hidden="true" /> Upload document
-            </button>
+            </Button>
           </>
         }
       />
@@ -420,9 +419,9 @@ export function KnowledgeManager() {
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
-          <button
+          <Button
             type="button"
-            className={btnClass.secondary}
+            variant="secondary"
             onClick={() => {
               setSearch("");
               setCategoryFilter("");
@@ -431,7 +430,7 @@ export function KnowledgeManager() {
             }}
           >
             <Filter className="w-4 h-4" aria-hidden="true" /> Clear
-          </button>
+          </Button>
         </div>
       </Card>
 
@@ -549,20 +548,22 @@ export function KnowledgeManager() {
                         </button>
                         {d.approval_status === "pending" ? (
                           <>
-                            <button
+                            <Button
                               type="button"
-                              className="text-xs px-2 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 inline-flex items-center gap-1"
+                              size="sm"
                               onClick={() => handleApprove(d, "approved")}
                             >
                               <Check className="w-3 h-3" aria-hidden="true" /> Approve
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              className="text-xs px-2 py-1 rounded-lg border border-destructive text-destructive hover:bg-destructive/10 inline-flex items-center gap-1"
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive border-destructive hover:bg-destructive/10"
                               onClick={() => handleApprove(d, "rejected")}
                             >
                               <X className="w-3 h-3" aria-hidden="true" /> Reject
-                            </button>
+                            </Button>
                           </>
                         ) : null}
                         <button
@@ -597,22 +598,22 @@ export function KnowledgeManager() {
                 Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
               </span>
               <div className="flex gap-2">
-                <button
+                <Button
                   type="button"
-                  className={btnClass.secondary}
+                  variant="secondary"
                   disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - limit))}
                 >
                   Previous
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className={btnClass.secondary}
+                  variant="secondary"
                   disabled={offset + limit >= total}
                   onClick={() => setOffset(offset + limit)}
                 >
                   Next
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -628,17 +629,16 @@ export function KnowledgeManager() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setUploadOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setUploadOpen(false)}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={modalButtonClass.primary}
               onClick={handleUpload}
               disabled={uploading || !uploadFile}
             >
               {uploading ? <><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Uploading…</> : "Upload & ingest"}
-            </button>
+            </Button>
           </>
         }
       >
@@ -776,14 +776,15 @@ export function KnowledgeManager() {
               </div>
             ) : null}
             {detailDoc.file_url ? (
-              <a
-                href={detailDoc.file_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={btnClass.primary}
-              >
-                <Download className="w-4 h-4" aria-hidden="true" /> Open original file
-              </a>
+              <Button asChild>
+                <a
+                  href={detailDoc.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Download className="w-4 h-4" aria-hidden="true" /> Open original file
+                </a>
+              </Button>
             ) : null}
 
             {/* Version history */}
@@ -848,9 +849,9 @@ export function KnowledgeManager() {
         size="md"
         footer={
           <>
-            <button
+            <Button
               type="button"
-              className={modalButtonClass.secondary}
+              variant="secondary"
               onClick={() => {
                 setReplaceDoc(null);
                 setReplaceFile(null);
@@ -858,15 +859,14 @@ export function KnowledgeManager() {
               }}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={modalButtonClass.primary}
               onClick={handleReplaceSubmit}
               disabled={replacing || !replaceFile}
             >
               {replacing ? <><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Replacing…</> : "Upload new version"}
-            </button>
+            </Button>
           </>
         }
       >

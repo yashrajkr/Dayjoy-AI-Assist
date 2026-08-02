@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Users, Award, Trophy, Star, Loader2 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { distributorTeamOverview, distributorAddRecognition, type TeamMember } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 
 const AWARDS = [
   { type: "top_performer", icon: "🏆", label: "Top Performer" },
@@ -72,14 +74,14 @@ export function TeamManagement() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">{data.active_count}</p><p className="text-[10px] text-muted-foreground">Active Members</p></div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">₹{data.total_sales.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Total Sales</p></div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">{data.avg_training}%</p><p className="text-[10px] text-muted-foreground">Avg Training</p></div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">{data.recognition.length}</p><p className="text-[10px] text-muted-foreground">Awards Given</p></div>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{data.active_count}</p><p className="text-[10px] text-muted-foreground">Active Members</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">₹{data.total_sales.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Total Sales</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{data.avg_training}%</p><p className="text-[10px] text-muted-foreground">Avg Training</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{data.recognition.length}</p><p className="text-[10px] text-muted-foreground">Awards Given</p></Card>
       </div>
 
       {/* Leaderboard */}
-      <div className="rounded-2xl border border-border bg-card p-4 mb-4">
+      <Card className="p-4 mb-4 shadow-none">
         <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3"><Trophy className="w-4 h-4 text-amber-500" /> Leaderboard</h2>
         {data.leaderboard.length === 0 ? (
           <EmptyState title="No team members" icon={<Users className="w-5 h-5" />} />
@@ -93,17 +95,17 @@ export function TeamManagement() {
                   <p className="text-[10px] text-muted-foreground">{m.rank} · Lvl {m.level} · {m.training_completion}% trained</p>
                 </div>
                 <span className="text-sm font-semibold tabular-nums">₹{Number(m.total_sales || 0).toLocaleString()}</span>
-                <button type="button" onClick={() => { setAwardModal(m); setAwardType("top_performer"); setAwardTitle(""); }}
-                  className="text-[10px] px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10 flex items-center gap-0.5"><Award className="w-3 h-3" /> Award</button>
+                <Button type="button" variant="outline" size="sm" onClick={() => { setAwardModal(m); setAwardType("top_performer"); setAwardTitle(""); }}
+                  className="text-[10px] h-auto py-1 border-primary/30 text-primary hover:bg-primary/10"><Award className="w-3 h-3" /> Award</Button>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Recent recognition */}
       {data.recognition.length > 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3"><Star className="w-4 h-4 text-amber-500" /> Recent Recognition</h2>
           <div className="space-y-1.5">
             {data.recognition.slice(0, 5).map((r) => (
@@ -116,16 +118,16 @@ export function TeamManagement() {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       ) : null}
 
       {/* Award modal */}
       <Modal open={!!awardModal} onClose={() => setAwardModal(null)} title={`Recognize ${awardModal?.member_name ?? ""}`} size="sm"
         footer={<>
-          <button type="button" className={modalButtonClass.secondary} onClick={() => setAwardModal(null)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={giveAward} disabled={awarding}>
+          <Button type="button" variant="secondary" onClick={() => setAwardModal(null)}>Cancel</Button>
+          <Button type="button" onClick={giveAward} disabled={awarding}>
             {awarding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />} Give Award
-          </button>
+          </Button>
         </>}>
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-2">
