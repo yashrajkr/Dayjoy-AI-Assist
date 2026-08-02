@@ -81,7 +81,6 @@ export function UserLayout() {
   };
 
   const canDistributor = role === "distributor" || role === "admin" || role === "management";
-  const canEmployee = role === "employee" || role === "admin" || role === "management";
 
   const userInitials =
     currentUser?.email?.slice(0, 2).toUpperCase() ??
@@ -118,7 +117,7 @@ export function UserLayout() {
           { to: "/training", icon: GraduationCap, label: "Training", group: "Distributor Hub" },
         ]
       : []),
-    ...(canEmployee ? [{ to: "/support", icon: LifeBuoy, label: "Human Support", group: "Main" }] : []),
+    { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
     { to: "/settings", icon: Settings, label: "Settings", group: "Account" },
   ];
 
@@ -248,9 +247,7 @@ export function UserLayout() {
               {canDistributor ? (
                 <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
-              {canEmployee ? (
-                <NavItem to="/support" icon={LifeBuoy} label="Human Support" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              ) : null}
+              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </div>
 
             {!collapsed && recentChats.length > 0 ? (
