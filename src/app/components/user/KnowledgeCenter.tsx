@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, FileQuestion, ScrollText, Package, GraduationCap, FileText, Loader2, AlertCircle, BadgeCheck, BookOpen } from "lucide-react";
 import { ErrorState, EmptyState } from "../common/AdminUI";
+import { AppHeader } from "../common/AppHeader";
 import { customerKnowledgeSearch, type KnowledgeSearchResult } from "../../../lib/api";
 
 const ENTITY_ICONS: Record<string, typeof Package> = {
@@ -52,17 +53,13 @@ export function KnowledgeCenter() {
   }, {});
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <div className="mb-5 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center shrink-0">
-          <Search className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Knowledge Center</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Search FAQs, policies, products, training, and documents — all from verified Dayjoy sources.</p>
-        </div>
-      </div>
-
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader
+        title="Knowledge Center"
+        subtitle="Search FAQs, policies, products, training, and documents — all from verified Dayjoy sources."
+        icon={Search}
+      />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl mx-auto w-full">
       <div className="relative mb-3">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
@@ -138,6 +135,7 @@ export function KnowledgeCenter() {
         <Link to="/support" className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent/60 transition-colors">
           Contact support
         </Link>
+      </div>
       </div>
     </div>
   );

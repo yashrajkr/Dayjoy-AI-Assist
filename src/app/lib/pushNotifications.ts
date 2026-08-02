@@ -59,7 +59,7 @@ export type DayjoyNotificationPayload = {
 
 /** Default notification icon — inline SVG data URL of the Dayjoy mark. */
 const DEFAULT_ICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23234F1E'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3C/svg%3E";
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232F7D3A'/%3E%3Cpath d='M32 14c-9.4 0-17 7.4-17 16.6 0 5.2 2.4 9.8 6.2 12.9V48l5.4-3c1.7.4 3.5.6 5.4.6 9.4 0 17-7.4 17-16.6S41.4 14 32 14z' fill='%23FFFFFF'/%3E%3C/svg%3E";
 
 /**
  * Detect whether the browser supports the Web Notifications API.

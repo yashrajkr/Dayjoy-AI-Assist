@@ -21,12 +21,12 @@ export const BRAND = {
     "Enterprise AI Assistant for Dayjoy — approved company knowledge, safe answers, and human escalation whenever needed.",
   /** Color tokens (mirrors theme.css but usable from TS without CSS var indirection) */
   colors: {
-    primary: "#234F1E",
+    primary: "#2F7D3A",
     primaryForeground: "#FFFFFF",
-    secondary: "#4F6F46",
-    accent: "#DDEDD5",
+    secondary: "#5A9350",
+    accent: "#E4F4DC",
     goldAccent: "#FFC98B",
-    background: "#F8F7EE",
+    background: "#F9FBF6",
     card: "#FFFFFF",
     cardBeige: "#F3EAD8",
     foreground: "#1F1F1F",

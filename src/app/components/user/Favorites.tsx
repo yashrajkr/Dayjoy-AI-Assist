@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Heart, Trash2, FolderPlus, Folder, Package, FileQuestion, MessageSquare, Sparkles, Plus, X, Loader2 } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import {
@@ -77,17 +78,18 @@ export function Favorites() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Heart className="w-5 h-5 text-rose-500" /> Favorites</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Your saved products, FAQs, and conversations.</p>
-        </div>
-        <Button type="button" onClick={() => setCreateOpen(true)}>
-          <FolderPlus className="w-4 h-4" /> New Collection
-        </Button>
-      </div>
-
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader
+        title="Favorites"
+        subtitle="Your saved products, FAQs, and conversations."
+        icon={Heart}
+        actions={
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <FolderPlus className="w-4 h-4" /> New Collection
+          </Button>
+        }
+      />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
       {error ? <ErrorState message={error} /> : null}
 
       {/* Tabs */}
@@ -137,6 +139,7 @@ export function Favorites() {
           </div>
         </div>
       ) : null}
+      </div>
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Collection" size="sm"
         footer={<>

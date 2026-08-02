@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Send,
   Paperclip,
   ThumbsUp,
   ThumbsDown,
@@ -67,6 +66,8 @@ import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
 import { notifyAIResponseReady } from "../../lib/pushNotifications";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
+import { NotificationCenter } from "../notifications/NotificationCenter";
+import { ThemeToggle } from "../common/ThemeToggle";
 import { Modal } from "../common/Modal";
 import { useVoice } from "../../lib/useVoice";
 import { Button } from "../ui/button";
@@ -689,7 +690,7 @@ export function UserChat() {
     const title = activeConv?.title ?? "Conversation";
     const lines: string[] = [
       `<html><head><title>${title}</title>`,
-      `<style>body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1F1F1F}h1{color:#234F1E}.msg{margin:16px 0;padding:12px;border-radius:8px}.user{background:#DDEDD5}.ai{background:#F3EAD8}.role{font-weight:600;font-size:12px;color:#6B6B6B;margin-bottom:4px}.ts{font-size:10px;color:#999}.src{font-size:11px;color:#666;margin-top:8px}</style>`,
+      `<style>body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1F1F1F}h1{color:#2F7D3A}.msg{margin:16px 0;padding:12px;border-radius:8px}.user{background:#E4F4DC}.ai{background:#F3EAD8}.role{font-weight:600;font-size:12px;color:#6B6B6B;margin-bottom:4px}.ts{font-size:10px;color:#999}.src{font-size:11px;color:#666;margin-top:8px}</style>`,
       `</head><body>`,
       `<h1>${BRAND.name}</h1>`,
       `<p style="color:#6B6B6B">Conversation: ${title}</p>`,
@@ -1010,12 +1011,6 @@ export function UserChat() {
                 </span>
               ) : null}
             </Button>
-            {/* Brand mark next to title — only on new chat for context */}
-            {!activeConv ? (
-              <div className="flex items-center gap-2 shrink-0">
-                <DayjoyLogo variant="mark" size={24} />
-              </div>
-            ) : null}
             <div className="flex flex-col min-w-0">
               <h2 className="text-sm sm:text-base font-semibold truncate leading-tight">
                 {activeConv?.title ?? "New conversation"}
@@ -1099,6 +1094,18 @@ export function UserChat() {
                 </span>
               ) : null}
             </Button>
+            <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
+            <NotificationCenter />
+            <ThemeToggle />
+            <div
+              className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-0.5"
+              aria-hidden="true"
+              title={currentUser?.email ?? "Account"}
+            >
+              {currentUser?.email?.slice(0, 2).toUpperCase() ??
+                currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
+                "DU"}
+            </div>
           </div>
         </header>
 
@@ -1111,7 +1118,7 @@ export function UserChat() {
         >
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && !streamingText ? (
-              <div className="py-6 sm:py-10 text-center">
+              <div className="py-10 sm:py-16 text-center">
                 {/* Hero — orb + brand mark, layered for depth */}
                 <div className="relative flex justify-center mb-5">
                   {/* Soft mesh halo behind the orb */}
@@ -1495,21 +1502,20 @@ export function UserChat() {
                     onClick={() => handleSend()}
                     disabled={!input.trim() || sending}
                     whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: input.trim() && !sending ? 1.02 : 1 }}
-                    className="group/send relative inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
+                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
                     aria-label="Send message"
                   >
                     {/* Gradient sheen on hover */}
                     <span
                       aria-hidden="true"
-                      className="absolute inset-0 rounded-xl opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
                       style={{
                         background:
                           "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
                       }}
                     />
-                    <Send className="w-4 h-4 relative" aria-hidden="true" />
-                    <span className="relative">Send</span>
+                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
                   </motion.button>
                 </div>
               </div>

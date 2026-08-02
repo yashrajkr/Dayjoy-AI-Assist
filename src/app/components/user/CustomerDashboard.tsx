@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { customerDashboard, type CustomerDashboard as DashboardData } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";
+import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { useAuth } from "../../lib/AuthContext";
@@ -31,8 +32,18 @@ export function CustomerDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="p-4 sm:p-6 max-w-5xl mx-auto"><LoadingState label="Loading your dashboard…" /></div>;
-  if (error) return <div className="p-4 sm:p-6 max-w-5xl mx-auto"><ErrorState message={error} /></div>;
+  if (loading) return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney." />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full"><LoadingState label="Loading your dashboard…" /></div>
+    </div>
+  );
+  if (error) return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney." />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full"><ErrorState message={error} /></div>
+    </div>
+  );
   if (!data) return null;
 
   const greeting = (() => {
@@ -45,10 +56,12 @@ export function CustomerDashboard() {
   const userName = (currentUser?.user_metadata?.full_name as string) || currentUser?.email?.split("@")[0] || "there";
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney today." />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full space-y-4">
       {/* Welcome header */}
       <div className="rounded-2xl surface-gradient border border-border/60 p-4 sm:p-6">
-        <h1 className="text-xl sm:text-2xl font-semibold">{greeting}, {userName}! 👋</h1>
+        <h2 className="text-xl sm:text-2xl font-semibold">{greeting}, {userName}! 👋</h2>
         <p className="text-sm text-muted-foreground mt-1">Here's what's happening with your Dayjourney today.</p>
         <div className="flex flex-wrap gap-2 mt-3">
           <Button asChild size="sm">
@@ -185,6 +198,7 @@ export function CustomerDashboard() {
           </Button>
         </div>
       </Card>
+      </div>
     </div>
   );
 }

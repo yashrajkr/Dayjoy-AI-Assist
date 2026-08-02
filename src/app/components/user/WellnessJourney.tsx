@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { AppHeader } from "../common/AppHeader";
 import { LineChart, ProgressBar, type LineChartPoint } from "../common/Charts";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -153,12 +154,13 @@ export function WellnessJourney() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
-      <div className="mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Target className="w-5 h-5 text-primary" /> Wellness Journey</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Set goals, track activities, and manage reminders.</p>
-      </div>
-
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader
+        title="Wellness Journey"
+        subtitle="Set goals, track activities, and manage reminders."
+        icon={Target}
+      />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
       {error ? <ErrorState message={error} /> : null}
 
       {/* Stats */}
@@ -269,6 +271,7 @@ export function WellnessJourney() {
           )}
         </>
       ) : null}
+      </div>
 
       {/* Goal modal */}
       <Modal open={goalModal} onClose={() => setGoalModal(false)} title="New Wellness Goal" size="md"

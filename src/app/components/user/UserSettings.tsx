@@ -3,7 +3,8 @@ import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, 
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
-import { PageHeader, Card } from "../common/AdminUI";
+import { Card } from "../common/AdminUI";
+import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
 import {
   getPushSubscriptionState,
@@ -186,13 +187,9 @@ export function UserSettings() {
   };
 
   return (
-    <div className="p-4 sm:p-8 max-w-3xl mx-auto">
-      <PageHeader
-        title="Settings"
-        description={`Customize your ${BRAND.name} experience.`}
-        icon={<Settings className="w-5 h-5" />}
-      />
-
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader title="Settings" subtitle={`Customize your ${BRAND.name} experience.`} icon={Settings} />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-3xl mx-auto w-full">
       <div className="space-y-4">
         <Card>
           <div className="flex items-start gap-3">
@@ -485,6 +482,7 @@ export function UserSettings() {
             </span>
           ) : null}
         </div>
+      </div>
       </div>
     </div>
   );

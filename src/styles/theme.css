@@ -17,9 +17,9 @@
   --font-family-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-family-serif: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
 
-  /* Light mode — Dayjoy wellness palette */
-  --background: #F8F7EE;
-  --background-rgb: 248, 247, 238;
+  /* Light mode — Dayjoy wellness palette (light green) */
+  --background: #F9FBF6;
+  --background-rgb: 249, 251, 246;
   --foreground: #1F1F1F;
   --foreground-rgb: 31, 31, 31;
   --card: #FFFFFF;
@@ -29,15 +29,15 @@
   --popover: #FFFFFF;
   --popover-foreground: #1F1F1F;
 
-  --primary: #234F1E;
-  --primary-rgb: 35, 79, 30;
+  --primary: #2F7D3A;
+  --primary-rgb: 47, 125, 58;
   --primary-foreground: #FFFFFF;
-  --secondary: #4F6F46;
+  --secondary: #5A9350;
   --secondary-foreground: #FFFFFF;
   --muted: #6B6B6B;
   --muted-foreground: #6B6B6B;
-  --accent: #DDEDD5;
-  --accent-foreground: #234F1E;
+  --accent: #E4F4DC;
+  --accent-foreground: #2F7D3A;
   --destructive: #C62828;
   --destructive-foreground: #FFFFFF;
   --warning: #B7791F;
@@ -49,16 +49,16 @@
   --gold-accent: #FFC98B;
   --gold-accent-rgb: 255, 201, 139;
 
-  /* Reference-UI aliases — deep forest mark surface + gold accent surface */
-  --forest: #16331A;
+  /* Reference-UI aliases — forest mark surface + gold accent surface */
+  --forest: #2A6B33;
   --forest-foreground: #F0EDE2;
   --gold: var(--gold-accent);
   --gold-foreground: #2B1B06;
 
   /* Soft, green-tinted elevation (never pure black) */
   --shadow-flat: 0 0 0 1px var(--border);
-  --shadow-raised: 0 1px 2px rgba(35, 79, 30, 0.08), 0 1px 1px rgba(35, 79, 30, 0.04);
-  --shadow-overlay: 0 8px 28px -4px rgba(35, 79, 30, 0.16), 0 2px 8px rgba(35, 79, 30, 0.06);
+  --shadow-raised: 0 1px 2px rgba(47, 125, 58, 0.08), 0 1px 1px rgba(47, 125, 58, 0.04);
+  --shadow-overlay: 0 8px 28px -4px rgba(47, 125, 58, 0.16), 0 2px 8px rgba(47, 125, 58, 0.06);
 
   --border: rgba(0, 0, 0, 0.08);
   --input: #FFFFFF;
@@ -67,31 +67,31 @@
 
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #234F1E;
+  --ring: #2F7D3A;
 
-  --chart-1: #234F1E;
-  --chart-2: #4F6F46;
-  --chart-3: #DDEDD5;
+  --chart-1: #2F7D3A;
+  --chart-2: #5A9350;
+  --chart-3: #E4F4DC;
   --chart-4: #FFC98B;
   --chart-5: #B7791F;
 
   --radius: 0.75rem;
 
-  --sidebar: #EEF6E9;
-  --sidebar-rgb: 238, 246, 233;
+  --sidebar: #F1F9EC;
+  --sidebar-rgb: 241, 249, 236;
   --sidebar-foreground: #1F1F1F;
-  --sidebar-primary: #234F1E;
+  --sidebar-primary: #2F7D3A;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #DDEDD5;
-  --sidebar-accent-foreground: #234F1E;
-  --sidebar-border: rgba(35, 79, 30, 0.1);
-  --sidebar-ring: #234F1E;
+  --sidebar-accent: #E4F4DC;
+  --sidebar-accent-foreground: #2F7D3A;
+  --sidebar-border: rgba(47, 125, 58, 0.1);
+  --sidebar-ring: #2F7D3A;
 
   /* Glassmorphism — light */
   --glass-bg: rgba(255, 255, 255, 0.72);
   --glass-bg-strong: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(255, 255, 255, 0.6);
-  --glass-shadow: 0 8px 32px -8px rgba(35, 79, 30, 0.12);
+  --glass-shadow: 0 8px 32px -8px rgba(47, 125, 58, 0.12);
   --glass-blur: 16px;
 
   /* Motion tokens */
@@ -104,13 +104,13 @@
   --dur-xslow: 700ms;
 
   /* AI orb state colors (shared across light/dark) */
-  --orb-idle: #234F1E;
-  --orb-listening: #4F6F46;
+  --orb-idle: #2F7D3A;
+  --orb-listening: #5A9350;
   --orb-thinking: #FFC98B;
-  --orb-answering: #DDEDD5;
+  --orb-answering: #E4F4DC;
   --orb-error: #B7791F;
   --orb-blocked: #C62828;
-  --orb-verified: #234F1E;
+  --orb-verified: #2F7D3A;
 }
 
 /* ============================================================================
