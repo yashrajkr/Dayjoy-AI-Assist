@@ -52,6 +52,9 @@ create trigger trg_assign_distributor_code
 before insert or update of role on profiles
 for each row execute procedure public.fn_assign_distributor_code();
 
+-- Trigger-only function — never callable directly via the PostgREST RPC API.
+revoke execute on function public.fn_assign_distributor_code() from public, anon, authenticated;
+
 -- Backfill codes for existing distributors that predate this migration.
 update profiles
 set distributor_code = 'DJ-' || upper(substr(replace(id::text, '-', ''), 1, 6))
@@ -342,6 +345,9 @@ create trigger trg_process_purchase_bv
 after insert on customer_purchases
 for each row execute procedure public.fn_process_purchase_business_volume();
 
+-- Trigger-only function — never callable directly via the PostgREST RPC API.
+revoke execute on function public.fn_process_purchase_business_volume() from public, anon, authenticated;
+
 -- ============================================================================
 -- 10. Function: compute_distributor_rank — evaluates + records rank changes
 -- ============================================================================
@@ -357,6 +363,16 @@ declare
   v_rank_id uuid;
   v_current_rank_id uuid;
 begin
+  -- Only the distributor themself, staff, or the backend's service-role key
+  -- (auth.uid() is null, auth.role() = 'service_role') may compute a rank —
+  -- prevents one authenticated user from rewriting another's rank history
+  -- via the public RPC endpoint.
+  if auth.role() is distinct from 'service_role'
+     and auth.uid() is distinct from p_user_id
+     and not public.is_staff() then
+    raise exception 'not authorized to compute rank for this user';
+  end if;
+
   select coalesce(sum(bv), 0) into v_bv
   from business_volume_ledger
   where distributor_id = p_user_id and created_at >= now() - interval '90 days';
@@ -388,6 +404,9 @@ begin
   return v_rank_id;
 end;
 $$;
+
+revoke execute on function public.compute_distributor_rank(uuid) from public, anon;
+grant execute on function public.compute_distributor_rank(uuid) to authenticated;
 
 -- ============================================================================
 -- 11. Views for the Business Intelligence dashboard
@@ -435,4 +454,7 @@ comment on view public.distributor_current_rank is
 --   • 2 new functions + 2 triggers: auto distributor codes, BV/commission
 --     posting on purchase, on-demand rank computation
 --   • Seeded 6-tier rank ladder (Distributor → Crown) — tune to Dayjoy's plan
+--   • SECURITY DEFINER functions locked down: trigger-only functions have
+--     execute revoked from anon/authenticated entirely; compute_distributor_rank
+--     only runs for the caller's own id, staff, or the backend's service role
 -- ============================================================================
