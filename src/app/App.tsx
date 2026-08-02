@@ -119,8 +119,8 @@ const RolePermissions = lazy(() =>
 const UniversalSearch = lazy(() =>
   import("./components/admin/UniversalSearch").then((m) => ({ default: m.UniversalSearch })),
 );
-const DistributorDashboard = lazy(() =>
-  import("./components/user/DistributorDashboard").then((m) => ({ default: m.DistributorDashboard })),
+const BusinessIntelligence = lazy(() =>
+  import("./components/user/BusinessIntelligence").then((m) => ({ default: m.BusinessIntelligence })),
 );
 const CustomerProfiles = lazy(() =>
   import("./components/user/CustomerProfiles").then((m) => ({ default: m.CustomerProfiles })),
@@ -244,7 +244,7 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
                   <Suspense fallback={<AppShellFallback />}>
-                    <DistributorDashboard />
+                    <BusinessIntelligence />
                   </Suspense>
                 </ProtectedRoute>
               }

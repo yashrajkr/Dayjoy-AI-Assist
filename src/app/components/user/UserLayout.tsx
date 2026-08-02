@@ -176,7 +176,7 @@ export function UserLayout() {
                 {!collapsed ? (
                   <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
                 ) : <div className="pt-2" />}
-                <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Intelligence" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                 <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                 <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                 <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />

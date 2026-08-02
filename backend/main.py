@@ -2041,6 +2041,17 @@ except Exception as _dist_router_err:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Business Intelligence — AI Business Operating System dashboard router
+# ---------------------------------------------------------------------------
+try:
+    from backend.business_intelligence_api import router as bi_router
+    app.include_router(bi_router)
+except Exception as _bi_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load business intelligence router: %s", _bi_router_err)
+
+
+# ---------------------------------------------------------------------------
 # Phase 4 — Customer Experience Platform API router
 # ---------------------------------------------------------------------------
 try:
