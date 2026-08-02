@@ -85,11 +85,11 @@ export function UserLayout() {
       </a>
 
       {/* Mobile top bar */}
-      <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
+      <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
-          className="p-2 rounded-lg hover:bg-accent/50"
+          className="p-2 rounded-lg hover:bg-sidebar-accent"
           aria-label="Open navigation"
           aria-expanded={drawerOpen}
           aria-controls="dj-user-drawer"
@@ -115,17 +115,17 @@ export function UserLayout() {
       {/* Sidebar (also mobile drawer) */}
       <aside
         id="dj-user-drawer"
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
+        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
           ${drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           lg:flex`}
         aria-label="Primary navigation"
       >
-        <div className="lg:hidden flex items-center justify-between p-3 border-b border-border">
+        <div className="lg:hidden flex items-center justify-between p-3 border-b border-sidebar-border">
           <DayjoyLogo variant="full" size={32} />
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
-            className="p-2 rounded-lg hover:bg-accent/50"
+            className="p-2 rounded-lg hover:bg-sidebar-accent"
             aria-label="Close navigation"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -133,7 +133,7 @@ export function UserLayout() {
         </div>
 
         {/* Brand + new chat */}
-        <div className="p-4 border-b border-border hidden lg:block">
+        <div className="p-4 border-b border-sidebar-border hidden lg:block">
           <div className={`flex items-center gap-3 mb-4 ${collapsed ? "justify-center" : ""}`}>
             <DayjoyLogo variant="mark" size={40} />
             {!collapsed ? (
@@ -160,7 +160,7 @@ export function UserLayout() {
         {/* Primary nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main">
           {!collapsed ? (
-            <p className="text-xs font-medium text-muted-foreground mb-2 px-3 uppercase tracking-wide">
+            <p className="text-xs font-medium text-sidebar-foreground/60 mb-2 px-3 uppercase tracking-wide">
               {BRAND.shortName}
             </p>
           ) : null}
@@ -174,7 +174,7 @@ export function UserLayout() {
             {canDistributor ? (
               <>
                 {!collapsed ? (
-                  <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
+                  <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/60">Distributor Hub</div>
                 ) : <div className="pt-2" />}
                 <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                 <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
@@ -195,19 +195,19 @@ export function UserLayout() {
         </nav>
 
         {/* User card */}
-        <div className="p-3 border-t border-border space-y-2">
+        <div className="p-3 border-t border-sidebar-border space-y-2">
           <NavLink
             to="/settings"
             onClick={() => setDrawerOpen(false)}
             title={userName}
             className={({ isActive }) =>
               `w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${collapsed ? "justify-center" : ""} ${
-                isActive ? "bg-accent" : "hover:bg-accent/50"
+                isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60"
               }`
             }
           >
             <div
-              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm shrink-0"
+              className="w-9 h-9 rounded-full bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center font-medium text-sm shrink-0"
               aria-hidden="true"
             >
               {userInitials}
@@ -216,9 +216,9 @@ export function UserLayout() {
               <>
                 <div className="flex-1 text-left min-w-0">
                   <p className="text-sm font-medium truncate">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                  <p className="text-xs text-sidebar-foreground/60">{roleLabel}</p>
                 </div>
-                <Settings className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                <Settings className="w-4 h-4 text-sidebar-foreground/60" aria-hidden="true" />
               </>
             ) : null}
           </NavLink>
@@ -228,7 +228,7 @@ export function UserLayout() {
               to="/admin"
               onClick={() => setDrawerOpen(false)}
               title="Admin Console"
-              className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
             >
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               {!collapsed ? (
@@ -251,7 +251,7 @@ export function UserLayout() {
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
+              className="p-2 rounded-lg hover:bg-sidebar-accent/60 text-sidebar-foreground/60 transition-colors"
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
@@ -263,7 +263,7 @@ export function UserLayout() {
             type="button"
             onClick={handleLogout}
             title="Sign out"
-            className={`w-full text-left px-3 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors ${collapsed ? "text-center" : ""}`}
+            className={`w-full text-left px-3 py-2 text-xs text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors ${collapsed ? "text-center" : ""}`}
           >
             {collapsed ? <X className="w-3.5 h-3.5 mx-auto" aria-hidden="true" /> : "Sign out"}
           </button>
@@ -318,8 +318,8 @@ function NavItem({
       className={({ isActive }) =>
         `relative w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-sm ${collapsed ? "justify-center" : ""} ${
           isActive
-            ? "bg-primary text-primary-foreground shadow-raised"
-            : "hover:bg-accent/60 hover:translate-x-0.5 text-foreground"
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-raised"
+            : "hover:bg-sidebar-accent/70 hover:translate-x-0.5 text-sidebar-foreground"
         }`
       }
       aria-current="page"
@@ -329,7 +329,7 @@ function NavItem({
           {isActive ? (
             <motion.span
               layoutId="user-nav-active"
-              className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-foreground rounded-r-full"
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-sidebar-primary-foreground rounded-r-full"
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
             />
           ) : null}
