@@ -3,14 +3,17 @@ import {
   Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, Calendar,
   Heart, Loader2, Save, X, Sparkles,
 } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import {
   distributorListCustomers, distributorCreateCustomer, distributorUpdateCustomer,
   distributorDeleteCustomer, type CustomerProfile,
 } from "../../../lib/api";
 import { streamChatWithBackend } from "../../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
 
 const STATUSES = ["lead", "prospect", "active_customer", "inactive", "vip"];
 
@@ -189,9 +192,9 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">Manage customer profiles and get AI product recommendations.</p>
         </div>
-        <button type="button" className={btnClass.primary} onClick={openCreate}>
+        <Button type="button" onClick={openCreate}>
           <Plus className="w-4 h-4" /> Add Customer
-        </button>
+        </Button>
       </div>
 
       {error ? <ErrorState message={error} /> : null}
@@ -211,13 +214,13 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
       </div>
 
       {loading ? <LoadingState label="Loading customers…" /> : customers.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card">
+        <Card className="shadow-none">
           <EmptyState title="No customers yet" description="Add your first customer to get started." icon={<Users className="w-5 h-5" />} />
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {customers.map((c) => (
-            <div key={c.id} className="rounded-xl border border-border bg-card p-3">
+            <Card key={c.id} className="p-3 shadow-none">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-medium shrink-0">
@@ -225,14 +228,14 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-sm truncate">{c.full_name}</p>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${c.status === "active_customer" ? "bg-primary/10 text-primary" : c.status === "vip" ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
+                    <Badge variant={c.status === "active_customer" || c.status === "vip" ? "default" : "secondary"} className="capitalize">
                       {c.status?.replace("_", " ")}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
                 <div className="flex gap-0.5 shrink-0">
-                  <button type="button" className="p-1.5 rounded hover:bg-accent" onClick={() => openEdit(c)} aria-label="Edit"><Edit className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 rounded hover:bg-destructive/10 text-destructive" onClick={() => handleDelete(c)} aria-label="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5" onClick={() => openEdit(c)} aria-label="Edit"><Edit className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(c)} aria-label="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
               <div className="space-y-1 text-xs text-muted-foreground">
@@ -242,11 +245,11 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
                 {c.health_goals && c.health_goals.length > 0 ? <div className="flex items-center gap-1"><Heart className="w-3 h-3" /> {c.health_goals.join(", ")}</div> : null}
                 {c.next_contact_at ? <div className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Next: {new Date(c.next_contact_at).toLocaleDateString()}</div> : null}
               </div>
-              <button type="button" onClick={() => getRecommendation(c)}
-                className="mt-2 w-full text-xs px-2 py-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 flex items-center justify-center gap-1">
+              <Button type="button" variant="outline" onClick={() => getRecommendation(c)}
+                className="mt-2 w-full text-xs h-auto py-1.5 border-primary/30 text-primary hover:bg-primary/10">
                 <Sparkles className="w-3 h-3" /> Get AI Recommendations
-              </button>
-            </div>
+              </Button>
+            </Card>
           ))}
         </div>
       )}
@@ -254,10 +257,10 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
       {/* Create/Edit modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Customer" : "Add Customer"} size="lg"
         footer={<>
-          <button type="button" className={modalButtonClass.secondary} onClick={() => setModalOpen(false)}><X className="w-4 h-4" /> Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleSave} disabled={saving}>
+          <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}><X className="w-4 h-4" /> Cancel</Button>
+          <Button type="button" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-          </button>
+          </Button>
         </>}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
@@ -341,7 +344,7 @@ Recommend 2-3 products with reasoning, usage suggestions, and precautions. Do no
       {/* Recommendation modal */}
       <Modal open={!!recommendModal} onClose={() => setRecommendModal(null)}
         title={`AI Recommendations for ${recommendModal?.full_name ?? ""}`} size="lg"
-        footer={<button type="button" className={modalButtonClass.secondary} onClick={() => setRecommendModal(null)}>Close</button>}>
+        footer={<Button type="button" variant="secondary" onClick={() => setRecommendModal(null)}>Close</Button>}>
         {recLoading && !recommendation ? <LoadingState label="Generating recommendations…" /> : (
           <div className="prose prose-sm max-w-none">
             <pre className="whitespace-pre-wrap text-sm font-sans bg-accent/30 p-3 rounded-lg">{recommendation || "No recommendations generated."}</pre>

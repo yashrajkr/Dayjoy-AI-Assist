@@ -4,8 +4,8 @@ import {
   Play, GitBranch, Brain, Bell, RefreshCw,
   ChevronDown, Save, X,
 } from "lucide-react";
-import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, StatusPill } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
 import {
   workflowList, workflowCreate, workflowDelete, workflowExecute, workflowGet, workflowUpdate,
   workflowTasks, workflowScheduledJobs, workflowDeleteScheduledJob,
@@ -13,6 +13,8 @@ import {
   workflowDashboard,
   type Workflow as WorkflowType, type TaskQueueItem, type ApprovalRequest, type BusinessRule,
 } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 
 type Tab = "workflows" | "tasks" | "approvals" | "rules" | "scheduler";
 
@@ -82,7 +84,7 @@ export function WorkflowAutomation() {
         title="Workflow Automation"
         description="AI-powered business process automation with multi-agent intelligence"
         icon={<Workflow className="w-5 h-5" />}
-        actions={<button type="button" className={btnClass.secondary} onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</button>}
+        actions={<Button type="button" variant="secondary" onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</Button>}
       />
 
       {error ? <ErrorState message={error} /> : null}
@@ -203,7 +205,7 @@ function WorkflowsView({ workflows, onChanged }: { workflows: WorkflowType[]; on
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Workflow</button>
+        <Button type="button" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Workflow</Button>
       </div>
       {workflows.length === 0 ? <Card><EmptyState title="No workflows" description="Create your first workflow to automate business processes." icon={<Workflow className="w-5 h-5" />} /></Card> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -236,8 +238,8 @@ function WorkflowsView({ workflows, onChanged }: { workflows: WorkflowType[]; on
 
       {/* Create Modal */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Workflow" size="sm"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
@@ -262,8 +264,8 @@ function WorkflowsView({ workflows, onChanged }: { workflows: WorkflowType[]; on
 
       {/* Workflow Builder Modal */}
       <Modal open={builderOpen} onClose={() => setBuilderOpen(false)} title={`Builder: ${editingWf?.name ?? ""}`} size="lg"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setBuilderOpen(false)}>Close</button>
-          <button type="button" className={modalButtonClass.primary} onClick={saveBuilder} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setBuilderOpen(false)}>Close</Button>
+          <Button type="button" onClick={saveBuilder} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</Button></>}>
         <div className="space-y-3">
           {/* Node palette */}
           <div>
@@ -379,8 +381,8 @@ function ApprovalsView({ data, onChanged }: { data: { approvals: ApprovalRequest
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground capitalize">{a.approval_type.replace(/_/g, " ")}</span>
-                    {a.priority === "urgent" ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">URGENT</span> : null}
+                    <Badge variant="secondary" className="capitalize">{a.approval_type.replace(/_/g, " ")}</Badge>
+                    {a.priority === "urgent" ? <Badge variant="destructive">URGENT</Badge> : null}
                     <span className="text-xs font-medium">{a.entity_name || a.summary.slice(0, 40)}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">{a.summary}</p>
@@ -419,8 +421,8 @@ function RulesView({ rules, onChanged }: { rules: BusinessRule[]; onChanged: () 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-medium">{r.name}</h3>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground capitalize">{r.rule_type}</span>
-                    {r.is_active ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">Active</span> : null}
+                    <Badge variant="secondary" className="capitalize">{r.rule_type}</Badge>
+                    {r.is_active ? <Badge>Active</Badge> : null}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Event: {r.event_type} · Priority: {r.priority} · Executed {r.execution_count}×</p>
                   <div className="flex items-center gap-1 mt-1 text-[10px]">
@@ -461,8 +463,8 @@ function SchedulerView({ jobs, onChanged }: { jobs: Array<Record<string, unknown
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-medium">{String(j.name || "Job")}</h3>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground capitalize">{String(j.job_type || "")}</span>
-                    {j.is_active ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">Active</span> : null}
+                    <Badge variant="secondary" className="capitalize">{String(j.job_type || "")}</Badge>
+                    {j.is_active ? <Badge>Active</Badge> : null}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
                     {j.cron_expression ? `Cron: ${j.cron_expression}` : j.interval_seconds ? `Every ${j.interval_seconds}s` : j.scheduled_for ? `At: ${j.scheduled_for}` : ""}

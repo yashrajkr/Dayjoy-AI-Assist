@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
 import {
@@ -21,6 +21,7 @@ import {
   Heart,
   Target,
   Search,
+  MoreHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -29,12 +30,23 @@ import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { Onboarding } from "../onboarding/Onboarding";
+import { CommandPalette, type CommandPaletteItem } from "../common/CommandPalette";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { listConversations, type Conversation } from "../../lib/chatStore";
 
 /**
  * User-facing app shell — left sidebar with primary nav + user card.
  *
- * Mobile: sidebar collapses into a drawer toggled by a hamburger button
- * in the top bar. The drawer overlay closes on click-outside / Escape.
+ * Mobile: a fixed bottom tab bar covers the 4 most-used destinations plus
+ * a "More" tab that opens the full drawer (all remaining nav + settings).
  *
  * Accessibility:
  *  - Skip link to main content
@@ -48,6 +60,18 @@ export function UserLayout() {
   const { role, currentUser, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
+  const [recentChats, setRecentChats] = useState<Conversation[]>([]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    listConversations(currentUser.id).then((convos) => {
+      if (!cancelled) setRecentChats(convos.slice(0, 6));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, location.pathname]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -75,224 +99,312 @@ export function UserLayout() {
     navigate("/login");
   };
 
+  const paletteItems: CommandPaletteItem[] = [
+    { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
+    { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
+    { to: "/products", icon: Package, label: "Product Discovery", group: "Main" },
+    { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
+    { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
+    { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
+    ...(canDistributor
+      ? [
+          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Distributor Dashboard", group: "Distributor Hub" },
+          { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Distributor Hub" },
+          { to: "/distributor/customers", icon: Users, label: "Customers", group: "Distributor Hub" },
+          { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Distributor Hub" },
+          { to: "/distributor/content", icon: Sparkles, label: "Content Generator", group: "Distributor Hub" },
+          { to: "/distributor/team", icon: Users, label: "My Team", group: "Distributor Hub" },
+          { to: "/distributor/analytics", icon: BarChart3, label: "Analytics", group: "Distributor Hub" },
+          { to: "/training", icon: GraduationCap, label: "Training", group: "Distributor Hub" },
+        ]
+      : []),
+    ...(canEmployee ? [{ to: "/support", icon: LifeBuoy, label: "Human Support", group: "Main" }] : []),
+    { to: "/settings", icon: Settings, label: "Settings", group: "Account" },
+  ];
+
+  const mobileTabs = [
+    { to: "/", icon: Plus, label: "Chat" },
+    { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/products", icon: Package, label: "Products" },
+    { to: "/knowledge", icon: Search, label: "Knowledge" },
+  ];
+
   return (
-    <div className="h-screen flex bg-background">
-      <a
-        href="#dj-main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
-      >
-        Skip to main content
-      </a>
-
-      {/* Mobile top bar */}
-      <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="p-2 rounded-lg hover:bg-accent/50"
-          aria-label="Open navigation"
-          aria-expanded={drawerOpen}
-          aria-controls="dj-user-drawer"
+    <TooltipProvider delayDuration={200}>
+      <div className="h-screen flex bg-background">
+        <a
+          href="#dj-main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
         >
-          <Menu className="w-5 h-5" aria-hidden="true" />
-        </button>
-        <DayjoyLogo variant="full" size={28} />
-        <div className="flex items-center gap-1">
-          <LanguageSwitcher />
-          <ThemeToggle />
-        </div>
-      </header>
+          Skip to main content
+        </a>
 
-      {/* Mobile drawer overlay */}
-      {drawerOpen ? (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/40"
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden="true"
-        />
-      ) : null}
+        {/* Mobile top bar */}
+        <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="p-2 rounded-lg hover:bg-accent/50"
+            aria-label="Open navigation"
+            aria-expanded={drawerOpen}
+            aria-controls="dj-user-drawer"
+          >
+            <Menu className="w-5 h-5" aria-hidden="true" />
+          </button>
+          <DayjoyLogo variant="full" size={28} />
+          <div className="flex items-center gap-1">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
+        </header>
 
-      {/* Sidebar (also mobile drawer) */}
-      <aside
-        id="dj-user-drawer"
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
+        {/* Mobile drawer overlay */}
+        {drawerOpen ? (
+          <div
+            className="lg:hidden fixed inset-0 z-40 bg-black/40"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+        ) : null}
+
+        {/* Sidebar (also mobile drawer) */}
+        <aside
+          id="dj-user-drawer"
+          className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] scrollbar-thin
           ${drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           lg:flex`}
-        aria-label="Primary navigation"
-      >
-        <div className="lg:hidden flex items-center justify-between p-3 border-b border-border">
-          <DayjoyLogo variant="full" size={32} />
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(false)}
-            className="p-2 rounded-lg hover:bg-accent/50"
-            aria-label="Close navigation"
-          >
-            <X className="w-5 h-5" aria-hidden="true" />
-          </button>
-        </div>
-
-        {/* Brand + new chat */}
-        <div className="p-4 border-b border-border hidden lg:block">
-          <div className={`flex items-center gap-3 mb-4 ${collapsed ? "justify-center" : ""}`}>
-            <DayjoyLogo variant="mark" size={40} />
-            {!collapsed ? (
-              <div className="min-w-0">
-                <h1 className="font-semibold text-sm truncate">{BRAND.name}</h1>
-                <p className="text-xs text-muted-foreground truncate">{BRAND.tagline}</p>
-              </div>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              navigate("/");
-              setDrawerOpen(false);
-            }}
-            title="New Chat"
-            className="w-full px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium shadow-raised hover:opacity-90 hover:shadow-overlay transition-all flex items-center justify-center gap-2 text-sm"
-          >
-            <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
-            {!collapsed ? "New Chat" : null}
-          </button>
-        </div>
-
-        {/* Primary nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main">
-          {!collapsed ? (
-            <p className="text-xs font-medium text-muted-foreground mb-2 px-3 uppercase tracking-wide">
-              {BRAND.shortName}
-            </p>
-          ) : null}
-          <div className="space-y-1">
-            <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            <NavItem to="/products" icon={Package} label="Product Discovery" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            {canDistributor ? (
-              <>
-                {!collapsed ? (
-                  <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
-                ) : <div className="pt-2" />}
-                <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor/content" icon={Sparkles} label="Content Generator" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor/team" icon={Users} label="My Team" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                <NavItem to="/distributor/analytics" icon={BarChart3} label="Analytics" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              </>
-            ) : null}
-            {canDistributor ? (
-              <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            ) : null}
-            {canEmployee ? (
-              <NavItem to="/support" icon={LifeBuoy} label="Human Support" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-            ) : null}
-          </div>
-        </nav>
-
-        {/* User card */}
-        <div className="p-3 border-t border-border space-y-2">
-          <NavLink
-            to="/settings"
-            onClick={() => setDrawerOpen(false)}
-            title={userName}
-            className={({ isActive }) =>
-              `w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${collapsed ? "justify-center" : ""} ${
-                isActive ? "bg-accent" : "hover:bg-accent/50"
-              }`
-            }
-          >
-            <div
-              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm shrink-0"
-              aria-hidden="true"
-            >
-              {userInitials}
-            </div>
-            {!collapsed ? (
-              <>
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-sm font-medium truncate">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
-                </div>
-                <Settings className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
-              </>
-            ) : null}
-          </NavLink>
-
-          {(role === "admin" || role === "management" || role === "employee") ? (
-            <NavLink
-              to="/admin"
-              onClick={() => setDrawerOpen(false)}
-              title="Admin Console"
-              className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              {!collapsed ? (
-                <>
-                  <span>Admin Console</span>
-                  <ChevronRight className="w-3 h-3 ml-auto" aria-hidden="true" />
-                </>
-              ) : null}
-            </NavLink>
-          ) : null}
-
-          {/* Desktop theme toggle + language + collapse */}
-          <div className={`hidden lg:flex items-center gap-1 pt-1 ${collapsed ? "justify-center flex-col" : "justify-end"}`}>
-            {!collapsed ? (
-              <>
-                <LanguageSwitcher />
-                <ThemeToggle />
-              </>
-            ) : null}
+          aria-label="Primary navigation"
+        >
+          <div className="lg:hidden flex items-center justify-between p-3 border-b border-border">
+            <DayjoyLogo variant="full" size={32} />
             <button
               type="button"
-              onClick={toggleCollapsed}
-              className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setDrawerOpen(false)}
+              className="p-2 rounded-lg hover:bg-accent/50"
+              aria-label="Close navigation"
             >
-              <ChevronsLeft className={`w-4 h-4 transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`} aria-hidden="true" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
 
+          {/* Brand + new chat */}
+          <div className="p-4 border-b border-border hidden lg:block">
+            <div className={`flex items-center gap-3 mb-4 ${collapsed ? "justify-center" : ""}`}>
+              <DayjoyLogo variant="mark" size={40} />
+              {!collapsed ? (
+                <div className="min-w-0">
+                  <h1 className="font-semibold text-sm truncate">{BRAND.name}</h1>
+                  <p className="text-xs text-muted-foreground truncate">{BRAND.tagline}</p>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigate("/");
+                setDrawerOpen(false);
+              }}
+              title="New Chat"
+              className="w-full px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium shadow-raised hover:opacity-90 hover:shadow-overlay transition-all flex items-center justify-center gap-2 text-sm"
+            >
+              <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+              {!collapsed ? "New Chat" : null}
+            </button>
+          </div>
+
+          {/* ⌘K search */}
+          {!collapsed ? (
+            <div className="px-4 pt-3 hidden lg:block">
+              <CommandPalette items={paletteItems} />
+            </div>
+          ) : null}
+
+          {/* Primary nav */}
+          <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main">
+            {!collapsed ? (
+              <p className="text-xs font-medium text-muted-foreground mb-2 px-3 uppercase tracking-wide">
+                {BRAND.shortName}
+              </p>
+            ) : null}
+            <div className="space-y-1">
+              <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/products" icon={Package} label="Product Discovery" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              {canDistributor ? (
+                <>
+                  {!collapsed ? (
+                    <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
+                  ) : <div className="pt-2" />}
+                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/content" icon={Sparkles} label="Content Generator" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/team" icon={Users} label="My Team" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/analytics" icon={BarChart3} label="Analytics" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                </>
+              ) : null}
+              {canDistributor ? (
+                <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              ) : null}
+              {canEmployee ? (
+                <NavItem to="/support" icon={LifeBuoy} label="Human Support" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              ) : null}
+            </div>
+
+            {!collapsed && recentChats.length > 0 ? (
+              <div className="pt-5">
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Recent chats
+                </p>
+                {recentChats.map((c) => (
+                  <NavLink
+                    key={c.id}
+                    to={`/chat/${c.id}`}
+                    onClick={() => setDrawerOpen(false)}
+                    className="block truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                  >
+                    {c.title}
+                  </NavLink>
+                ))}
+              </div>
+            ) : null}
+          </nav>
+
+          {/* User card */}
+          <div className="p-3 border-t border-border space-y-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title={userName}
+                  className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/50 ${collapsed ? "justify-center" : ""}`}
+                >
+                  <div
+                    className="w-9 h-9 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-sm shrink-0"
+                    aria-hidden="true"
+                  >
+                    {userInitials}
+                  </div>
+                  {!collapsed ? (
+                    <>
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="text-sm font-medium truncate">{userName}</p>
+                        <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                      </div>
+                      <Settings className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                    </>
+                  ) : null}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>
+                  {userName} · {roleLabel}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {(role === "admin" || role === "management" || role === "employee") ? (
+              <NavLink
+                to="/admin"
+                onClick={() => setDrawerOpen(false)}
+                title="Admin Console"
+                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                {!collapsed ? (
+                  <>
+                    <span>Admin Console</span>
+                    <ChevronRight className="w-3 h-3 ml-auto" aria-hidden="true" />
+                  </>
+                ) : null}
+              </NavLink>
+            ) : null}
+
+            {/* Desktop theme toggle + language + collapse */}
+            <div className={`hidden lg:flex items-center gap-1 pt-1 ${collapsed ? "justify-center flex-col" : "justify-end"}`}>
+              {!collapsed ? (
+                <>
+                  <LanguageSwitcher />
+                  <ThemeToggle />
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <ChevronsLeft className={`w-4 h-4 transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <main
+          id="dj-main-content"
+          className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0 pb-16 lg:pb-0"
+          tabIndex={-1}
+        >
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={pageTransition}
+              className="h-full flex flex-col min-w-0"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        {/* Mobile bottom tab bar */}
+        <nav
+          className="lg:hidden fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
+          aria-label="Mobile navigation"
+        >
+          {mobileTabs.map((tab) => {
+            const active = tab.to === "/" ? location.pathname === "/" : location.pathname.startsWith(tab.to);
+            return (
+              <NavLink
+                key={tab.to}
+                to={tab.to}
+                className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
+                  active ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <tab.icon className={`size-5 ${active ? "stroke-[2.4]" : ""}`} aria-hidden="true" />
+                {tab.label}
+              </NavLink>
+            );
+          })}
           <button
             type="button"
-            onClick={handleLogout}
-            title="Sign out"
-            className={`w-full text-left px-3 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors ${collapsed ? "text-center" : ""}`}
+            onClick={() => setDrawerOpen(true)}
+            className="flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium text-muted-foreground"
+            aria-label="More navigation options"
           >
-            {collapsed ? <X className="w-3.5 h-3.5 mx-auto" aria-hidden="true" /> : "Sign out"}
+            <MoreHorizontal className="size-5" aria-hidden="true" />
+            More
           </button>
-        </div>
-      </aside>
+        </nav>
 
-      {/* Main content */}
-      <main
-        id="dj-main-content"
-        className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0"
-        tabIndex={-1}
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            variants={pageTransition}
-            className="h-full flex flex-col min-w-0"
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
-      </main>
-
-      {/* First-time user onboarding overlay */}
-      <Onboarding />
-    </div>
+        {/* First-time user onboarding overlay */}
+        <Onboarding />
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -309,12 +421,11 @@ function NavItem({
   collapsed?: boolean;
   onClick?: () => void;
 }) {
-  return (
+  const link = (
     <NavLink
       to={to}
       end={to === "/"}
       onClick={onClick}
-      title={collapsed ? label : undefined}
       className={({ isActive }) =>
         `relative w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-sm ${collapsed ? "justify-center" : ""} ${
           isActive
@@ -338,5 +449,13 @@ function NavItem({
         </>
       )}
     </NavLink>
+  );
+
+  if (!collapsed) return link;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }

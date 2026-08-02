@@ -10,10 +10,11 @@ import {
   LoadingState,
   ErrorState,
   StatCard,
-  btnClass,
 } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { adminUpdateTicket, adminAddTicketNote, adminListTicketNotes } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 
 type Ticket = {
   id: string;
@@ -233,9 +234,9 @@ export function SupportTickets() {
         description="Triage, assign, and resolve customer support requests."
         icon={<Headphones className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -299,9 +300,9 @@ export function SupportTickets() {
                     <span>{t.created_at ? new Date(t.created_at).toLocaleString() : ""}</span>
                   </div>
                 </div>
-                <button type="button" className={btnClass.secondary} onClick={() => openEdit(t)}>
+                <Button type="button" variant="secondary" onClick={() => openEdit(t)}>
                   Update
-                </button>
+                </Button>
               </div>
             </Card>
           ))}
@@ -316,12 +317,12 @@ export function SupportTickets() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setEditing(null)}>
+            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
               Cancel
-            </button>
-            <button type="button" className={modalButtonClass.primary} onClick={saveEdit}>
+            </Button>
+            <Button type="button" onClick={saveEdit}>
               Save
-            </button>
+            </Button>
           </>
         }
       >
@@ -399,9 +400,7 @@ export function SupportTickets() {
                       </span>
                       <div className="flex items-center gap-1">
                         {c.internal ? (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-warning/20 text-warning font-medium">
-                            INTERNAL
-                          </span>
+                          <Badge variant="warning">INTERNAL</Badge>
                         ) : null}
                         <span className="text-[10px] text-muted-foreground">
                           {c.created_at ? new Date(c.created_at).toLocaleString() : ""}

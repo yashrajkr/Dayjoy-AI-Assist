@@ -8,8 +8,8 @@ import {
   LoadingState,
   ErrorState,
   StatusPill,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 type SafetyRule = {
   id: string;
@@ -80,9 +80,9 @@ export function AISafetyRules() {
         description="Guardrails that block unsafe content before it reaches the AI model."
         icon={<Shield className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -132,11 +132,11 @@ export function AISafetyRules() {
                     </pre>
                   ) : null}
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => toggle(r)}
                   disabled={savingId === r.id}
-                  className={btnClass.secondary}
                   aria-pressed={r.enabled}
                   aria-label={r.enabled ? `Disable ${r.rule_key}` : `Enable ${r.rule_key}`}
                 >
@@ -146,7 +146,7 @@ export function AISafetyRules() {
                     <ToggleLeft className="w-4 h-4" aria-hidden="true" />
                   )}
                   {r.enabled ? "Enabled" : "Disabled"}
-                </button>
+                </Button>
               </div>
             </Card>
           ))}

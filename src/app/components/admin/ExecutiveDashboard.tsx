@@ -5,8 +5,9 @@ import {
   AlertTriangle, Activity, Zap,
 } from "lucide-react";
 import {
-  PageHeader, Card, StatCard, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, StatCard, LoadingState, ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 import { LineChart, BarChart, DonutChart, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   analyticsExecutive, analyticsAI, analyticsListAlerts,
@@ -90,9 +91,9 @@ export function ExecutiveDashboard() {
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Live
             </span>
-            <button type="button" className={btnClass.secondary} onClick={load}>
+            <Button type="button" variant="secondary" onClick={load}>
               <RefreshCw className="w-4 h-4" /> Refresh
-            </button>
+            </Button>
           </>
         }
       />

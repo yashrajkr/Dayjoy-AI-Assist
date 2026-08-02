@@ -3,8 +3,9 @@ import {
   Bot, Brain, Loader2, Send, Save, X, Sparkles, MessageSquare,
   Trash2, Settings, Zap, Users,
 } from "lucide-react";
-import { PageHeader, Card, LoadingState, ErrorState, EmptyState, btnClass, StatusPill } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { PageHeader, Card, LoadingState, ErrorState, EmptyState, StatusPill } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { Button } from "../ui/button";
 import {
   agentList, agentUpdate, agentChat, agentCollaborate, agentMemory, agentMemoryDelete,
   type AIAgent,
@@ -140,7 +141,7 @@ export function AgentCenter() {
         title="AI Agent Center"
         description="12 specialized AI agents with memory, tools, and collaboration capabilities"
         icon={<Bot className="w-5 h-5" />}
-        actions={<button type="button" className={btnClass.primary} onClick={() => { setCollabOpen(true); setCollabChain([]); setCollabResult(null); }}><Users className="w-4 h-4" /> Collaborate</button>}
+        actions={<Button type="button" onClick={() => { setCollabOpen(true); setCollabChain([]); setCollabResult(null); }}><Users className="w-4 h-4" /> Collaborate</Button>}
       />
 
       {error ? <ErrorState message={error} /> : null}
@@ -166,9 +167,9 @@ export function AgentCenter() {
                   {agent.memory_enabled ? <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">Memory</span> : null}
                 </div>
                 <div className="flex gap-1">
-                  <button type="button" onClick={() => openChat(agent)} className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 flex items-center justify-center gap-1"><MessageSquare className="w-3 h-3" /> Chat</button>
-                  <button type="button" onClick={() => openMemory(agent)} className="text-xs px-2 py-1.5 rounded-lg border border-border hover:bg-accent" title="Memory"><Brain className="w-3.5 h-3.5" /></button>
-                  <button type="button" onClick={() => openEdit(agent)} className="text-xs px-2 py-1.5 rounded-lg border border-border hover:bg-accent" title="Settings"><Settings className="w-3.5 h-3.5" /></button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => openChat(agent)} className="flex-1 text-primary border-primary/30 hover:bg-primary/10"><MessageSquare className="w-3 h-3" /> Chat</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => openMemory(agent)} title="Memory"><Brain className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => openEdit(agent)} title="Settings"><Settings className="w-3.5 h-3.5" /></Button>
                 </div>
               </Card>
             );
@@ -195,16 +196,16 @@ export function AgentCenter() {
           <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleChat(); }}
             placeholder="Type a message…" className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-          <button type="button" onClick={handleChat} disabled={chatLoading || !chatInput.trim()} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 disabled:opacity-50">
+          <Button type="button" onClick={handleChat} disabled={chatLoading || !chatInput.trim()}>
             <Send className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </Modal>
 
       {/* Edit Modal */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Configure ${selectedAgent?.name ?? "Agent"}`} size="md"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setEditOpen(false)}><X className="w-4 h-4" /> Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleSaveEdit}><Save className="w-4 h-4" /> Save</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setEditOpen(false)}><X className="w-4 h-4" /> Cancel</Button>
+          <Button type="button" onClick={handleSaveEdit}><Save className="w-4 h-4" /> Save</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">System Prompt</label>
             <textarea value={editForm.system_prompt} onChange={(e) => setEditForm({ ...editForm, system_prompt: e.target.value })} rows={6} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
@@ -223,7 +224,7 @@ export function AgentCenter() {
 
       {/* Memory Modal */}
       <Modal open={memoryOpen} onClose={() => setMemoryOpen(false)} title={`${selectedAgent?.name ?? "Agent"} Memory`} size="md"
-        footer={<button type="button" className={modalButtonClass.secondary} onClick={() => setMemoryOpen(false)}>Close</button>}>
+        footer={<Button type="button" variant="secondary" onClick={() => setMemoryOpen(false)}>Close</Button>}>
         {memories.length === 0 ? <p className="text-xs text-muted-foreground text-center py-4">No memories stored yet.</p> : (
           <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
             {memories.map((m) => (
@@ -267,9 +268,9 @@ export function AgentCenter() {
               ))}
             </div>
           </div>
-          <button type="button" onClick={handleCollaborate} disabled={collabLoading || !collabTopic.trim() || !collabQuery.trim() || collabChain.length === 0} className={`${btnClass.primary} w-full justify-center`}>
+          <Button type="button" onClick={handleCollaborate} disabled={collabLoading || !collabTopic.trim() || !collabQuery.trim() || collabChain.length === 0} className="w-full justify-center">
             {collabLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Agents collaborating…</> : <><Zap className="w-4 h-4" /> Start Collaboration</>}
-          </button>
+          </Button>
           {collabResult ? (
             <div className="space-y-2 mt-2">
               <p className="text-xs font-semibold">Collaboration Result:</p>

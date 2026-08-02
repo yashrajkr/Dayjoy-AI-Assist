@@ -4,14 +4,14 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import {
   PageHeader,
-  Card,
   StatCard,
   EmptyState,
   LoadingState,
   ErrorState,
   StatusPill,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 
 type Training = {
   id: string;
@@ -223,7 +223,7 @@ export function DistributorTraining() {
               </div>
 
               {filteredTrainings.length === 0 ? (
-                <Card>
+                <Card className="p-5 shadow-none">
                   <EmptyState
                     title="No training modules"
                     description="Check back soon — new modules are being added."
@@ -237,7 +237,7 @@ export function DistributorTraining() {
                     const pct = p?.progress_percent ?? 0;
                     const isComplete = p?.status === "completed";
                     return (
-                      <Card key={t.id}>
+                      <Card key={t.id} className="p-5 shadow-none">
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="min-w-0">
                             <h3 className="text-sm font-medium">{t.title || "Untitled module"}</h3>
@@ -264,26 +264,26 @@ export function DistributorTraining() {
                         </div>
                         <div className="flex gap-2">
                           {pct === 0 ? (
-                            <button type="button" className={btnClass.primary} onClick={() => markProgress(t.id, 25)}>
+                            <Button type="button" onClick={() => markProgress(t.id, 25)}>
                               Start
-                            </button>
+                            </Button>
                           ) : pct < 100 ? (
-                            <button type="button" className={btnClass.primary} onClick={() => markProgress(t.id, Math.min(100, pct + 25))}>
+                            <Button type="button" onClick={() => markProgress(t.id, Math.min(100, pct + 25))}>
                               Continue
-                            </button>
+                            </Button>
                           ) : (
-                            <button type="button" className={btnClass.secondary} onClick={() => markProgress(t.id, 0)}>
+                            <Button type="button" variant="secondary" onClick={() => markProgress(t.id, 0)}>
                               Reset
-                            </button>
+                            </Button>
                           )}
                           {isComplete ? (
-                            <button
+                            <Button
                               type="button"
-                              className={btnClass.secondary}
+                              variant="secondary"
                               onClick={() => window.print()}
                             >
                               <Award className="w-3.5 h-3.5" aria-hidden="true" /> Print certificate
-                            </button>
+                            </Button>
                           ) : null}
                         </div>
                       </Card>
@@ -295,7 +295,7 @@ export function DistributorTraining() {
 
             {/* Leaderboard */}
             <aside>
-              <Card>
+              <Card className="p-5 shadow-none">
                 <div className="flex items-center gap-2 mb-3">
                   <Trophy className="w-4 h-4 text-gold-accent" aria-hidden="true" />
                   <h2 className="text-sm font-semibold">Leaderboard</h2>

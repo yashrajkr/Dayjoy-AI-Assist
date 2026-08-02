@@ -7,8 +7,8 @@ import {
   Card,
   LoadingState,
   EmptyState,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 type Integration = {
   key: string;
@@ -119,9 +119,9 @@ export function Integrations() {
         description="Connect Dayjoy AI Assist with company systems and external providers."
         icon={<Plug className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Test connections
-          </button>
+          </Button>
         }
       />
 

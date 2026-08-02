@@ -5,8 +5,10 @@ import {
   CheckCircle, XCircle, Clock, TrendingUp,
 } from "lucide-react";
 import {
-  PageHeader, Card, StatCard, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, StatCard, LoadingState, ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { LineChart, BarChart, DonutChart, ProgressBar, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   analyticsAI, analyticsProducts, analyticsDistributors, analyticsCustomers,
@@ -86,13 +88,13 @@ export function AnalyticsHub() {
         icon={<BarChart3 className="w-5 h-5" />}
         actions={
           <>
-            <button type="button" className={btnClass.secondary} onClick={handleRefresh} title="Refresh materialized views">
+            <Button type="button" variant="secondary" onClick={handleRefresh} title="Refresh materialized views">
               <RefreshCw className="w-4 h-4" /> Refresh
-            </button>
+            </Button>
             {tab !== "health" && tab !== "alerts" ? (
-              <button type="button" className={btnClass.secondary} onClick={handleExport} disabled={exporting}>
+              <Button type="button" variant="secondary" onClick={handleExport} disabled={exporting}>
                 {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Export CSV
-              </button>
+              </Button>
             ) : null}
           </>
         }
@@ -431,14 +433,14 @@ function AlertsView({ alerts, onUpdate }: { alerts: AnalyticsAlert[]; onUpdate: 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium">{a.title}</p>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full uppercase ${a.severity === "critical" ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"}`}>{a.severity}</span>
+                <Badge variant={a.severity === "critical" ? "destructive" : "warning"} className="uppercase">{a.severity}</Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">{a.message}</p>
               <p className="text-[10px] text-muted-foreground mt-1">{new Date(a.created_at).toLocaleString()}</p>
             </div>
             <div className="flex gap-1 shrink-0">
-              {!a.is_acknowledged ? <button type="button" onClick={() => handleAck(a)} className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent">Ack</button> : null}
-              {!a.is_resolved ? <button type="button" onClick={() => handleResolve(a)} className="text-[10px] px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10">Resolve</button> : null}
+              {!a.is_acknowledged ? <Button type="button" variant="outline" size="sm" onClick={() => handleAck(a)}>Ack</Button> : null}
+              {!a.is_resolved ? <Button type="button" variant="outline" size="sm" className="text-primary border-primary/30 hover:bg-primary/10" onClick={() => handleResolve(a)}>Resolve</Button> : null}
             </div>
           </div>
         </Card>

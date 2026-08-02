@@ -4,10 +4,11 @@ import {
   Shield, Database, Zap, Thermometer, Hash,
 } from "lucide-react";
 import {
-  PageHeader, Card, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, LoadingState, ErrorState,
 } from "../common/AdminUI";
 import { Input } from "../ui/input";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Button } from "../ui/button";
+import { Modal } from "../common/Modal";
 import {
   adminGetAIConfig, adminUpdateAIConfig, adminGetSafetyRules, adminUpdateSafetyRule,
   type AIConfig,
@@ -111,18 +112,17 @@ export function AIConfiguration() {
         icon={<Brain className="w-5 h-5" />}
         actions={
           <>
-            <button type="button" className={btnClass.secondary} onClick={() => setResetOpen(true)}>
+            <Button type="button" variant="secondary" onClick={() => setResetOpen(true)}>
               <RotateCcw className="w-4 h-4" aria-hidden="true" /> Reset
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={btnClass.primary}
               onClick={save}
               disabled={saving}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Save className="w-4 h-4" aria-hidden="true" />}
               {saved ? "Saved!" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       />
@@ -380,19 +380,18 @@ export function AIConfiguration() {
         size="sm"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setResetOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setResetOpen(false)}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={modalButtonClass.primary}
               onClick={() => {
                 setResetOpen(false);
                 load();
               }}
             >
               <RotateCcw className="w-4 h-4" aria-hidden="true" /> Reload
-            </button>
+            </Button>
           </>
         }
       >

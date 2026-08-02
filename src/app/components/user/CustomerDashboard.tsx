@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { customerDashboard, type CustomerDashboard as DashboardData } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 import { useAuth } from "../../lib/AuthContext";
 
 export function CustomerDashboard() {
@@ -49,12 +51,12 @@ export function CustomerDashboard() {
         <h1 className="text-xl sm:text-2xl font-semibold">{greeting}, {userName}! 👋</h1>
         <p className="text-sm text-muted-foreground mt-1">Here's what's happening with your Dayjourney today.</p>
         <div className="flex flex-wrap gap-2 mt-3">
-          <Link to="/" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90">
-            <Sparkles className="w-3.5 h-3.5" /> Ask AI Assistant
-          </Link>
-          <Link to="/products" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium hover:bg-accent/60">
-            <Package className="w-3.5 h-3.5" /> Browse Products
-          </Link>
+          <Button asChild size="sm">
+            <Link to="/"><Sparkles className="w-3.5 h-3.5" /> Ask AI Assistant</Link>
+          </Button>
+          <Button asChild variant="secondary" size="sm">
+            <Link to="/products"><Package className="w-3.5 h-3.5" /> Browse Products</Link>
+          </Button>
         </div>
       </div>
 
@@ -166,49 +168,49 @@ export function CustomerDashboard() {
       </div>
 
       {/* Quick actions */}
-      <div className="rounded-2xl border border-border bg-card p-4">
+      <Card className="p-4 shadow-none">
         <h2 className="text-sm font-semibold mb-2">Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Link to="/" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center flex flex-col items-center gap-1">
-            <MessageSquare className="w-4 h-4" /> Ask AI
-          </Link>
-          <Link to="/products" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center flex flex-col items-center gap-1">
-            <Package className="w-4 h-4" /> Products
-          </Link>
-          <Link to="/favorites" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center flex flex-col items-center gap-1">
-            <Heart className="w-4 h-4" /> Favorites
-          </Link>
-          <Link to="/knowledge" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center flex flex-col items-center gap-1">
-            <Sparkles className="w-4 h-4" /> Knowledge
-          </Link>
+          <Button asChild variant="outline" className="h-auto flex-col gap-1 py-2 text-xs font-normal">
+            <Link to="/"><MessageSquare className="w-4 h-4" /> Ask AI</Link>
+          </Button>
+          <Button asChild variant="outline" className="h-auto flex-col gap-1 py-2 text-xs font-normal">
+            <Link to="/products"><Package className="w-4 h-4" /> Products</Link>
+          </Button>
+          <Button asChild variant="outline" className="h-auto flex-col gap-1 py-2 text-xs font-normal">
+            <Link to="/favorites"><Heart className="w-4 h-4" /> Favorites</Link>
+          </Button>
+          <Button asChild variant="outline" className="h-auto flex-col gap-1 py-2 text-xs font-normal">
+            <Link to="/knowledge"><Sparkles className="w-4 h-4" /> Knowledge</Link>
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
 function KpiCard({ label, value, icon, link }: { label: string; value: number; icon: React.ReactNode; link?: string }) {
   const content = (
-    <div className="rounded-xl border border-border bg-card shadow-flat hover-raise p-3.5">
+    <Card className="hover-raise p-3.5 shadow-flat">
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
         <span className="w-7 h-7 rounded-lg bg-accent text-primary flex items-center justify-center shrink-0">{icon}</span>
       </div>
       <p className="text-2xl font-semibold tabular tracking-tight">{value}</p>
-    </div>
+    </Card>
   );
   return link ? <Link to={link}>{content}</Link> : content;
 }
 
 function Section({ title, icon, link, children }: { title: string; icon: React.ReactNode; link?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-flat p-4">
+    <Card className="p-4 shadow-flat">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold flex items-center gap-1.5">{icon} {title}</h2>
         {link ? <Link to={link} className="text-xs text-primary hover:underline flex items-center gap-0.5">View all <ArrowRight className="w-3 h-3" /></Link> : null}
       </div>
       {children}
-    </div>
+    </Card>
   );
 }
 

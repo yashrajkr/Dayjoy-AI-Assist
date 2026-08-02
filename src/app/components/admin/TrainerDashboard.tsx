@@ -10,6 +10,7 @@ import {
   EmptyState,
   StatusPill,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 type Training = {
   id: string;
@@ -108,9 +109,15 @@ export function TrainerDashboard() {
           <Card className="mt-4">
             <h2 className="text-sm font-semibold mb-2">Trainer actions</h2>
             <div className="flex flex-wrap gap-2">
-              <a href="/admin/training" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Add module</a>
-              <a href="/admin/approvals" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Approve content</a>
-              <a href="/admin/users" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">View trainees</a>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/training">Add module</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/approvals">Approve content</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/users">View trainees</a>
+              </Button>
             </div>
           </Card>
         </>

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp } from "lucide-react";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { LoadingState, ErrorState, EmptyState, btnClass } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { LineChart, ProgressBar, type LineChartPoint } from "../common/Charts";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
 import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
   customerListWellnessActivities, customerLogWellnessActivity,
@@ -160,9 +163,9 @@ export function WellnessJourney() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold text-primary">{goals.filter((g) => !g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Active Goals</p></div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">{goals.filter((g) => g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Completed</p></div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center"><p className="text-2xl font-semibold">{reminders.length}</p><p className="text-[10px] text-muted-foreground">Reminders</p></div>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold text-primary">{goals.filter((g) => !g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Active Goals</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{goals.filter((g) => g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Completed</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{reminders.length}</p><p className="text-[10px] text-muted-foreground">Reminders</p></Card>
       </div>
 
       {/* Tabs */}
@@ -171,7 +174,7 @@ export function WellnessJourney() {
           <button key={t.value} type="button" onClick={() => setTab(t.value)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 ${tab === t.value ? "border-primary text-primary font-medium" : "border-transparent text-muted-foreground"}`}>
             <t.icon className="w-4 h-4" /> {t.label}
-            {t.count != null && t.count > 0 ? <span className="text-[10px] bg-accent px-1.5 py-0.5 rounded-full">{t.count}</span> : null}
+            {t.count != null && t.count > 0 ? <Badge variant="secondary">{t.count}</Badge> : null}
           </button>
         ))}
       </div>
@@ -181,8 +184,8 @@ export function WellnessJourney() {
       {/* Goals tab */}
       {tab === "goals" && !loading ? (
         <>
-          <button type="button" className={`${btnClass.primary} mb-3`} onClick={() => setGoalModal(true)}><Plus className="w-4 h-4" /> Add Goal</button>
-          {goals.length === 0 ? <div className="rounded-2xl border border-border bg-card"><EmptyState title="No goals yet" description="Set your first wellness goal to start your journey." icon={<Target className="w-5 h-5" />} /></div> : (
+          <Button type="button" className="mb-3" onClick={() => setGoalModal(true)}><Plus className="w-4 h-4" /> Add Goal</Button>
+          {goals.length === 0 ? <Card className="shadow-none"><EmptyState title="No goals yet" description="Set your first wellness goal to start your journey." icon={<Target className="w-5 h-5" />} /></Card> : (
             <div className="space-y-2">
               {goals.map((g) => {
                 const target = Number(g.target_value || 0);
@@ -190,7 +193,7 @@ export function WellnessJourney() {
                 const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
                 const goalType = GOAL_TYPES.find((t) => t.value === g.goal_type);
                 return (
-                  <div key={g.id} className={`rounded-xl border bg-card p-3 ${g.is_completed ? "border-primary/30 bg-primary/5" : "border-border"}`}>
+                  <Card key={g.id} className={`p-3 shadow-none ${g.is_completed ? "border-primary/30 bg-primary/5" : ""}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-lg">{goalType?.icon || "🎯"}</span>
                       <div className="flex-1 min-w-0">
@@ -198,21 +201,21 @@ export function WellnessJourney() {
                         <p className="text-[10px] text-muted-foreground">{goalType?.label || "Goal"} · {current}/{target} {g.unit || ""}</p>
                       </div>
                       {g.is_completed ? <Check className="w-4 h-4 text-primary" /> : null}
-                      <button type="button" onClick={() => deleteGoal(g)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => deleteGoal(g)} className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                     {!g.is_completed && target > 0 ? (
                       <div className="flex items-center gap-2">
                         <div className="flex-1"><ProgressBar value={pct} showLabel /></div>
                         {target > 0 ? (
                           <>
-                            <button type="button" onClick={() => updateGoalProgress(g, -1)} className="text-xs w-6 h-6 rounded border border-border hover:bg-accent">−</button>
-                            <button type="button" onClick={() => updateGoalProgress(g, 1)} className="text-xs w-6 h-6 rounded border border-border hover:bg-accent">+</button>
-                            <button type="button" onClick={() => completeGoal(g)} className="text-xs px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10">Done</button>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => updateGoalProgress(g, -1)} className="h-6 w-6 p-0 text-xs">−</Button>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => updateGoalProgress(g, 1)} className="h-6 w-6 p-0 text-xs">+</Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => completeGoal(g)} className="text-xs border-primary/30 text-primary hover:bg-primary/10">Done</Button>
                           </>
                         ) : null}
                       </div>
                     ) : null}
-                  </div>
+                  </Card>
                 );
               })}
             </div>
@@ -223,23 +226,23 @@ export function WellnessJourney() {
       {/* Activities tab */}
       {tab === "activities" && !loading ? (
         <>
-          <button type="button" className={`${btnClass.primary} mb-3`} onClick={() => setActModal(true)}><Plus className="w-4 h-4" /> Log Activity</button>
+          <Button type="button" className="mb-3" onClick={() => setActModal(true)}><Plus className="w-4 h-4" /> Log Activity</Button>
           {trendData.length > 0 ? (
-            <div className="rounded-2xl border border-border bg-card p-4 mb-3">
+            <Card className="p-4 mb-3 shadow-none">
               <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-primary" /> Activity Trend</h3>
               <LineChart data={trendData} height={160} />
-            </div>
+            </Card>
           ) : null}
-          {activities.length === 0 ? <div className="rounded-2xl border border-border bg-card"><EmptyState title="No activities logged" icon={<Activity className="w-5 h-5" />} /></div> : (
+          {activities.length === 0 ? <Card className="shadow-none"><EmptyState title="No activities logged" icon={<Activity className="w-5 h-5" />} /></Card> : (
             <div className="space-y-1.5">
               {activities.map((a) => (
-                <div key={a.id} className="rounded-lg border border-border bg-card p-2 flex items-center gap-2 text-xs">
+                <Card key={a.id} className="p-2 flex items-center gap-2 text-xs shadow-none">
                   <Activity className="w-3.5 h-3.5 text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{a.title}</p>
                     <p className="text-[10px] text-muted-foreground">{a.activity_date} · {a.value ? `${a.value} ${a.unit || ""}` : ""}{a.duration_minutes ? ` · ${a.duration_minutes}min` : ""}</p>
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           )}
@@ -249,18 +252,18 @@ export function WellnessJourney() {
       {/* Reminders tab */}
       {tab === "reminders" && !loading ? (
         <>
-          <button type="button" className={`${btnClass.primary} mb-3`} onClick={() => setRemModal(true)}><Plus className="w-4 h-4" /> Add Reminder</button>
-          {reminders.length === 0 ? <div className="rounded-2xl border border-border bg-card"><EmptyState title="No reminders" description="Set reminders for product usage, medications, or activities." icon={<Bell className="w-5 h-5" />} /></div> : (
+          <Button type="button" className="mb-3" onClick={() => setRemModal(true)}><Plus className="w-4 h-4" /> Add Reminder</Button>
+          {reminders.length === 0 ? <Card className="shadow-none"><EmptyState title="No reminders" description="Set reminders for product usage, medications, or activities." icon={<Bell className="w-5 h-5" />} /></Card> : (
             <div className="space-y-2">
               {reminders.map((r) => (
-                <div key={r.id} className="rounded-xl border border-border bg-card p-3 flex items-center gap-2">
+                <Card key={r.id} className="p-3 flex items-center gap-2 shadow-none">
                   <Bell className="w-4 h-4 text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{r.title}</p>
                     <p className="text-[10px] text-muted-foreground capitalize">{r.reminder_type} · {r.frequency} · {r.time_of_day}</p>
                   </div>
-                  <button type="button" onClick={() => deleteReminder(r)} className="p-1.5 rounded hover:bg-destructive/10 text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => deleteReminder(r)} className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /></Button>
+                </Card>
               ))}
             </div>
           )}
@@ -269,8 +272,8 @@ export function WellnessJourney() {
 
       {/* Goal modal */}
       <Modal open={goalModal} onClose={() => setGoalModal(false)} title="New Wellness Goal" size="md"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setGoalModal(false)}><X className="w-4 h-4" /> Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={saveGoal} disabled={savingGoal}>{savingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setGoalModal(false)}><X className="w-4 h-4" /> Cancel</Button>
+          <Button type="button" onClick={saveGoal} disabled={savingGoal}>{savingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Goal Type</label>
@@ -298,8 +301,8 @@ export function WellnessJourney() {
 
       {/* Activity modal */}
       <Modal open={actModal} onClose={() => setActModal(false)} title="Log Activity" size="sm"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setActModal(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={saveActivity} disabled={savingAct}>{savingAct ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Log</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setActModal(false)}>Cancel</Button>
+          <Button type="button" onClick={saveActivity} disabled={savingAct}>{savingAct ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Log</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Type</label>
             <select value={actForm.activity_type} onChange={(e) => setActForm({ ...actForm, activity_type: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
@@ -318,8 +321,8 @@ export function WellnessJourney() {
 
       {/* Reminder modal */}
       <Modal open={remModal} onClose={() => setRemModal(false)} title="New Reminder" size="sm"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setRemModal(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={saveReminder} disabled={savingRem}>{savingRem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setRemModal(false)}>Cancel</Button>
+          <Button type="button" onClick={saveReminder} disabled={savingRem}>{savingRem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Type</label>
             <select value={remForm.reminder_type} onChange={(e) => setRemForm({ ...remForm, reminder_type: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">

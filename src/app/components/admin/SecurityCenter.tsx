@@ -5,9 +5,9 @@ import {
   Smartphone, Monitor, Zap, Database,
 } from "lucide-react";
 import {
-  PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, btnClass, StatusPill,
+  PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState, StatusPill,
 } from "../common/AdminUI";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { DonutChart, type DonutSlice } from "../common/Charts";
 import {
   securityDashboard, securityEvents, securitySessions, securityRevokeSession,
@@ -19,6 +19,8 @@ import {
   securityAuditLog, securityPenTestChecklist,
   type SecurityDashboard as SecDash,
 } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 
 type Tab = "overview" | "events" | "incidents" | "sessions" | "devices" | "ai_governance" | "compliance" | "abac" | "monitoring" | "audit" | "backups" | "vulns" | "pentest";
 
@@ -82,7 +84,7 @@ export function SecurityCenter() {
         title="Security Center"
         description="Enterprise security, governance, compliance & observability"
         icon={<Shield className="w-5 h-5" />}
-        actions={<button type="button" className={btnClass.secondary} onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</button>}
+        actions={<Button type="button" variant="secondary" onClick={load}><RefreshCw className="w-4 h-4" /> Refresh</Button>}
       />
 
       {error ? <ErrorState message={error} /> : null}
@@ -229,7 +231,7 @@ function EventsTab({ events }: { events: Array<Record<string, unknown>> }) {
               {events.map((e) => (
                 <tr key={String(e.id)} className="border-b border-border last:border-0 hover:bg-accent/20">
                   <td className="px-3 py-2 font-medium capitalize">{String(e.event_type || "").replace(/_/g, " ")}</td>
-                  <td className="px-3 py-2"><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${e.severity === "critical" ? "bg-destructive/10 text-destructive" : e.severity === "warning" ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary"}`}>{String(e.severity || "info")}</span></td>
+                  <td className="px-3 py-2"><Badge variant={e.severity === "critical" ? "destructive" : e.severity === "warning" ? "warning" : "default"}>{String(e.severity || "info")}</Badge></td>
                   <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground font-mono">{String(e.ip_address || "—")}</td>
                   <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">{String(e.location || "—")}</td>
                   <td className="px-3 py-2 text-muted-foreground">{e.created_at ? new Date(String(e.created_at)).toLocaleString() : "—"}</td>
@@ -273,7 +275,7 @@ function IncidentsTab({ incidents, onChanged }: { incidents: Array<Record<string
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button type="button" className={btnClass.primary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Incident</button></div>
+      <div className="flex justify-end"><Button type="button" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> New Incident</Button></div>
       {incidents.length === 0 ? <Card><EmptyState title="No incidents" icon={<CheckCircle className="w-5 h-5" />} /></Card> : (
         <div className="space-y-2">
           {incidents.map((inc) => (
@@ -282,7 +284,7 @@ function IncidentsTab({ incidents, onChanged }: { incidents: Array<Record<string
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-sm font-medium">{String(inc.title || "")}</h3>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${inc.severity === "critical" ? "bg-destructive/10 text-destructive" : inc.severity === "high" ? "bg-warning/10 text-warning" : "bg-accent text-muted-foreground"}`}>{String(inc.severity || "")}</span>
+                    <Badge variant={inc.severity === "critical" ? "destructive" : inc.severity === "high" ? "warning" : "secondary"}>{String(inc.severity || "")}</Badge>
                     <StatusPill status={String(inc.status || "")} />
                   </div>
                   {inc.description ? <p className="text-xs text-muted-foreground">{String(inc.description)}</p> : null}
@@ -314,8 +316,8 @@ function IncidentsTab({ incidents, onChanged }: { incidents: Array<Record<string
         </div>
       )}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Incident" size="sm"
-        footer={<><button type="button" className={modalButtonClass.secondary} onClick={() => setCreateOpen(false)}>Cancel</button>
-          <button type="button" className={modalButtonClass.primary} onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</button></>}>
+        footer={<><Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Title</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
           <div><label className="block text-xs text-muted-foreground mb-1">Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
@@ -409,7 +411,7 @@ function AIGovernanceTab({ records }: { records: Array<Record<string, unknown>> 
                     <td className="px-3 py-2 text-muted-foreground">{String(r.model_name || "—")}</td>
                     <td className="px-3 py-2"><span className={Number(r.risk_score || 0) > 70 ? "text-destructive font-medium" : Number(r.risk_score || 0) > 40 ? "text-warning" : ""}>{String(r.risk_score || 0)}</span></td>
                     <td className="px-3 py-2">{r.hallucination_detected ? <AlertTriangle className="w-3.5 h-3.5 text-destructive" /> : <CheckCircle className="w-3.5 h-3.5 text-primary" />}</td>
-                    <td className="px-3 py-2">{r.human_override ? <span className="text-[9px] px-1.5 py-0.5 rounded bg-warning/10 text-warning">Yes</span> : "—"}</td>
+                    <td className="px-3 py-2">{r.human_override ? <Badge variant="warning">Yes</Badge> : "—"}</td>
                     <td className="px-3 py-2 text-muted-foreground">{r.created_at ? new Date(String(r.created_at)).toLocaleString() : "—"}</td>
                   </tr>
                 ))}
@@ -443,9 +445,9 @@ function ComplianceTab({ requests, onChanged }: { requests: Array<Record<string,
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground capitalize">{String(r.request_type || "").replace(/_/g, " ")}</span>
+                    <Badge variant="secondary" className="capitalize">{String(r.request_type || "").replace(/_/g, " ")}</Badge>
                     <StatusPill status={String(r.status || "pending")} />
-                    {r.priority === "urgent" ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">URGENT</span> : null}
+                    {r.priority === "urgent" ? <Badge variant="destructive">URGENT</Badge> : null}
                   </div>
                   <p className="text-xs">{String(r.user_name || r.user_email || "Anonymous")}</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Legal basis: {String(r.legal_basis || "—")} · Created: {r.created_at ? new Date(String(r.created_at)).toLocaleString() : ""}</p>
@@ -488,8 +490,8 @@ function ABACTab({ policies, onChanged }: { policies: Array<Record<string, unkno
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-medium">{String(p.name || "")}</h3>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${p.effect === "allow" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>{String(p.effect || "")}</span>
-                    {p.is_active ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">Active</span> : null}
+                    <Badge variant={p.effect === "allow" ? "default" : "destructive"}>{String(p.effect || "")}</Badge>
+                    {p.is_active ? <Badge>Active</Badge> : null}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Resource: {String(p.resource_type || "")}/{String(p.resource_id || "*")} · Action: {String(p.action || "")} · Priority: {String(p.priority || "")}</p>
                 </div>
@@ -554,7 +556,7 @@ function AuditTab({ data }: { data: { logs: Array<Record<string, unknown>>; tota
               {data.logs.slice(0, 50).map((l) => (
                 <tr key={String(l.id)} className="border-b border-border last:border-0 hover:bg-accent/20 align-top">
                   <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{l.created_at ? new Date(String(l.created_at)).toLocaleString() : "—"}</td>
-                  <td className="px-3 py-2"><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${String(l.action || "").includes("DELETE") ? "bg-destructive/10 text-destructive" : String(l.action || "").includes("CREATE") || String(l.action || "").includes("UPLOAD") ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>{String(l.action || "").replace(/_/g, " ")}</span></td>
+                  <td className="px-3 py-2"><Badge variant={String(l.action || "").includes("DELETE") ? "destructive" : String(l.action || "").includes("CREATE") || String(l.action || "").includes("UPLOAD") ? "default" : "secondary"}>{String(l.action || "").replace(/_/g, " ")}</Badge></td>
                   <td className="px-3 py-2"><div className="font-medium">{String(l.entity_type || "—")}</div><div className="text-[10px] text-muted-foreground font-mono">{String(l.entity_id || "").slice(0, 12)}</div></td>
                   <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground font-mono text-[10px]">{String(l.created_by || "").slice(0, 8) || "system"}…</td>
                   <td className="px-3 py-2 hidden lg:table-cell"><pre className="text-[10px] text-muted-foreground max-h-16 overflow-auto">{l.metadata ? JSON.stringify(l.metadata, null, 1) : "—"}</pre></td>
@@ -582,7 +584,7 @@ function BackupsTab({ backups }: { backups: Array<Record<string, unknown>> }) {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium capitalize">{String(b.backup_type || "")}</span>
                 <StatusPill status={String(b.status || "")} />
-                {b.is_encrypted ? <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">🔒 Encrypted</span> : null}
+                {b.is_encrypted ? <Badge>🔒 Encrypted</Badge> : null}
               </div>
               <p className="text-[10px] text-muted-foreground">{b.size_bytes ? `${(Number(b.size_bytes) / 1024 / 1024).toFixed(1)} MB` : ""} · {b.completed_at ? new Date(String(b.completed_at)).toLocaleString() : "In progress"}</p>
             </div>

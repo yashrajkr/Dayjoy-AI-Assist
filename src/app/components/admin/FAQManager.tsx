@@ -7,9 +7,12 @@ import {
   getFaqsForManager,
   updateFaq,
 } from "../../lib/db";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { btnClass, LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { adminCreateFAQ, adminUpdateFAQ, adminDeleteFAQ } from "../../../lib/api";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
 
 type ApprovalStatus = "approved" | "pending" | "rejected";
 
@@ -174,9 +177,9 @@ export function FAQManager() {
             Create, edit, categorize, and approve frequently asked questions.
           </p>
         </div>
-        <button className={btnClass.primary} type="button" onClick={openCreate}>
+        <Button type="button" onClick={openCreate}>
           <Plus className="w-4 h-4" /> Add FAQ
-        </button>
+        </Button>
       </div>
 
       {error ? <ErrorState message={error} /> : null}
@@ -186,22 +189,22 @@ export function FAQManager() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-card border border-border rounded-xl p-3 text-center">
+        <Card className="p-3 text-center shadow-none">
           <p className="text-xl font-semibold">{faqs.length}</p>
           <p className="text-[10px] text-muted-foreground">Total FAQs</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-3 text-center">
+        </Card>
+        <Card className="p-3 text-center shadow-none">
           <p className="text-xl font-semibold text-primary">{faqs.filter((f) => f.approval_status === "approved").length}</p>
           <p className="text-[10px] text-muted-foreground">Approved</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-3 text-center">
+        </Card>
+        <Card className="p-3 text-center shadow-none">
           <p className="text-xl font-semibold text-warning">{faqs.filter((f) => f.approval_status === "pending").length}</p>
           <p className="text-[10px] text-muted-foreground">Pending</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-3 text-center">
+        </Card>
+        <Card className="p-3 text-center shadow-none">
           <p className="text-xl font-semibold">{categories.length}</p>
           <p className="text-[10px] text-muted-foreground">Categories</p>
-        </div>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -228,18 +231,18 @@ export function FAQManager() {
 
       {/* FAQ list */}
       {loading ? <LoadingState label="Loading FAQs…" /> : filteredFaqs.length === 0 ? (
-        <div className="bg-card border border-border rounded-2xl">
+        <Card className="shadow-none">
           <EmptyState title="No FAQs found" description="Create your first FAQ." icon={<FileQuestion className="w-5 h-5" />} />
-        </div>
+        </Card>
       ) : (
         <div className="space-y-2">
           {filteredFaqs.map((faq) => {
             const status = faq.approval_status ?? "pending";
-            const pillColor = status === "approved" ? "bg-green-100 text-green-700"
-              : status === "pending" ? "bg-amber-100 text-amber-700"
-              : "bg-slate-100 text-slate-700";
+            const badgeVariant = status === "approved" ? "success"
+              : status === "pending" ? "warning"
+              : "secondary";
             return (
-              <div key={faq.id} className="bg-card border border-border rounded-xl p-4 hover:shadow-sm transition-shadow">
+              <Card key={faq.id} className="p-4 shadow-none hover:shadow-sm transition-shadow">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -248,29 +251,29 @@ export function FAQManager() {
                           <Tag className="w-2.5 h-2.5" /> {faq.category}
                         </span>
                       ) : null}
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${pillColor}`}>{status}</span>
+                      <Badge variant={badgeVariant}>{status}</Badge>
                     </div>
                     <h3 className="font-medium text-sm">{faq.question}</h3>
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{faq.answer}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {status === "pending" ? (
-                      <button type="button" className="text-[10px] px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10"
-                        onClick={() => handleQuickStatus(faq, "approved")}>Approve</button>
+                      <Button type="button" variant="outline" size="sm" className="text-[10px] h-auto px-2 py-1"
+                        onClick={() => handleQuickStatus(faq, "approved")}>Approve</Button>
                     ) : null}
                     {status === "approved" ? (
-                      <button type="button" className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent"
-                        onClick={() => handleQuickStatus(faq, "pending")}>Unapprove</button>
+                      <Button type="button" variant="outline" size="sm" className="text-[10px] h-auto px-2 py-1"
+                        onClick={() => handleQuickStatus(faq, "pending")}>Unapprove</Button>
                     ) : null}
-                    <button type="button" className="p-1.5 hover:bg-accent rounded-lg" onClick={() => openEdit(faq)} aria-label="Edit" title="Edit">
+                    <Button type="button" variant="ghost" size="sm" className="p-1.5 h-auto" onClick={() => openEdit(faq)} aria-label="Edit" title="Edit">
                       <Edit className="w-3.5 h-3.5 text-muted-foreground" />
-                    </button>
-                    <button type="button" className="p-1.5 hover:bg-destructive/10 text-destructive rounded-lg" onClick={() => handleDelete(faq)} aria-label="Delete" title="Delete">
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="p-1.5 h-auto hover:bg-destructive/10 text-destructive" onClick={() => handleDelete(faq)} aria-label="Delete" title="Delete">
                       <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>
@@ -284,13 +287,13 @@ export function FAQManager() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               <X className="w-4 h-4" /> Cancel
-            </button>
-            <button type="button" className={modalButtonClass.primary} onClick={handleSave} disabled={saving}>
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {editingId ? "Save" : "Create"}
-            </button>
+            </Button>
           </>
         }
       >

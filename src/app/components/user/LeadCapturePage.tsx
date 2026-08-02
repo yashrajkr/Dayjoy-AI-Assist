@@ -11,6 +11,7 @@ import { getCurrentUser } from "../../lib/auth";
 import { Button } from "../ui/button";
 import { Input, Textarea } from "../ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { Card } from "../ui/card";
 
 type LeadType = "customer" | "distributor";
 
@@ -185,7 +186,7 @@ export function LeadCapturePage() {
           </p>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-flat">
+        <Card className="p-6">
           {submitMessage ? (
             <div className="mb-4 rounded-xl border border-primary/30 bg-accent/40 px-4 py-3 text-sm text-accent-foreground">
               {submitMessage}
@@ -297,9 +298,9 @@ export function LeadCapturePage() {
               </>
             )}
           </p>
-        </div>
+        </Card>
 
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-flat">
+        <Card className="p-6">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold">Leads</h2>
             <p className="text-xs text-muted-foreground">
@@ -341,7 +342,7 @@ export function LeadCapturePage() {
               </TableBody>
             </Table>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

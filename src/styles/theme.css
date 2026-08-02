@@ -49,6 +49,12 @@
   --gold-accent: #FFC98B;
   --gold-accent-rgb: 255, 201, 139;
 
+  /* Reference-UI aliases — deep forest mark surface + gold accent surface */
+  --forest: #16331A;
+  --forest-foreground: #F0EDE2;
+  --gold: var(--gold-accent);
+  --gold-foreground: #2B1B06;
+
   /* Soft, green-tinted elevation (never pure black) */
   --shadow-flat: 0 0 0 1px var(--border);
   --shadow-raised: 0 1px 2px rgba(35, 79, 30, 0.08), 0 1px 1px rgba(35, 79, 30, 0.04);
@@ -142,6 +148,11 @@
   --gold-accent: #FFD79A;
   --gold-accent-rgb: 255, 215, 154;
 
+  --forest: #0B160A;
+  --forest-foreground: #DDEDD5;
+  --gold: var(--gold-accent);
+  --gold-foreground: #2B1B06;
+
   --shadow-flat: 0 0 0 1px var(--border);
   --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 1px rgba(0, 0, 0, 0.2);
   --shadow-overlay: 0 8px 28px -4px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -212,6 +223,10 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-gold-accent: var(--gold-accent);
+  --color-forest: var(--forest);
+  --color-forest-foreground: var(--forest-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-background: var(--input-background);

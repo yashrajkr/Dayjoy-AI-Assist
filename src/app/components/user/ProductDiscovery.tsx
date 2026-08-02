@@ -3,13 +3,14 @@ import { motion } from "framer-motion";
 import { Search, X, CheckCircle2, GitCompareArrows, Eye, History, QrCode, Camera } from "lucide-react";
 import { getProducts, logAnalytics, type AnalyticsEvent, type Product } from "../../lib/db";
 import { BRAND } from "../../lib/brand";
-import { Modal, modalButtonClass } from "../common/Modal";
+import { Modal } from "../common/Modal";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { OcrScanner } from "../tools/OcrScanner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
+import { Card } from "../ui/card";
 
 /** Recently viewed products — persisted in localStorage (max 8). */
 const RECENT_KEY = "dayjoy_recent_products";
@@ -210,7 +211,7 @@ export function ProductDiscovery() {
           </p>
         </div>
 
-        <div className="bg-card rounded-2xl border border-border p-4 sm:p-5 shadow-flat">
+        <Card className="p-4 sm:p-5">
           <label htmlFor="dj-product-search" className="sr-only">
             Search products
           </label>
@@ -301,7 +302,7 @@ export function ProductDiscovery() {
               <option value="name_desc">Name (Z→A)</option>
             </select>
           </div>
-        </div>
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           <div>
@@ -489,9 +490,9 @@ export function ProductDiscovery() {
                 <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Tags</p>
                 <div className="flex flex-wrap gap-1">
                   {detail.problem_tags.map((t) => (
-                    <span key={t} className="text-xs px-2 py-0.5 bg-accent rounded">
+                    <Badge key={t} variant="secondary" className="rounded">
                       #{t}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </div>
@@ -508,9 +509,9 @@ export function ProductDiscovery() {
         description={`${compareSet.length} products selected`}
         size="xl"
         footer={
-          <button type="button" className={modalButtonClass.secondary} onClick={() => setCompareOpen(false)}>
+          <Button type="button" variant="secondary" onClick={() => setCompareOpen(false)}>
             Close
-          </button>
+          </Button>
         }
       >
         {compareSet.length < 2 ? (

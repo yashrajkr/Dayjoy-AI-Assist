@@ -8,6 +8,7 @@ import {
   LoadingState,
   ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 export function ManagementDashboard() {
   const [stats, setStats] = useState({
@@ -88,10 +89,18 @@ export function ManagementDashboard() {
             <Card>
               <h2 className="text-sm font-semibold mb-2">Quick actions</h2>
               <div className="flex flex-wrap gap-2">
-                <a href="/admin/approvals" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Approve content</a>
-                <a href="/admin/support" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Triage tickets</a>
-                <a href="/admin/leads" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Review leads</a>
-                <a href="/admin/analytics" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">View analytics</a>
+                <Button asChild variant="secondary" size="sm">
+                  <a href="/admin/approvals">Approve content</a>
+                </Button>
+                <Button asChild variant="secondary" size="sm">
+                  <a href="/admin/support">Triage tickets</a>
+                </Button>
+                <Button asChild variant="secondary" size="sm">
+                  <a href="/admin/leads">Review leads</a>
+                </Button>
+                <Button asChild variant="secondary" size="sm">
+                  <a href="/admin/analytics">View analytics</a>
+                </Button>
               </div>
             </Card>
           </div>

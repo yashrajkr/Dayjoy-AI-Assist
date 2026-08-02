@@ -8,6 +8,8 @@ import {
 import { distributorDashboard, type DistributorDashboard as DashboardData } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";
 import { ProgressBar } from "../common/Charts";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
 
 export function DistributorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -40,9 +42,9 @@ export function DistributorDashboard() {
   if (error) return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <ErrorState message={error} />
-      <button type="button" onClick={load} className="mt-3 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm">
+      <Button type="button" onClick={load} className="mt-3">
         Retry
-      </button>
+      </Button>
     </div>
   );
 
@@ -58,7 +60,7 @@ export function DistributorDashboard() {
 
       {/* AI Suggestions banner */}
       {data.suggestions.length > 0 ? (
-        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
+        <Card className="border-primary/30 bg-primary/5 p-3 shadow-none">
           <div className="flex items-start gap-2">
             <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -67,7 +69,7 @@ export function DistributorDashboard() {
               <p className="text-xs text-muted-foreground mt-0.5">{String(data.suggestions[0].body || "")}</p>
             </div>
           </div>
-        </div>
+        </Card>
       ) : null}
 
       {/* KPI cards */}
@@ -84,7 +86,7 @@ export function DistributorDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Daily Goals */}
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold flex items-center gap-1.5">
               <Target className="w-4 h-4 text-primary" /> Daily Goals
@@ -111,10 +113,10 @@ export function DistributorDashboard() {
               })}
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Follow-ups */}
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-primary" /> Follow-ups
@@ -138,10 +140,10 @@ export function DistributorDashboard() {
               })}
             </ul>
           )}
-        </div>
+        </Card>
 
         {/* Recent AI Content */}
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold flex items-center gap-1.5">
               <MessageSquare className="w-4 h-4 text-primary" /> Recent AI Content
@@ -160,10 +162,10 @@ export function DistributorDashboard() {
               ))}
             </ul>
           )}
-        </div>
+        </Card>
 
         {/* Upcoming Events */}
-        <div className="rounded-2xl border border-border bg-card p-4">
+        <Card className="p-4 shadow-none">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-primary" /> Upcoming Events
@@ -184,29 +186,37 @@ export function DistributorDashboard() {
               ))}
             </ul>
           )}
-        </div>
+        </Card>
       </div>
 
       {/* Quick actions */}
-      <div className="rounded-2xl border border-border bg-card p-4">
+      <Card className="p-4 shadow-none">
         <h2 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
           <Lightbulb className="w-4 h-4 text-primary" /> Quick Actions
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Link to="/distributor/customers" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center">
-            <Users className="w-3.5 h-3.5 mx-auto mb-1" /> Customers
-          </Link>
-          <Link to="/distributor/follow-ups" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center">
-            <Clock className="w-3.5 h-3.5 mx-auto mb-1" /> Follow-ups
-          </Link>
-          <Link to="/distributor/content" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center">
-            <MessageSquare className="w-3.5 h-3.5 mx-auto mb-1" /> Content
-          </Link>
-          <Link to="/distributor/analytics" className="text-xs px-3 py-2 rounded-lg border border-border hover:bg-accent/60 text-center">
-            <TrendingUp className="w-3.5 h-3.5 mx-auto mb-1" /> Analytics
-          </Link>
+          <Button type="button" variant="outline" asChild className="h-auto flex-col py-2 text-xs font-normal">
+            <Link to="/distributor/customers">
+              <Users className="w-3.5 h-3.5 mx-auto mb-1" /> Customers
+            </Link>
+          </Button>
+          <Button type="button" variant="outline" asChild className="h-auto flex-col py-2 text-xs font-normal">
+            <Link to="/distributor/follow-ups">
+              <Clock className="w-3.5 h-3.5 mx-auto mb-1" /> Follow-ups
+            </Link>
+          </Button>
+          <Button type="button" variant="outline" asChild className="h-auto flex-col py-2 text-xs font-normal">
+            <Link to="/distributor/content">
+              <MessageSquare className="w-3.5 h-3.5 mx-auto mb-1" /> Content
+            </Link>
+          </Button>
+          <Button type="button" variant="outline" asChild className="h-auto flex-col py-2 text-xs font-normal">
+            <Link to="/distributor/analytics">
+              <TrendingUp className="w-3.5 h-3.5 mx-auto mb-1" /> Analytics
+            </Link>
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -214,12 +224,12 @@ export function DistributorDashboard() {
 function KpiCard({ label, value, icon, trend }: { label: string; value: string | number; icon: React.ReactNode; trend?: "up" | "down" | "flat" }) {
   const trendColor = trend === "up" ? "text-primary" : trend === "down" ? "text-destructive" : "text-muted-foreground";
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
+    <Card className="p-3 shadow-none">
       <div className="flex items-start justify-between mb-1">
         <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
         <div className="text-primary">{icon}</div>
       </div>
       <p className={`text-xl font-semibold ${trendColor}`}>{value}</p>
-    </div>
+    </Card>
   );
 }

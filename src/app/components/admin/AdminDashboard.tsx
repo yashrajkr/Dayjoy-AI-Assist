@@ -7,8 +7,9 @@ import {
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import {
-  PageHeader, Card, StatCard, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, StatCard, LoadingState, ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 import { LineChart, BarChart, DonutChart, type LineChartPoint, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   adminGetStats, adminAnalyticsSummary, adminTopProducts, adminTopQuestions,
@@ -117,9 +118,9 @@ export function AdminDashboard() {
         description={`Real-time view of the ${BRAND.name} AI platform.`}
         icon={<LayoutDashboard className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -142,9 +143,9 @@ export function AdminDashboard() {
                     Review pending products, FAQs, policies, and documents in the approval queue.
                   </p>
                 </div>
-                <Link to="/admin/approvals" className={btnClass.secondary}>
-                  Review
-                </Link>
+                <Button asChild variant="secondary">
+                  <Link to="/admin/approvals">Review</Link>
+                </Button>
               </div>
             </Card>
           ) : null}

@@ -8,8 +8,9 @@ import {
   LoadingState,
   ErrorState,
   StatCard,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 
 type PendingItem = {
   id: string;
@@ -110,9 +111,9 @@ export function ApprovalQueue() {
         description="Review and approve pending knowledge before it goes live to users."
         icon={<CheckSquare className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -141,12 +142,12 @@ export function ApprovalQueue() {
               <div className="flex flex-col sm:flex-row sm:items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent text-accent-foreground uppercase tracking-wide">
+                    <Badge variant="secondary" className="uppercase tracking-wide">
                       {item.table.replace(/_/g, " ")}
-                    </span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-warning/15 text-warning">
+                    </Badge>
+                    <Badge variant="warning">
                       {item.status}
-                    </span>
+                    </Badge>
                     {item.created_at ? (
                       <span className="text-xs text-muted-foreground">
                         {new Date(item.created_at).toLocaleString()}
@@ -159,20 +160,17 @@ export function ApprovalQueue() {
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setApproval(item, "approved")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-                  >
+                  <Button type="button" onClick={() => setApproval(item, "approved")}>
                     <Check className="w-4 h-4" aria-hidden="true" /> Approve
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => setApproval(item, "rejected")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10"
+                    className="text-destructive border-destructive hover:bg-destructive/10"
                   >
                     <X className="w-4 h-4" aria-hidden="true" /> Reject
-                  </button>
+                  </Button>
                 </div>
               </div>
             </Card>

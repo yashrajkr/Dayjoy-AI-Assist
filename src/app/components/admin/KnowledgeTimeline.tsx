@@ -8,8 +8,8 @@ import {
   LoadingState,
   ErrorState,
   StatusPill,
-  btnClass,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 type TimelineEvent = {
   id: string;
@@ -92,9 +92,9 @@ export function KnowledgeTimeline() {
         description="Chronological feed of every change to products, FAQs, policies, training, and documents."
         icon={<GitBranch className="w-5 h-5" />}
         actions={
-          <button type="button" className={btnClass.secondary} onClick={refresh}>
+          <Button type="button" variant="secondary" onClick={refresh}>
             <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
-          </button>
+          </Button>
         }
       />
 

@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { Search, FileQuestion, ScrollText, Package, GraduationCap, FileText, Loader2, AlertCircle } from "lucide-react";
 import { ErrorState, EmptyState } from "../common/AdminUI";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
 import { customerKnowledgeSearch, type KnowledgeSearchResult } from "../../../lib/api";
 
 const ENTITY_ICONS: Record<string, typeof Package> = {
@@ -77,7 +79,7 @@ export function KnowledgeCenter() {
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Searching verified sources…</div>
       ) : searched ? (
         results.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card"><EmptyState title="No results found" description="Try a different search term or broaden your filter." icon={<AlertCircle className="w-5 h-5" />} /></div>
+          <Card className="shadow-none"><EmptyState title="No results found" description="Try a different search term or broaden your filter." icon={<AlertCircle className="w-5 h-5" />} /></Card>
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">{results.length} result{results.length === 1 ? "" : "s"} for "{query}"</p>
@@ -90,11 +92,11 @@ export function KnowledgeCenter() {
                   </h2>
                   <div className="space-y-2">
                     {items.map((r, i) => (
-                      <div key={`${type}-${r.entity_id}-${i}`} className="rounded-xl border border-border bg-card p-3">
+                      <Card key={`${type}-${r.entity_id}-${i}`} className="p-3 shadow-none">
                         <p className="text-sm font-medium">{r.title || "Untitled"}</p>
                         {r.snippet ? <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.snippet}</p> : null}
-                        {r.category ? <span className="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground">{r.category}</span> : null}
-                      </div>
+                        {r.category ? <Badge variant="secondary" className="mt-1.5">{r.category}</Badge> : null}
+                      </Card>
                     ))}
                   </div>
                 </div>
@@ -103,9 +105,9 @@ export function KnowledgeCenter() {
           </div>
         )
       ) : (
-        <div className="rounded-2xl border border-border bg-card">
+        <Card className="shadow-none">
           <EmptyState title="Start searching" description="The Knowledge Center searches across FAQs, policies, products, training, and approved documents — all verified Dayjoy sources." icon={<Search className="w-5 h-5" />} />
-        </div>
+        </Card>
       )}
     </div>
   );

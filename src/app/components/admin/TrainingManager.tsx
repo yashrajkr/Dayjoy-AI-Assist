@@ -5,8 +5,11 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
-import { Modal, modalButtonClass } from "../common/Modal";
-import { btnClass, LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { Modal } from "../common/Modal";
+import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
 
 type Course = {
   id: string;
@@ -306,41 +309,41 @@ export function TrainingManager() {
               Manage courses, modules, lessons, enrollments, and certificates.
             </p>
           </div>
-          <button className={btnClass.primary} type="button" onClick={openCreate}>
+          <Button type="button" onClick={openCreate}>
             <Plus className="w-4 h-4" /> Add Course
-          </button>
+          </Button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-card border border-border rounded-xl p-4">
+          <Card className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <BookOpen className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Total Courses</span>
             </div>
             <p className="text-2xl font-semibold">{stats.total}</p>
-          </div>
-          <div className="bg-card border border-border rounded-xl p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <CheckCircle className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Published</span>
             </div>
             <p className="text-2xl font-semibold">{stats.published}</p>
-          </div>
-          <div className="bg-card border border-border rounded-xl p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Enrollments</span>
             </div>
             <p className="text-2xl font-semibold">{stats.enrollments}</p>
-          </div>
-          <div className="bg-card border border-border rounded-xl p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <Award className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Completed</span>
             </div>
             <p className="text-2xl font-semibold">{stats.completed}</p>
-          </div>
+          </Card>
         </div>
 
         {error ? <ErrorState message={error} /> : null}
@@ -381,17 +384,17 @@ export function TrainingManager() {
         {/* Courses tab */}
         {tab === "courses" && !loading ? (
           filteredCourses.length === 0 ? (
-            <div className="bg-card border border-border rounded-2xl">
+            <Card>
               <EmptyState title="No courses yet" description="Create your first training course." icon={<BookOpen className="w-5 h-5" />} />
-            </div>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredCourses.map((c) => {
-                const diffColor = c.difficulty === "beginner" ? "bg-green-100 text-green-700"
-                  : c.difficulty === "intermediate" ? "bg-amber-100 text-amber-700"
-                  : "bg-rose-100 text-rose-700";
+                const diffVariant = c.difficulty === "beginner" ? "success"
+                  : c.difficulty === "intermediate" ? "warning"
+                  : "destructive";
                 return (
-                  <div key={c.id} className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-3">
+                  <Card key={c.id} className="p-5 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-xl bg-accent flex items-center justify-center shrink-0">
@@ -404,30 +407,30 @@ export function TrainingManager() {
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {c.is_published ? <CheckCircle className="w-3.5 h-3.5 text-primary" /> : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${c.is_published ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                        <Badge variant={c.is_published ? "default" : "secondary"}>
                           {c.is_published ? "Published" : "Draft"}
-                        </span>
+                        </Badge>
                       </div>
                     </div>
                     {c.description ? <p className="text-xs text-muted-foreground line-clamp-2">{c.description}</p> : null}
                     <div className="flex items-center gap-2 flex-wrap">
-                      {c.difficulty ? <span className={`text-[10px] px-2 py-0.5 rounded-full ${diffColor}`}>{c.difficulty}</span> : null}
+                      {c.difficulty ? <Badge variant={diffVariant}>{c.difficulty}</Badge> : null}
                       {c.estimated_hours ? <span className="text-[10px] text-muted-foreground">⏱ {c.estimated_hours}h</span> : null}
                       <span className="text-[10px] text-muted-foreground ml-auto">{new Date(c.created_at).toLocaleDateString()}</span>
                     </div>
                     <div className="flex items-center gap-1 pt-2 border-t border-border">
-                      <button type="button" className="text-xs px-2 py-1 rounded border border-border hover:bg-accent" onClick={() => openDetail(c)}>View modules</button>
-                      <button type="button" className="text-xs px-2 py-1 rounded border border-border hover:bg-accent" onClick={() => openEdit(c)} aria-label="Edit">
+                      <Button type="button" variant="outline" size="sm" onClick={() => openDetail(c)}>View modules</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openEdit(c)} aria-label="Edit">
                         <Edit className="w-3 h-3" />
-                      </button>
-                      <button type="button" className="text-xs px-2 py-1 rounded border border-border hover:bg-accent" onClick={() => handleTogglePublish(c)}>
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => handleTogglePublish(c)}>
                         {c.is_published ? "Unpublish" : "Publish"}
-                      </button>
-                      <button type="button" className="text-xs px-2 py-1 rounded border border-destructive/30 text-destructive hover:bg-destructive/10 ml-auto" onClick={() => handleDelete(c)} aria-label="Delete">
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10 ml-auto" onClick={() => handleDelete(c)} aria-label="Delete">
                         <Trash2 className="w-3 h-3" />
-                      </button>
+                      </Button>
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
             </div>
@@ -436,7 +439,7 @@ export function TrainingManager() {
 
         {/* Modules tab */}
         {tab === "modules" && !loading ? (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <Card className="p-0 overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-accent/50 border-b border-border">
                 <tr>
@@ -462,12 +465,12 @@ export function TrainingManager() {
                 )}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
 
         {/* Enrollments tab */}
         {tab === "enrollments" && !loading ? (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <Card className="p-0 overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-accent/50 border-b border-border">
                 <tr>
@@ -484,14 +487,14 @@ export function TrainingManager() {
                 ) : (
                   enrollments.map((e) => {
                     const course = courses.find((c) => c.id === e.course_id);
-                    const statusColor = e.status === "completed" ? "bg-green-100 text-green-700"
-                      : e.status === "in_progress" ? "bg-amber-100 text-amber-700"
-                      : "bg-muted text-muted-foreground";
+                    const statusVariant = e.status === "completed" ? "success"
+                      : e.status === "in_progress" ? "warning"
+                      : "secondary";
                     return (
                       <tr key={e.id} className="hover:bg-accent/30">
                         <td className="px-4 py-2 font-mono text-xs">{e.user_id.slice(0, 8)}…</td>
                         <td className="px-4 py-2 hidden sm:table-cell text-muted-foreground">{course?.title ?? "—"}</td>
-                        <td className="px-4 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full ${statusColor}`}>{e.status}</span></td>
+                        <td className="px-4 py-2"><Badge variant={statusVariant}>{e.status}</Badge></td>
                         <td className="px-4 py-2">
                           <div className="flex items-center gap-2">
                             <div className="w-16 h-1.5 bg-accent rounded-full overflow-hidden">
@@ -507,7 +510,7 @@ export function TrainingManager() {
                 )}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
       </div>
 
@@ -519,13 +522,13 @@ export function TrainingManager() {
         size="md"
         footer={
           <>
-            <button type="button" className={modalButtonClass.secondary} onClick={() => setCourseModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setCourseModalOpen(false)}>
               <X className="w-4 h-4" /> Cancel
-            </button>
-            <button type="button" className={modalButtonClass.primary} onClick={handleSave} disabled={saving}>
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {editingCourseId ? "Save" : "Create"}
-            </button>
+            </Button>
           </>
         }
       >
@@ -578,9 +581,9 @@ export function TrainingManager() {
         description="Modules and lessons in this course"
         size="lg"
         footer={
-          <button type="button" className={modalButtonClass.primary} onClick={handleAddModule}>
+          <Button type="button" onClick={handleAddModule}>
             <Plus className="w-4 h-4" /> Add Module
-          </button>
+          </Button>
         }
       >
         {detailLoading ? (

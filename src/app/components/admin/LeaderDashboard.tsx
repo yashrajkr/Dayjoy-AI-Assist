@@ -9,6 +9,7 @@ import {
   LoadingState,
   ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 
 /**
  * Leader Dashboard — for sales team leaders.
@@ -93,10 +94,18 @@ export function LeaderDashboard() {
           <Card>
             <h2 className="text-sm font-semibold mb-2">Leader actions</h2>
             <div className="flex flex-wrap gap-2">
-              <a href="/admin/training" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">View training</a>
-              <a href="/admin/leads" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Review leads</a>
-              <a href="/admin/analytics" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Team analytics</a>
-              <a href="/distributor" className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent/60">Distributor tools</a>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/training">View training</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/leads">Review leads</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/admin/analytics">Team analytics</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <a href="/distributor">Distributor tools</a>
+              </Button>
             </div>
           </Card>
         </>

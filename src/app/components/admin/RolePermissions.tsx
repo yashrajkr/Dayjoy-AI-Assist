@@ -3,8 +3,9 @@ import {
   Shield, Lock, Save, Loader2, Check, X, Filter, RotateCcw,
 } from "lucide-react";
 import {
-  PageHeader, Card, LoadingState, ErrorState, btnClass,
+  PageHeader, Card, LoadingState, ErrorState,
 } from "../common/AdminUI";
+import { Button } from "../ui/button";
 import {
   adminGetRolePermissions, adminUpdateRolePermissions,
   type RolePermission,
@@ -159,18 +160,17 @@ export function RolePermissions() {
         icon={<Shield className="w-5 h-5" />}
         actions={
           <>
-            <button type="button" className={btnClass.secondary} onClick={load} disabled={!hasChange && !saved}>
+            <Button type="button" variant="secondary" onClick={load} disabled={!hasChange && !saved}>
               <RotateCcw className="w-4 h-4" aria-hidden="true" /> Reset
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={btnClass.primary}
               onClick={save}
               disabled={saving || !hasChange}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Save className="w-4 h-4" aria-hidden="true" />}
               {saved ? "Saved!" : "Save changes"}
-            </button>
+            </Button>
           </>
         }
       />

@@ -6,6 +6,7 @@ import { streamChatWithBackend } from "../../../lib/api";
 import { BRAND } from "../../lib/brand";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/input";
+import { Card } from "../ui/card";
 
 type Tone = "Professional" | "Friendly" | "Hinglish" | "Short WhatsApp reply";
 
@@ -154,9 +155,9 @@ export function DistributorAssistant() {
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
             return (
-              <div
+              <Card
                 key={tool.id}
-                className="bg-card border border-border rounded-2xl p-5 shadow-flat hover-raise flex flex-col"
+                className="p-5 shadow-flat hover-raise flex flex-col"
               >
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
@@ -210,18 +211,18 @@ export function DistributorAssistant() {
                     <p className="text-sm whitespace-pre-wrap">{outputs[tool.id]}</p>
                   </div>
                 ) : null}
-              </div>
+              </Card>
             );
           })}
         </div>
 
-        <div className="rounded-2xl border border-warning/30 bg-warning/5 p-5">
+        <Card className="border-warning/30 bg-warning/5 p-5 shadow-none">
           <h3 className="font-semibold text-warning mb-1">Compliance reminder</h3>
           <p className="text-sm text-warning/90">
             Do not claim cure, treatment, guaranteed result, or guaranteed income.
             Use approved product knowledge and escalate to human support for risky questions.
           </p>
-        </div>
+        </Card>
       </div>
     </div>
   );

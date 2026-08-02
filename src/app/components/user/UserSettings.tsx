@@ -3,7 +3,8 @@ import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, 
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { BRAND } from "../../lib/brand";
-import { PageHeader, Card, btnClass } from "../common/AdminUI";
+import { PageHeader, Card } from "../common/AdminUI";
+import { Button } from "../ui/button";
 import {
   getPushSubscriptionState,
   subscribeToPush,
@@ -320,26 +321,25 @@ export function UserSettings() {
               {/* Action buttons */}
               <div className="flex items-center gap-2 flex-wrap">
                 {pushState && !pushState.subscribed ? (
-                  <button
+                  <Button
                     type="button"
                     onClick={handleEnablePush}
                     disabled={pushBusy || !pushState.supported}
-                    className={btnClass.primary}
                   >
                     <BellRing className="w-4 h-4" aria-hidden="true" />
                     {pushBusy ? "Requesting…" : "Enable push"}
-                  </button>
+                  </Button>
                 ) : null}
                 {pushState && pushState.subscribed ? (
                   <>
-                    <button type="button" onClick={handleTestPush} className={btnClass.secondary}>
+                    <Button type="button" variant="secondary" onClick={handleTestPush}>
                       <Bell className="w-4 h-4" aria-hidden="true" />
                       Send test
-                    </button>
-                    <button type="button" onClick={handleDisablePush} className={btnClass.ghost}>
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={handleDisablePush}>
                       <BellOff className="w-4 h-4" aria-hidden="true" />
                       Disable
-                    </button>
+                    </Button>
                   </>
                 ) : null}
               </div>
@@ -401,10 +401,12 @@ export function UserSettings() {
                         p.pinned ? "bg-primary/5 border border-primary/20" : "bg-accent/30"
                       }`}
                     >
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => togglePin(p)}
-                        className="p-1 rounded hover:bg-accent/60 shrink-0"
+                        className="h-auto w-auto p-1 shrink-0"
                         aria-label={p.pinned ? "Unpin memory" : "Pin memory"}
                         title={p.pinned ? "Unpin" : "Pin"}
                       >
@@ -412,22 +414,24 @@ export function UserSettings() {
                           className={`w-3.5 h-3.5 ${p.pinned ? "text-primary" : "text-muted-foreground"}`}
                           aria-hidden="true"
                         />
-                      </button>
+                      </Button>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate">{p.pref_key}</p>
                         {p.pref_value ? (
                           <p className="text-xs text-muted-foreground truncate">{p.pref_value}</p>
                         ) : null}
                       </div>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => deletePref(p)}
-                        className="p-1 rounded hover:bg-destructive/10 text-destructive shrink-0"
+                        className="h-auto w-auto p-1 text-destructive hover:bg-destructive/10 shrink-0"
                         aria-label={`Delete ${p.pref_key}`}
                         title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                      </button>
+                      </Button>
                     </div>
                   ))
                 )}
@@ -451,31 +455,29 @@ export function UserSettings() {
                   className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                   aria-label="Memory value"
                 />
-                <button
+                <Button
                   type="button"
                   onClick={addPref}
                   disabled={!newPrefKey.trim()}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
                   aria-label="Add memory"
                 >
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                   Add
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         </Card>
 
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className={btnClass.primary}
           >
             <Save className="w-4 h-4" aria-hidden="true" />
             {saving ? "Saving…" : "Save settings"}
-          </button>
+          </Button>
           {savedMessage ? (
             <span className="inline-flex items-center gap-1 text-sm text-primary">
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
