@@ -223,17 +223,17 @@ export function LoginPage() {
           className="relative z-10 space-y-6"
         >
           <h2 className="text-3xl xl:text-4xl font-semibold leading-tight tracking-tight">
-            Trusted knowledge.
+            Your family's wellness.
             <br />
-            Safe answers.
+            Your business's growth.
             <br />
-            One assistant.
+            One trusted assistant.
           </h2>
           <p className="text-primary-foreground/80 max-w-sm text-sm">
-            {BRAND.tagline} — approved knowledge, safety-filtered responses, and human escalation whenever it matters.
+            Dayjoy brings trusted wellness knowledge, safe guidance, and real human support to every question — for your family's well-being and your Dayjoy business, together.
           </p>
           <div className="flex flex-wrap gap-2">
-            {["Approved knowledge", "Cited answers", "Human escalation"].map((tag) => (
+            {["Wellness-approved knowledge", "Verified answers", "Human support"].map((tag) => (
               <span
                 key={tag}
                 className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/10 border border-white/15 backdrop-blur-sm"
