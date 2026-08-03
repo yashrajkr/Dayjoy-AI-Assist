@@ -29,6 +29,7 @@ import {
   Camera,
   QrCode,
   FileText,
+  Image as ImageIcon,
   ChevronUp,
   ArrowUp,
   ShieldCheck,
@@ -58,7 +59,12 @@ import {
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
-import { streamChatWithBackend, SessionExpiredError, type ChatSource } from "../../../lib/api";
+import {
+  streamChatWithBackend,
+  generateConversationTitle,
+  SessionExpiredError,
+  type ChatSource,
+} from "../../../lib/api";
 import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
 import { VoiceControls } from "../voice/VoiceControls";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
@@ -73,14 +79,7 @@ import { useVoice } from "../../lib/useVoice";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
+import { AccountMenu } from "../common/AccountMenu";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -160,6 +159,10 @@ const PROMPT_THEME: Record<PromptCategory, { icon: typeof Leaf; tint: string; ri
  * read as "Ask Dayjoy AI ... about Dayjoy products".)
  */
 const composerPlaceholder = `Ask ${BRAND.shortName} anything…`;
+
+/** Attachments are inlined as data URLs, so keep them small. */
+const MAX_ATTACHMENT_BYTES = 10_000_000;
+const MAX_ATTACHMENTS = 5;
 
 const SUGGESTED_PROMPTS: ReadonlyArray<{ title: string; text: string; category: PromptCategory }> = [
   {
@@ -242,17 +245,7 @@ function formatTimestamp(iso?: string): string {
 export function UserChat() {
   const { chatId } = useParams();
   const navigate = useNavigate();
-  const { currentUser, role, logout } = useAuth();
-
-  const accountInitials =
-    currentUser?.email?.slice(0, 2).toUpperCase() ??
-    currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
-    "DU";
-
-  const handleLogout = useCallback(async () => {
-    await logout();
-    navigate("/login");
-  }, [logout, navigate]);
+  const { currentUser, role } = useAuth();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -278,6 +271,8 @@ export function UserChat() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sources panel: expanded preview state + attachment preview state
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
@@ -528,13 +523,30 @@ export function UserChat() {
           }
         }
 
-        // Auto-rename conversation if it's still "New conversation"
+        // Auto-title the conversation from the opening question.
+        // `deriveTitle` (a truncated first message) is applied immediately so
+        // the sidebar is never blank, then upgraded to a short summarized
+        // title if the backend can produce one.
         if (conv && (conv.title === "New conversation" || !conv.title)) {
-          const newTitle = deriveTitle(text);
-          await renameConversation(conv.id!, newTitle);
-          setConversations((prev) =>
-            prev.map((c) => (c.id === conv!.id ? { ...c, title: newTitle } : c)),
-          );
+          const convIdForTitle = conv.id!;
+          const fallbackTitle = deriveTitle(text);
+          const applyTitle = (title: string) => {
+            setConversations((prev) =>
+              prev.map((c) => (c.id === convIdForTitle ? { ...c, title } : c)),
+            );
+            setActiveConv((prev) =>
+              prev && prev.id === convIdForTitle ? { ...prev, title } : prev,
+            );
+          };
+
+          applyTitle(fallbackTitle);
+          await renameConversation(convIdForTitle, fallbackTitle);
+
+          const summarized = await generateConversationTitle(text);
+          if (summarized && summarized !== fallbackTitle) {
+            applyTitle(summarized);
+            await renameConversation(convIdForTitle, summarized);
+          }
         }
 
         await refreshConversations();
@@ -607,6 +619,51 @@ export function UserChat() {
         ? `${prev}\n\n[Attached photo: ${img.file.name}]`
         : `I'm attaching a photo of ${img.file.name.includes("capture") ? "a product/document" : img.file.name}. Please help me understand it.`,
     );
+    inputRef.current?.focus();
+  }, []);
+
+  // ---- Tools: pick images/files from the device ----
+  // The attach menu previously offered only camera/QR/OCR, so there was no
+  // way to send something already saved on the device.
+  const handleFilesPicked = useCallback((fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (files.length === 0) return;
+
+    const tooLarge = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (tooLarge.length > 0) {
+      setError(
+        `${tooLarge.map((f) => f.name).join(", ")} exceeds the ${Math.round(
+          MAX_ATTACHMENT_BYTES / 1_000_000,
+        )}MB limit and was not attached.`,
+      );
+    }
+
+    const accepted = files
+      .filter((f) => f.size <= MAX_ATTACHMENT_BYTES)
+      .slice(0, MAX_ATTACHMENTS);
+    if (accepted.length === 0) return;
+
+    accepted.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!dataUrl) return;
+        setAttachments((prev) =>
+          prev.length >= MAX_ATTACHMENTS
+            ? prev
+            : [...prev, { name: file.name, dataUrl, kind: "image" as const }],
+        );
+      };
+      reader.onerror = () => setError(`Could not read ${file.name}.`);
+      reader.readAsDataURL(file);
+    });
+
+    setInput((prev) => {
+      const names = accepted.map((f) => f.name).join(", ");
+      return prev.trim()
+        ? `${prev}\n\n[Attached: ${names}]`
+        : `I'm attaching ${names}. Please help me understand it.`;
+    });
     inputRef.current?.focus();
   }, []);
 
@@ -1028,7 +1085,7 @@ export function UserChat() {
                       ) : null}
                     </span>
                   </button>
-                  <div className="flex items-center justify-end gap-1 px-2 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-end gap-1 px-2 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={() => handlePin(c.id!, !c.pinned)}
@@ -1190,30 +1247,7 @@ export function UserChat() {
             <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
             <NotificationCenter />
             <ThemeToggle />
-            {/* Account menu. This was previously an aria-hidden <div>, so it
-                was invisible to assistive tech and tapping it did nothing. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-0.5 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  aria-label="Account menu"
-                  title={currentUser?.email ?? "Account"}
-                >
-                  {accountInitials}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="truncate">
-                  {currentUser?.email ?? "Account"}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <AccountMenu />
           </div>
         </header>
 
@@ -1522,6 +1556,29 @@ export function UserChat() {
                 <div className="flex items-center gap-1">
                   {/* Attach / Tools dropdown */}
                   <div className="relative" ref={attachMenuRef}>
+                    {/* Hidden pickers driven by the menu items below. */}
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesPicked(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,.pdf,.txt,.csv,.doc,.docx"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesPicked(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -1545,7 +1602,7 @@ export function UserChat() {
                         initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute bottom-full mb-2 left-0 w-56 rounded-xl border border-border bg-card shadow-xl py-1.5 z-30"
+                        className="absolute bottom-full mb-2 left-0 w-60 rounded-xl border border-border bg-card shadow-xl py-1.5 z-50"
                         role="menu"
                       >
                         <button
@@ -1563,6 +1620,37 @@ export function UserChat() {
                             <p className="text-[11px] text-muted-foreground">Capture a product label or document</p>
                           </div>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachMenuOpen(false);
+                            photoInputRef.current?.click();
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitem"
+                        >
+                          <ImageIcon className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
+                          <div>
+                            <p className="text-sm font-medium">Photo library</p>
+                            <p className="text-[11px] text-muted-foreground">Attach an image already on your device</p>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachMenuOpen(false);
+                            fileInputRef.current?.click();
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitem"
+                        >
+                          <Paperclip className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
+                          <div>
+                            <p className="text-sm font-medium">Choose file</p>
+                            <p className="text-[11px] text-muted-foreground">Attach a document or image</p>
+                          </div>
+                        </button>
+                        <div className="my-1 h-px bg-border" aria-hidden="true" />
                         <button
                           type="button"
                           onClick={() => {
@@ -1649,7 +1737,7 @@ export function UserChat() {
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
-                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity"
                         aria-label={`Remove ${att.name}`}
                       >
                         <Trash2 className="w-3 h-3" aria-hidden="true" />
@@ -2302,7 +2390,7 @@ function MessageBubble({
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
-        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity">
           <ActionButton
             onClick={() => onCopy(message.content, bubbleId)}
             label={copiedId === bubbleId ? "Copied" : "Copy"}

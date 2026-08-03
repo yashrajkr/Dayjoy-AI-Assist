@@ -264,6 +264,22 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 
+class TitleRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
+
+
+class TitleResponse(BaseModel):
+    title: str
+
+
+def _fallback_title(text: str, max_len: int = 48) -> str:
+    """Deterministic title used whenever summarization is unavailable."""
+    trimmed = " ".join(text.split())
+    if len(trimmed) <= max_len:
+        return trimmed
+    return trimmed[: max_len - 1] + "…"
+
+
 class ChatSource(BaseModel):
     table: str
     id: str
@@ -846,6 +862,66 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         handoff_message=handoff_msg,
         rag_metadata=rag_metadata,
     )
+
+
+@app.post("/chat/title", response_model=TitleResponse)
+async def chat_title(req: TitleRequest, user_id: str = Depends(require_user_id)) -> TitleResponse:
+    """
+    Summarize the opening exchange into a short conversation title.
+
+    Deliberately separate from /chat: no RAG, no safety pipeline, no history —
+    just one small completion. Callers must treat this as best-effort and keep
+    their own truncated-first-message fallback, since it returns that fallback
+    unchanged whenever no provider is configured or the call fails.
+    """
+    check_rate_limit(user_id)
+    fallback = _fallback_title(req.message)
+
+    if not (GROQ_API_KEY or OPENAI_API_KEY):
+        return TitleResponse(title=fallback)
+
+    prompt = (
+        "Summarize this customer question as a conversation title of at most 5 "
+        "words. Use the question's own language. Reply with the title only — no "
+        "quotes, no trailing punctuation, no preamble.\n\n"
+        f"Question: {req.message[:500]}"
+    )
+
+    if GROQ_API_KEY:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        model = GROQ_MODEL
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        model = OPENAI_MODEL
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 24,
+                },
+            )
+            if resp.status_code >= 400:
+                return TitleResponse(title=fallback)
+            content = (
+                resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            )
+    except Exception:
+        return TitleResponse(title=fallback)
+
+    title = content.strip().strip('"').strip("'").rstrip(".").strip()
+    # A model that ignored the instruction and wrote a sentence is worse than
+    # the deterministic fallback.
+    if not title or len(title) > 60:
+        return TitleResponse(title=fallback)
+    return TitleResponse(title=title)
 
 
 @app.post("/chat/stream")

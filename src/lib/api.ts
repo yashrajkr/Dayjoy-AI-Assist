@@ -277,6 +277,36 @@ export async function chatWithBackend(
 }
 
 /**
+ * Summarize a first message into a short conversation title.
+ *
+ * Best-effort by design: returns null on any failure so callers keep their
+ * own deterministic fallback rather than showing a blank sidebar entry.
+ */
+export async function generateConversationTitle(
+  message: string,
+): Promise<string | null> {
+  try {
+    const token = await requireBearerToken();
+    const res = await fetch(`${getApiBaseUrl()}/chat/title`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-Client": BRAND.shortName,
+      },
+      body: JSON.stringify({ message }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { title?: string };
+    return data.title?.trim() || null;
+  } catch {
+    // Titling is cosmetic — never surface this to the user.
+    return null;
+  }
+}
+
+/**
  * Streaming chat — opens an SSE connection to `/chat/stream` and invokes
  * `onToken` for each token chunk. Returns the final aggregated response.
  *

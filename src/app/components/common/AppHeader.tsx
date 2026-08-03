@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { useAuth } from "../../lib/AuthContext";
+import { AccountMenu } from "./AccountMenu";
 
 /**
  * AppHeader — shared top utility bar for every authenticated page.
@@ -26,12 +26,6 @@ export function AppHeader({
   icon?: LucideIcon;
   actions?: ReactNode;
 }) {
-  const { currentUser } = useAuth();
-  const userInitials =
-    currentUser?.email?.slice(0, 2).toUpperCase() ??
-    currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
-    "DU";
-
   return (
     <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5 min-w-0">
@@ -53,13 +47,7 @@ export function AppHeader({
         <LanguageSwitcher className="hidden sm:inline-flex" />
         <NotificationCenter />
         <ThemeToggle />
-        <div
-          className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-1"
-          aria-hidden="true"
-          title={currentUser?.email ?? "Account"}
-        >
-          {userInitials}
-        </div>
+        <AccountMenu />
       </div>
     </header>
   );
