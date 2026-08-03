@@ -259,6 +259,9 @@ export function UserChat() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Synchronous send lock. `sending` state lags by a render, so two taps
+  // dispatched in the same tick both read it as false and fire twice.
+  const sendingRef = useRef(false);
 
   // Close attach menu on outside click
   useEffect(() => {
@@ -283,29 +286,48 @@ export function UserChat() {
     refreshConversations();
   }, [refreshConversations]);
 
-  // ---- Load active conversation messages ----
+  // ---- Track the active conversation record ----
+  // Split out from the message loader on purpose: this depends on
+  // `conversations`, which gets a fresh array identity after every send.
+  // Keeping it separate means a refresh updates the header without
+  // re-running the message fetch below.
   useEffect(() => {
     if (!chatId) {
       setActiveConv(null);
-      setMessages([]);
       return;
     }
+    const conv = conversations.find((c) => c.id === chatId);
+    // Only overwrite when found — a just-created conversation may not be in
+    // the list yet, and clobbering it with null would blank the header.
+    if (conv) setActiveConv(conv);
+  }, [chatId, conversations]);
+
+  // ---- Load active conversation messages ----
+  // Keyed on `chatId` alone. Previously this also depended on `conversations`,
+  // so `refreshConversations()` at the end of every send re-ran it and replaced
+  // the freshly rendered transcript with a stale (or empty) DB snapshot —
+  // the answer would be spoken aloud but vanish from the screen.
+  useEffect(() => {
+    if (!chatId) {
+      setMessages([]);
+      setLastAssistantId(null);
+      return;
+    }
+    // A send in flight owns `messages`; refetching here would race it.
+    if (sendingRef.current) return;
     let cancelled = false;
     (async () => {
-      const conv = conversations.find((c) => c.id === chatId) ?? null;
-      if (!cancelled) setActiveConv(conv);
       const msgs = await listMessages(chatId);
-      if (!cancelled) {
-        setMessages(msgs);
-        setLastAssistantId(
-          [...msgs].reverse().find((m) => m.role === "assistant")?.id ?? null,
-        );
-      }
+      if (cancelled || sendingRef.current) return;
+      setMessages(msgs);
+      setLastAssistantId(
+        [...msgs].reverse().find((m) => m.role === "assistant")?.id ?? null,
+      );
     })();
     return () => {
       cancelled = true;
     };
-  }, [chatId, conversations]);
+  }, [chatId]);
 
   // ---- Auto-scroll on new message / streaming token ----
   useEffect(() => {
@@ -318,12 +340,15 @@ export function UserChat() {
   const handleSend = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
-      if (!text || sending) return;
+      // Ref, not state: a rapid double/triple tap on a suggestion card
+      // dispatches several calls before React commits `setSending(true)`.
+      if (!text || sendingRef.current) return;
       if (text.length > 4000) {
         setError("Message is too long (max 4000 characters).");
         return;
       }
 
+      sendingRef.current = true;
       setError(null);
       setInput("");
       setStreamingText("");
@@ -335,6 +360,7 @@ export function UserChat() {
       if (!convId) {
         if (!currentUser) {
           setError("Unable to start a conversation without a logged-in user.");
+          sendingRef.current = false;
           setSending(false);
           return;
         }
@@ -342,6 +368,7 @@ export function UserChat() {
         const createdConv = await createConversation(currentUser.id, "New conversation", language);
         if (!createdConv) {
           setError("Could not create a new conversation. Please try again.");
+          sendingRef.current = false;
           setSending(false);
           return;
         }
@@ -438,12 +465,38 @@ export function UserChat() {
           rag_metadata: meta.rag_metadata ?? null,
         });
 
-        if (assistantMsg) {
-          assistantId = assistantMsg.id ?? null;
-          setMessages((prev) => [...prev, assistantMsg as ChatMessage]);
+        // Render the answer whether or not it persisted. `appendMessage`
+        // returns null on any Supabase failure (RLS, expired JWT, offline),
+        // and gating the render on it silently discarded a response the user
+        // had already waited for — and could hear, since TTS reads the
+        // in-memory string. Persistence is best-effort; display is not.
+        const rendered: ChatMessage = (assistantMsg as ChatMessage | null) ?? {
+          conversation_id: convId ?? undefined,
+          role: "assistant",
+          content: aggregated,
+          sources: sourcesSnapshot as unknown,
+          safety_status: meta.safety_status ?? "safe",
+          handoff_required: meta.handoff_required ?? false,
+          confidence: meta.confidence ?? null,
+          verification_status: meta.verification_status ?? null,
+          handoff_message: meta.handoff_message ?? null,
+          rag_metadata: meta.rag_metadata ?? null,
+          created_at: new Date().toISOString(),
+        };
+
+        if (aggregated) {
+          assistantId = rendered.id ?? null;
+          setMessages((prev) => [...prev, rendered]);
           setLastAssistantId(assistantId);
+
+          if (!assistantMsg) {
+            setError(
+              "This answer could not be saved, so it will disappear if you reload. Check your connection and try again.",
+            );
+          }
+
           // Auto-speak the response if TTS is available and not muted
-          if (voice.supported && !voice.muted && aggregated) {
+          if (voice.supported && !voice.muted) {
             voice.speak(aggregated);
           }
         }
@@ -462,13 +515,25 @@ export function UserChat() {
         if ((e as Error).name === "AbortError") {
           // User pressed stop — keep what we have.
           if (aggregated && convId) {
+            const stopped = aggregated + "\n\n_⃠ Generation stopped by user._";
             const m = await appendMessage(convId!, {
               role: "assistant",
-              content: aggregated + "\n\n_⃠ Generation stopped by user._",
+              content: stopped,
               safety_status: "safe",
               handoff_required: false,
             });
-            if (m) setMessages((prev) => [...prev, m as ChatMessage]);
+            // Show the partial answer even if it failed to persist.
+            setMessages((prev) => [
+              ...prev,
+              (m as ChatMessage | null) ?? {
+                conversation_id: convId ?? undefined,
+                role: "assistant",
+                content: stopped,
+                safety_status: "safe",
+                handoff_required: false,
+                created_at: new Date().toISOString(),
+              },
+            ]);
           }
         } else if (e instanceof SessionExpiredError) {
           // No/expired Supabase session — sending would otherwise 401 with an
@@ -484,6 +549,7 @@ export function UserChat() {
           );
         }
       } finally {
+        sendingRef.current = false;
         setSending(false);
         setStreamingText("");
         abortRef.current = null;
@@ -493,7 +559,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role, sending],
+    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role],
   );
 
   // ---- Stop generation ----

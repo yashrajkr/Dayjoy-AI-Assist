@@ -865,12 +865,22 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             yield _sse({"token": "", "done": True, "safety_status": "blocked", "category": "unsafe", "handoff_required": True})
             return
 
+        # Emit an immediate frame so the client knows the connection is live.
+        # Everything below (history load, RAG retrieval, optional web search)
+        # blocks before the first token, which the user experienced as a 60s
+        # hang with no feedback. Clients ignore frames carrying neither `token`
+        # nor `done`, so this is backwards compatible — and it re-arms the
+        # client's idle timeout.
+        yield _sse({"status": "connected"})
+
         history: List[Dict[str, str]] = []
         conv_id = req.conversation_id
         if token and conv_id:
             history = await load_history(token, conv_id)
         elif token and user_id:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+
+        yield _sse({"status": "searching_knowledge"})
 
         context, sources, category, rag_metadata = await retrieve_context(token, req.message)
 
@@ -879,6 +889,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         web_sources: List[ChatSource] = []
         used_web_search = False
         if not context and TAVILY_API_KEY:
+            yield _sse({"status": "searching_web"})
             web_context, web_sources = await web_search(req.message)
             if web_context:
                 used_web_search = True
@@ -931,7 +942,18 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "rag_metadata": rag_metadata,
         })
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        # Without these, nginx buffers the whole SSE stream and delivers it as
+        # a single blob once generation finishes — which looks identical to a
+        # long hang followed by the entire answer appearing at once.
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/feedback")
