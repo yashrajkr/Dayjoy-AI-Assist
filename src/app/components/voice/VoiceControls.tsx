@@ -64,68 +64,73 @@ export function VoiceControls({
         </div>
       ) : null}
 
-      {/* Microphone toggle */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={voice.listening ? voice.stopListening : voice.startListening}
-        className={`h-auto w-auto p-2 rounded-lg ${
-          voice.listening
-            ? "bg-destructive/15 text-destructive hover:bg-destructive/20"
-            : "text-muted-foreground"
-        }`}
-        aria-label={voice.listening ? "Stop listening" : "Start voice input"}
-        aria-pressed={voice.listening}
-        title={voice.listening ? "Stop listening" : "Voice input"}
-      >
-        {voice.listening ? (
-          <Square className="w-4 h-4" aria-hidden="true" />
-        ) : (
-          <Mic className="w-4 h-4" aria-hidden="true" />
-        )}
-      </Button>
+      {/* Microphone toggle — hidden if the browser has no speech recognition */}
+      {voice.sttSupported ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={voice.listening ? voice.stopListening : voice.startListening}
+          className={`h-auto w-auto p-2 rounded-lg ${
+            voice.listening
+              ? "bg-destructive/15 text-destructive hover:bg-destructive/20"
+              : "text-muted-foreground"
+          }`}
+          aria-label={voice.listening ? "Stop listening" : "Start voice input"}
+          aria-pressed={voice.listening}
+          title={voice.listening ? "Stop listening" : "Voice input"}
+        >
+          {voice.listening ? (
+            <Square className="w-4 h-4" aria-hidden="true" />
+          ) : (
+            <Mic className="w-4 h-4" aria-hidden="true" />
+          )}
+        </Button>
+      ) : null}
 
-      {/* Speak toggle */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={voice.speaking ? voice.stopSpeaking : undefined}
-        className={`h-auto w-auto p-2 rounded-lg ${
-          voice.speaking
-            ? "bg-primary/15 text-primary animate-pulse hover:bg-primary/20"
-            : "text-muted-foreground"
-        }`}
-        aria-label={voice.speaking ? "Stop speaking" : "Speaking"}
-        aria-pressed={voice.speaking}
-        title={voice.speaking ? "Stop speaking" : "Speaking"}
-        disabled={!voice.speaking}
-      >
-        <Volume2 className="w-4 h-4" aria-hidden="true" />
-      </Button>
+      {/* Speak / mute toggles — hidden if the browser has no speech synthesis */}
+      {voice.ttsSupported ? (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={voice.speaking ? voice.stopSpeaking : undefined}
+            className={`h-auto w-auto p-2 rounded-lg ${
+              voice.speaking
+                ? "bg-primary/15 text-primary animate-pulse hover:bg-primary/20"
+                : "text-muted-foreground"
+            }`}
+            aria-label={voice.speaking ? "Stop speaking" : "Speaking"}
+            aria-pressed={voice.speaking}
+            title={voice.speaking ? "Stop speaking" : "Speaking"}
+            disabled={!voice.speaking}
+          >
+            <Volume2 className="w-4 h-4" aria-hidden="true" />
+          </Button>
 
-      {/* Mute toggle */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={voice.toggleMute}
-        className={`h-auto w-auto p-2 rounded-lg ${
-          voice.muted
-            ? "bg-warning/15 text-warning hover:bg-warning/20"
-            : "text-muted-foreground"
-        }`}
-        aria-label={voice.muted ? "Unmute voice" : "Mute voice"}
-        aria-pressed={voice.muted}
-        title={voice.muted ? "Unmute" : "Mute"}
-      >
-        {voice.muted ? (
-          <VolumeX className="w-4 h-4" aria-hidden="true" />
-        ) : (
-          <Volume2 className="w-4 h-4" aria-hidden="true" />
-        )}
-      </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={voice.toggleMute}
+            className={`h-auto w-auto p-2 rounded-lg ${
+              voice.muted
+                ? "bg-warning/15 text-warning hover:bg-warning/20"
+                : "text-muted-foreground"
+            }`}
+            aria-label={voice.muted ? "Unmute voice" : "Mute voice"}
+            aria-pressed={voice.muted}
+            title={voice.muted ? "Unmute" : "Mute"}
+          >
+            {voice.muted ? (
+              <VolumeX className="w-4 h-4" aria-hidden="true" />
+            ) : (
+              <Volume2 className="w-4 h-4" aria-hidden="true" />
+            )}
+          </Button>
+        </>
+      ) : null}
 
       {voice.error ? (
         <span role="alert" className="text-[11px] text-destructive ml-1 max-w-[220px] truncate" title={voice.error}>

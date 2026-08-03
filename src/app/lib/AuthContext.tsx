@@ -62,8 +62,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  // Refresh can be triggered "silently" (no `loading` flip, no AppShellFallback
+  // flash) for benign background re-auth events like Supabase's TOKEN_REFRESHED,
+  // which fires whenever the tab regains focus/visibility.
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
 
     if (!isSupabaseConfigured()) {
       const demo = readDemoAuth();
@@ -74,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setCurrentUser(null);
         setRole(null);
       }
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
       return;
     }
 
@@ -100,18 +103,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRole(null);
       }
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
+    let hasRunInitialRefresh = false;
 
-    refresh();
+    refresh().then(() => {
+      hasRunInitialRefresh = true;
+    });
 
     if (isSupabaseConfigured() && supabase) {
-      const { data } = supabase.auth.onAuthStateChange(() => {
-        refresh();
+      const { data } = supabase.auth.onAuthStateChange((event) => {
+        // TOKEN_REFRESHED/INITIAL_SESSION fire on benign background events
+        // (e.g. the tab regaining focus) — refresh state without flipping
+        // `loading`, so returning to the tab doesn't flash the full-page
+        // loading fallback. Real sign-in/out transitions still show it.
+        const isBenignEvent = event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION";
+        refresh({ silent: isBenignEvent && hasRunInitialRefresh });
       });
       unsub = () => data.subscription.unsubscribe();
     }

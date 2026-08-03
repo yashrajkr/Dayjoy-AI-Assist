@@ -44,6 +44,9 @@ const HumanSupport = lazy(() =>
 const UserSettings = lazy(() =>
   import("./components/user/UserSettings").then((m) => ({ default: m.UserSettings })),
 );
+const UserProfile = lazy(() =>
+  import("./components/user/UserProfile").then((m) => ({ default: m.UserProfile })),
+);
 const LeadCapturePage = lazy(() =>
   import("./components/user/LeadCapturePage").then((m) => ({ default: m.LeadCapturePage })),
 );
@@ -378,6 +381,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <UserSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="profile"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <UserProfile />
                   </Suspense>
                 </ProtectedRoute>
               }

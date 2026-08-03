@@ -14,6 +14,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
  * inside the recognition callbacks) to avoid stale-closure bugs.
  */
 
+type SpeechRecognitionResultLike = ArrayLike<{ transcript: string }> & { isFinal: boolean };
+
 type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
@@ -21,7 +23,7 @@ type SpeechRecognitionLike = {
   start: () => void;
   stop: () => void;
   abort: () => void;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<SpeechRecognitionResultLike> }) => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
 };
@@ -36,7 +38,12 @@ function getRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 }
 
 export type VoiceState = {
+  /** True if either speech-to-text or text-to-speech is available. */
   supported: boolean;
+  /** True if the browser can listen (mic input / SpeechRecognition). */
+  sttSupported: boolean;
+  /** True if the browser can speak (SpeechSynthesis) — independent of STT support. */
+  ttsSupported: boolean;
   listening: boolean;
   speaking: boolean;
   muted: boolean;
@@ -96,7 +103,12 @@ export type VoiceOptions = {
 };
 
 export function useVoice(language: string = "en", options: VoiceOptions = {}): VoiceState {
-  const [supported] = useState(() => getRecognitionCtor() !== null && typeof window !== "undefined" && "speechSynthesis" in window);
+  // STT and TTS are independent browser capabilities — a browser missing one
+  // shouldn't disable the other (e.g. Firefox has no SpeechRecognition but
+  // speechSynthesis works fine there).
+  const [sttSupported] = useState(() => getRecognitionCtor() !== null);
+  const [ttsSupported] = useState(() => typeof window !== "undefined" && "speechSynthesis" in window);
+  const supported = sttSupported || ttsSupported;
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -138,10 +150,10 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0].transcript;
-        if (i === event.results.length - 1) {
-          interim = text;
-        } else {
+        if (result.isFinal) {
           final += text;
+        } else {
+          interim += text;
         }
       }
       setInterimTranscript(interim);
@@ -296,6 +308,8 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
 
   return {
     supported,
+    sttSupported,
+    ttsSupported,
     listening,
     speaking,
     muted,
