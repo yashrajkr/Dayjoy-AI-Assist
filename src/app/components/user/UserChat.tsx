@@ -73,6 +73,14 @@ import { useVoice } from "../../lib/useVoice";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -143,6 +151,15 @@ const PROMPT_THEME: Record<PromptCategory, { icon: typeof Leaf; tint: string; ri
   safety: { icon: ShieldCheck, tint: "bg-secondary/10 text-secondary", ring: "group-hover:border-secondary/40" },
   policy: { icon: ScrollText, tint: "bg-accent text-accent-foreground", ring: "group-hover:border-primary/30" },
 };
+
+/**
+ * A <textarea> placeholder renders on a single line — it cannot wrap, so a
+ * long string is clipped mid-word on narrow screens rather than reflowed.
+ * Keep this short; the full description lives on the textarea's aria-label.
+ * (BRAND.shortName is already "Dayjoy AI", so naming Dayjoy again here would
+ * read as "Ask Dayjoy AI ... about Dayjoy products".)
+ */
+const composerPlaceholder = `Ask ${BRAND.shortName} anything…`;
 
 const SUGGESTED_PROMPTS: ReadonlyArray<{ title: string; text: string; category: PromptCategory }> = [
   {
@@ -225,7 +242,17 @@ function formatTimestamp(iso?: string): string {
 export function UserChat() {
   const { chatId } = useParams();
   const navigate = useNavigate();
-  const { currentUser, role } = useAuth();
+  const { currentUser, role, logout } = useAuth();
+
+  const accountInitials =
+    currentUser?.email?.slice(0, 2).toUpperCase() ??
+    currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
+    "DU";
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    navigate("/login");
+  }, [logout, navigate]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -1163,15 +1190,30 @@ export function UserChat() {
             <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
             <NotificationCenter />
             <ThemeToggle />
-            <div
-              className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-0.5"
-              aria-hidden="true"
-              title={currentUser?.email ?? "Account"}
-            >
-              {currentUser?.email?.slice(0, 2).toUpperCase() ??
-                currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
-                "DU"}
-            </div>
+            {/* Account menu. This was previously an aria-hidden <div>, so it
+                was invisible to assistive tech and tapping it did nothing. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-0.5 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  aria-label="Account menu"
+                  title={currentUser?.email ?? "Account"}
+                >
+                  {accountInitials}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="truncate">
+                  {currentUser?.email ?? "Account"}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
@@ -1184,9 +1226,9 @@ export function UserChat() {
         >
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && !streamingText ? (
-              <div className="py-10 sm:py-16 text-center">
+              <div className="py-3 sm:py-12 text-center">
                 {/* Hero — orb + brand mark, layered for depth */}
-                <div className="relative flex justify-center mb-5">
+                <div className="relative flex justify-center mb-3 sm:mb-5">
                   {/* Soft mesh halo behind the orb */}
                   <div
                     className="absolute inset-0 -m-8 rounded-full opacity-60 pointer-events-none"
@@ -1197,26 +1239,32 @@ export function UserChat() {
                       filter: "blur(20px)",
                     }}
                   />
-                  <Suspense
-                    fallback={
-                      <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
-                        <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
-                      </div>
-                    }
-                  >
-                    <AIOrb
-                      state={
-                        sending
-                          ? "thinking"
-                          : streamingText
-                            ? "answering"
-                            : voice.listening
-                              ? "listening"
-                              : "idle"
+                  {/* AIOrb takes a fixed pixel size, so scale it down on
+                      narrow phones — 140px plus the halo eats ~40% of a
+                      360px viewport. The wrapper height matches the scaled
+                      box so no dead space is left behind. */}
+                  <div className="h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100">
+                    <Suspense
+                      fallback={
+                        <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
+                          <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
+                        </div>
                       }
-                      size={140}
-                    />
-                  </Suspense>
+                    >
+                      <AIOrb
+                        state={
+                          sending
+                            ? "thinking"
+                            : streamingText
+                              ? "answering"
+                              : voice.listening
+                                ? "listening"
+                                : "idle"
+                        }
+                        size={140}
+                      />
+                    </Suspense>
+                  </div>
                 </div>
 
                 {/* Role-aware pill badge — replaces generic greeting */}
@@ -1288,12 +1336,16 @@ export function UserChat() {
                         key={p.title}
                         type="button"
                         onClick={() => handleSend(p.text)}
+                        // Visibly inert while a send is in flight. The ref
+                        // guard in handleSend already blocks the duplicate
+                        // request; this makes that state legible.
+                        disabled={sending}
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.35, delay: 0.2 + idx * 0.06 }}
-                        whileHover={{ y: -3 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden ${theme.ring}`}
+                        whileHover={sending ? undefined : { y: -3 }}
+                        whileTap={sending ? undefined : { scale: 0.98 }}
+                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden disabled:opacity-60 disabled:pointer-events-none ${theme.ring}`}
                       >
                         {/* Subtle gradient sheen on hover */}
                         <span
@@ -1458,12 +1510,12 @@ export function UserChat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`Ask ${BRAND.shortName} anything about Dayjoy products, policies, or training…`}
+                placeholder={composerPlaceholder}
                 rows={1}
                 maxLength={4000}
                 disabled={sending}
                 className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm focus:outline-none disabled:opacity-60"
-                aria-label="Chat message"
+                aria-label={`Ask ${BRAND.shortName} about Dayjoy products, policies, or training`}
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
               <div className="relative flex items-center justify-between gap-2 px-2 pb-2">
