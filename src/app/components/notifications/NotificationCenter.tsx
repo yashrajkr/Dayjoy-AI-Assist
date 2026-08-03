@@ -206,7 +206,11 @@ export function NotificationCenter() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 w-80 sm:w-96 glass-strong rounded-2xl shadow-2xl z-50 overflow-hidden"
+            // On phones this anchors to the viewport instead of the bell: a
+            // fixed 320px popover hanging off `right-0` overflowed a 375px
+            // screen and collided with the header. Opaque background too —
+            // `glass-strong` let the page text show through the list.
+            className="fixed sm:absolute left-2 right-2 top-16 sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden"
             role="dialog"
             aria-label="Notifications"
           >
@@ -232,7 +236,7 @@ export function NotificationCenter() {
                 </button>
               </div>
             </div>
-            <div className="max-h-96 overflow-y-auto scrollbar-thin">
+            <div className="max-h-[60vh] sm:max-h-96 overflow-y-auto scrollbar-thin">
               {notifications.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
                   <CheckCircle2 className="w-6 h-6 mx-auto mb-2 opacity-40" aria-hidden="true" />

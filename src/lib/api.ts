@@ -177,16 +177,75 @@ async function requireBearerToken(): Promise<string | null> {
   return token;
 }
 
+/** Overall budget for a non-streaming chat request. */
+const CHAT_REQUEST_TIMEOUT_MS = 90_000;
+/**
+ * Silence budget for a streaming request. Armed before the first byte and
+ * re-armed on every chunk, so a slow-but-progressing answer is never cut off
+ * while a genuinely dead connection still fails in bounded time.
+ */
+const CHAT_STREAM_IDLE_TIMEOUT_MS = 45_000;
+
+/** Thrown when we gave up waiting, as opposed to the user pressing Stop. */
+export class RequestTimeoutError extends Error {
+  constructor(message = "The assistant took too long to respond. Please try again.") {
+    super(message);
+    this.name = "RequestTimeoutError";
+  }
+}
+
+/**
+ * Wrap an optional caller signal with an inactivity timeout.
+ *
+ * Returns the merged signal plus `arm()` to restart the clock (call it as data
+ * arrives) and `dispose()` to clean up. Without this, a hung upstream left the
+ * UI spinning forever — there was no timeout anywhere on the frontend.
+ */
+function withIdleTimeout(signal: AbortSignal | undefined, ms: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  const arm = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, ms);
+  };
+
+  const dispose = () => {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  };
+
+  arm();
+  return { signal: controller.signal, arm, dispose, didTimeOut: () => timedOut };
+}
+
 /**
  * Send a chat message and return the full AI response.
  *
  * NOTE: This is the non-streaming variant. For streaming, use
  * `streamChatWithBackend` which consumes the SSE endpoint.
  */
-export async function chatWithBackend(req: ChatRequest): Promise<ChatResponse> {
+export async function chatWithBackend(
+  req: ChatRequest,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
   const apiBaseUrl = getApiBaseUrl();
   const url = `${apiBaseUrl}/chat`;
   const token = await requireBearerToken();
+
+  // Previously this took no signal at all, so once the streaming path fell
+  // back to it, Stop was a no-op and the request could hang indefinitely.
+  const timeout = withIdleTimeout(signal, CHAT_REQUEST_TIMEOUT_MS);
 
   let res: Response;
   try {
@@ -198,10 +257,15 @@ export async function chatWithBackend(req: ChatRequest): Promise<ChatResponse> {
         "X-Client": BRAND.shortName,
       },
       body: JSON.stringify(req),
+      signal: timeout.signal,
     });
   } catch (e) {
+    if (timeout.didTimeOut()) throw new RequestTimeoutError();
+    if ((e as Error)?.name === "AbortError") throw e;
     console.error("[chat api] request failed (network/CORS/offline).", e);
     throw new Error("Backend offline. Please try again in a moment.");
+  } finally {
+    timeout.dispose();
   }
 
   if (!res.ok) {
@@ -210,6 +274,36 @@ export async function chatWithBackend(req: ChatRequest): Promise<ChatResponse> {
   }
 
   return (await res.json()) as ChatResponse;
+}
+
+/**
+ * Summarize a first message into a short conversation title.
+ *
+ * Best-effort by design: returns null on any failure so callers keep their
+ * own deterministic fallback rather than showing a blank sidebar entry.
+ */
+export async function generateConversationTitle(
+  message: string,
+): Promise<string | null> {
+  try {
+    const token = await requireBearerToken();
+    const res = await fetch(`${getApiBaseUrl()}/chat/title`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-Client": BRAND.shortName,
+      },
+      body: JSON.stringify({ message }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { title?: string };
+    return data.title?.trim() || null;
+  } catch {
+    // Titling is cosmetic — never surface this to the user.
+    return null;
+  }
 }
 
 /**
@@ -228,6 +322,8 @@ export async function streamChatWithBackend(
   const streamUrl = `${apiBaseUrl}/chat/stream`;
   const token = await requireBearerToken();
 
+  const timeout = withIdleTimeout(signal, CHAT_STREAM_IDLE_TIMEOUT_MS);
+
   try {
     const res = await fetch(streamUrl, {
       method: "POST",
@@ -238,12 +334,12 @@ export async function streamChatWithBackend(
         "X-Client": BRAND.shortName,
       },
       body: JSON.stringify(req),
-      signal,
+      signal: timeout.signal,
     });
 
     if (!res.ok || !res.body) {
       // Backend doesn't support streaming — fall back.
-      const fallback = await chatWithBackend(req);
+      const fallback = await chatWithBackend(req, signal);
       onToken(fallback.answer);
       return fallback;
     }
@@ -257,6 +353,9 @@ export async function streamChatWithBackend(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      // Progress resets the silence clock — a long answer is fine, a dead
+      // socket is not.
+      timeout.arm();
       buffer += decoder.decode(value, { stream: true });
 
       // SSE frames are separated by \n\n
@@ -298,13 +397,18 @@ export async function streamChatWithBackend(
       rag_metadata: finalMeta.rag_metadata,
     };
   } catch (e) {
+    // Our own idle timeout aborted the fetch — surface it as a timeout rather
+    // than retrying against a backend that has already gone quiet.
+    if (timeout.didTimeOut()) throw new RequestTimeoutError();
     if ((e as Error).name === "AbortError") throw e;
     if (e instanceof SessionExpiredError) throw e;
     // Fall back to non-streaming.
     console.warn("[chat api] streaming failed, falling back to non-stream.", e);
-    const fallback = await chatWithBackend(req);
+    const fallback = await chatWithBackend(req, signal);
     onToken(fallback.answer);
     return fallback;
+  } finally {
+    timeout.dispose();
   }
 }
 

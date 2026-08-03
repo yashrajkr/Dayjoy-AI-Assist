@@ -398,6 +398,24 @@ export function AIOrb({
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
           style={{ width: "100%", height: "100%" }}
+          onCreated={({ gl }) => {
+            // The WebGL spec only attempts automatic context restoration if
+            // something calls preventDefault() on `webglcontextlost`. Without
+            // it, a context loss (backgrounding the tab, GPU driver reset,
+            // too many contexts) freezes the orb permanently until a full
+            // page reload — there was no handler here at all, so every loss
+            // was unrecoverable. (onCreated fires once per canvas element and
+            // doesn't support a cleanup return, but the listener is discarded
+            // with the element on unmount, so this doesn't leak.)
+            gl.domElement.addEventListener(
+              "webglcontextlost",
+              (e) => {
+                e.preventDefault();
+                console.warn("[AIOrb] WebGL context lost — will resume automatically if the browser restores it.");
+              },
+              false,
+            );
+          }}
         >
           <OrbScene state={state} mobile={mobile} />
         </Canvas>

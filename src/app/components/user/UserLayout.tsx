@@ -130,7 +130,9 @@ export function UserLayout() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="h-screen flex bg-background">
+      {/* 100dvh, not 100vh: mobile browser chrome counts against vh, which
+          pushed the drawer footer (profile / sign out) below the fold. */}
+      <div className="h-[100dvh] flex bg-background">
         <a
           href="#dj-main-content"
           className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
@@ -163,10 +165,14 @@ export function UserLayout() {
           />
         ) : null}
 
-        {/* Sidebar (also mobile drawer) */}
+        {/* Sidebar (also mobile drawer).
+            Opaque `bg-card` as a mobile drawer — `glass` is 72% alpha, so page
+            content read straight through the menu. The translucent treatment is
+            kept for the static desktop rail, where it sits on the page
+            background rather than over content. */}
         <aside
           id="dj-user-drawer"
-          className={`fixed lg:static inset-y-0 left-0 z-40 w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]
+          className={`fixed lg:static inset-y-0 left-0 z-[45] w-72 sm:w-80 ${collapsed ? "lg:w-[76px]" : "lg:w-72"} bg-card lg:glass border-r border-border flex flex-col transition-[transform,width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           lg:flex`}
           aria-label="Primary navigation"
@@ -365,7 +371,9 @@ export function UserLayout() {
 
         {/* Mobile bottom tab bar */}
         <nav
-          className="lg:hidden fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
+          // Below the drawer backdrop (z-40) so an open drawer covers the tab
+          // bar instead of the two fighting at the same level.
+          className="lg:hidden fixed inset-x-0 bottom-0 z-[35] grid grid-cols-5 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
           aria-label="Mobile navigation"
         >
           {mobileTabs.map((tab) => {
@@ -455,7 +463,6 @@ function NavItem({
             : "hover:bg-accent/60 hover:translate-x-0.5 text-foreground"
         }`
       }
-      aria-current="page"
     >
       {({ isActive }) => (
         <>

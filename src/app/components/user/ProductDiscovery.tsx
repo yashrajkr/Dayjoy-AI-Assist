@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Search, X, CheckCircle2, GitCompareArrows, Eye, History, QrCode, Camera } from "lucide-react";
+import { Search, X, CheckCircle2, GitCompareArrows, Eye, History, QrCode, Camera, Package } from "lucide-react";
 import { getProducts, logAnalytics, type AnalyticsEvent, type Product } from "../../lib/db";
-import { BRAND } from "../../lib/brand";
+import { AppHeader } from "../common/AppHeader";
 import { Modal } from "../common/Modal";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
@@ -199,17 +199,14 @@ export function ProductDiscovery() {
   }, []);
 
   return (
-    <div className="h-full overflow-y-auto bg-background p-4 sm:p-8">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div>
-          <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
-            {BRAND.shortName} / Products
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-semibold mb-1">Product Discovery</h1>
-          <p className="text-sm text-muted-foreground">
-            Search approved Dayjoy products by category, problem tags, benefits, and safe usage guidance.
-          </p>
-        </div>
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader
+        title="Product Discovery"
+        subtitle="Search approved Dayjoy products by category, problem tags, benefits, and safe usage guidance."
+        icon={Package}
+      />
+      <div className="flex-1 overflow-y-auto bg-background p-4 sm:p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
 
         <Card className="p-4 sm:p-5">
           <label htmlFor="dj-product-search" className="sr-only">
@@ -529,6 +526,7 @@ export function ProductDiscovery() {
           </div>
         )}
       </Modal>
+      </div>
 
       {/* Tools: QR scanner, camera, OCR */}
       <QRScanner

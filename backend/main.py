@@ -264,6 +264,22 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 
+class TitleRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
+
+
+class TitleResponse(BaseModel):
+    title: str
+
+
+def _fallback_title(text: str, max_len: int = 48) -> str:
+    """Deterministic title used whenever summarization is unavailable."""
+    trimmed = " ".join(text.split())
+    if len(trimmed) <= max_len:
+        return trimmed
+    return trimmed[: max_len - 1] + "…"
+
+
 class ChatSource(BaseModel):
     table: str
     id: str
@@ -848,6 +864,66 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     )
 
 
+@app.post("/chat/title", response_model=TitleResponse)
+async def chat_title(req: TitleRequest, user_id: str = Depends(require_user_id)) -> TitleResponse:
+    """
+    Summarize the opening exchange into a short conversation title.
+
+    Deliberately separate from /chat: no RAG, no safety pipeline, no history —
+    just one small completion. Callers must treat this as best-effort and keep
+    their own truncated-first-message fallback, since it returns that fallback
+    unchanged whenever no provider is configured or the call fails.
+    """
+    check_rate_limit(user_id)
+    fallback = _fallback_title(req.message)
+
+    if not (GROQ_API_KEY or OPENAI_API_KEY):
+        return TitleResponse(title=fallback)
+
+    prompt = (
+        "Summarize this customer question as a conversation title of at most 5 "
+        "words. Use the question's own language. Reply with the title only — no "
+        "quotes, no trailing punctuation, no preamble.\n\n"
+        f"Question: {req.message[:500]}"
+    )
+
+    if GROQ_API_KEY:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        model = GROQ_MODEL
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        model = OPENAI_MODEL
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 24,
+                },
+            )
+            if resp.status_code >= 400:
+                return TitleResponse(title=fallback)
+            content = (
+                resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            )
+    except Exception:
+        return TitleResponse(title=fallback)
+
+    title = content.strip().strip('"').strip("'").rstrip(".").strip()
+    # A model that ignored the instruction and wrote a sentence is worse than
+    # the deterministic fallback.
+    if not title or len(title) > 60:
+        return TitleResponse(title=fallback)
+    return TitleResponse(title=title)
+
+
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming chat endpoint. Requires authentication."""
@@ -865,12 +941,22 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             yield _sse({"token": "", "done": True, "safety_status": "blocked", "category": "unsafe", "handoff_required": True})
             return
 
+        # Emit an immediate frame so the client knows the connection is live.
+        # Everything below (history load, RAG retrieval, optional web search)
+        # blocks before the first token, which the user experienced as a 60s
+        # hang with no feedback. Clients ignore frames carrying neither `token`
+        # nor `done`, so this is backwards compatible — and it re-arms the
+        # client's idle timeout.
+        yield _sse({"status": "connected"})
+
         history: List[Dict[str, str]] = []
         conv_id = req.conversation_id
         if token and conv_id:
             history = await load_history(token, conv_id)
         elif token and user_id:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+
+        yield _sse({"status": "searching_knowledge"})
 
         context, sources, category, rag_metadata = await retrieve_context(token, req.message)
 
@@ -879,6 +965,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         web_sources: List[ChatSource] = []
         used_web_search = False
         if not context and TAVILY_API_KEY:
+            yield _sse({"status": "searching_web"})
             web_context, web_sources = await web_search(req.message)
             if web_context:
                 used_web_search = True
@@ -931,7 +1018,18 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "rag_metadata": rag_metadata,
         })
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        # Without these, nginx buffers the whole SSE stream and delivers it as
+        # a single blob once generation finishes — which looks identical to a
+        # long hang followed by the entire answer appearing at once.
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/feedback")

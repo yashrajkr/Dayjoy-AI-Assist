@@ -29,6 +29,7 @@ import {
   Camera,
   QrCode,
   FileText,
+  Image as ImageIcon,
   ChevronUp,
   ArrowUp,
   ShieldCheck,
@@ -58,7 +59,12 @@ import {
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
-import { streamChatWithBackend, SessionExpiredError, type ChatSource } from "../../../lib/api";
+import {
+  streamChatWithBackend,
+  generateConversationTitle,
+  SessionExpiredError,
+  type ChatSource,
+} from "../../../lib/api";
 import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
 import { VoiceControls } from "../voice/VoiceControls";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
@@ -73,6 +79,7 @@ import { useVoice } from "../../lib/useVoice";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
+import { AccountMenu } from "../common/AccountMenu";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -143,6 +150,19 @@ const PROMPT_THEME: Record<PromptCategory, { icon: typeof Leaf; tint: string; ri
   safety: { icon: ShieldCheck, tint: "bg-secondary/10 text-secondary", ring: "group-hover:border-secondary/40" },
   policy: { icon: ScrollText, tint: "bg-accent text-accent-foreground", ring: "group-hover:border-primary/30" },
 };
+
+/**
+ * A <textarea> placeholder renders on a single line — it cannot wrap, so a
+ * long string is clipped mid-word on narrow screens rather than reflowed.
+ * Keep this short; the full description lives on the textarea's aria-label.
+ * (BRAND.shortName is already "Dayjoy AI", so naming Dayjoy again here would
+ * read as "Ask Dayjoy AI ... about Dayjoy products".)
+ */
+const composerPlaceholder = `Ask ${BRAND.shortName} anything…`;
+
+/** Attachments are inlined as data URLs, so keep them small. */
+const MAX_ATTACHMENT_BYTES = 10_000_000;
+const MAX_ATTACHMENTS = 5;
 
 const SUGGESTED_PROMPTS: ReadonlyArray<{ title: string; text: string; category: PromptCategory }> = [
   {
@@ -251,6 +271,8 @@ export function UserChat() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sources panel: expanded preview state + attachment preview state
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
@@ -259,8 +281,8 @@ export function UserChat() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  // Synchronous re-entrancy guard: `sending` state can't be trusted to block a
-  // second handleSend() call fired before React commits the first setSending(true).
+  // Synchronous re-entrancy guard: `sending` state lags a render, so two taps
+  // dispatched in the same tick both read it as false and both fire.
   const sendingRef = useRef(false);
 
   // Close attach menu on outside click
@@ -286,29 +308,48 @@ export function UserChat() {
     refreshConversations();
   }, [refreshConversations]);
 
-  // ---- Load active conversation messages ----
+  // ---- Track the active conversation record ----
+  // Split out from the message loader on purpose: this depends on
+  // `conversations`, which gets a fresh array identity after every send.
+  // Keeping it separate means a refresh updates the header without
+  // re-running the message fetch below.
   useEffect(() => {
     if (!chatId) {
       setActiveConv(null);
-      setMessages([]);
       return;
     }
+    const conv = conversations.find((c) => c.id === chatId);
+    // Only overwrite when found — a just-created conversation may not be in
+    // the list yet, and clobbering it with null would blank the header.
+    if (conv) setActiveConv(conv);
+  }, [chatId, conversations]);
+
+  // ---- Load active conversation messages ----
+  // Keyed on `chatId` alone. Previously this also depended on `conversations`,
+  // so `refreshConversations()` at the end of every send re-ran it and replaced
+  // the freshly rendered transcript with a stale (or empty) DB snapshot —
+  // the answer would be spoken aloud but vanish from the screen.
+  useEffect(() => {
+    if (!chatId) {
+      setMessages([]);
+      setLastAssistantId(null);
+      return;
+    }
+    // A send in flight owns `messages`; refetching here would race it.
+    if (sendingRef.current) return;
     let cancelled = false;
     (async () => {
-      const conv = conversations.find((c) => c.id === chatId) ?? null;
-      if (!cancelled) setActiveConv(conv);
       const msgs = await listMessages(chatId);
-      if (!cancelled) {
-        setMessages(msgs);
-        setLastAssistantId(
-          [...msgs].reverse().find((m) => m.role === "assistant")?.id ?? null,
-        );
-      }
+      if (cancelled || sendingRef.current) return;
+      setMessages(msgs);
+      setLastAssistantId(
+        [...msgs].reverse().find((m) => m.role === "assistant")?.id ?? null,
+      );
     })();
     return () => {
       cancelled = true;
     };
-  }, [chatId, conversations]);
+  }, [chatId]);
 
   // ---- Auto-scroll on new message / streaming token ----
   useEffect(() => {
@@ -321,6 +362,8 @@ export function UserChat() {
   const handleSend = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
+      // Ref, not state: a rapid double/triple tap on a suggestion card
+      // dispatches several calls before React commits `setSending(true)`.
       if (!text || sending || sendingRef.current) return;
       if (text.length > 4000) {
         setError("Message is too long (max 4000 characters).");
@@ -470,13 +513,30 @@ export function UserChat() {
           voice.speak(aggregated);
         }
 
-        // Auto-rename conversation if it's still "New conversation"
+        // Auto-title the conversation from the opening question.
+        // `deriveTitle` (a truncated first message) is applied immediately so
+        // the sidebar is never blank, then upgraded to a short summarized
+        // title if the backend can produce one.
         if (conv && (conv.title === "New conversation" || !conv.title)) {
-          const newTitle = deriveTitle(text);
-          await renameConversation(conv.id!, newTitle);
-          setConversations((prev) =>
-            prev.map((c) => (c.id === conv!.id ? { ...c, title: newTitle } : c)),
-          );
+          const convIdForTitle = conv.id!;
+          const fallbackTitle = deriveTitle(text);
+          const applyTitle = (title: string) => {
+            setConversations((prev) =>
+              prev.map((c) => (c.id === convIdForTitle ? { ...c, title } : c)),
+            );
+            setActiveConv((prev) =>
+              prev && prev.id === convIdForTitle ? { ...prev, title } : prev,
+            );
+          };
+
+          applyTitle(fallbackTitle);
+          await renameConversation(convIdForTitle, fallbackTitle);
+
+          const summarized = await generateConversationTitle(text);
+          if (summarized && summarized !== fallbackTitle) {
+            applyTitle(summarized);
+            await renameConversation(convIdForTitle, summarized);
+          }
         }
 
         await refreshConversations();
@@ -491,6 +551,7 @@ export function UserChat() {
               safety_status: "safe",
               handoff_required: false,
             });
+            // Show the partial answer even if it failed to persist.
             setMessages((prev) => [
               ...prev,
               (m as ChatMessage | null) ?? {
@@ -528,7 +589,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role, sending],
+    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role],
   );
 
   // ---- Stop generation ----
@@ -549,6 +610,51 @@ export function UserChat() {
         ? `${prev}\n\n[Attached photo: ${img.file.name}]`
         : `I'm attaching a photo of ${img.file.name.includes("capture") ? "a product/document" : img.file.name}. Please help me understand it.`,
     );
+    inputRef.current?.focus();
+  }, []);
+
+  // ---- Tools: pick images/files from the device ----
+  // The attach menu previously offered only camera/QR/OCR, so there was no
+  // way to send something already saved on the device.
+  const handleFilesPicked = useCallback((fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (files.length === 0) return;
+
+    const tooLarge = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (tooLarge.length > 0) {
+      setError(
+        `${tooLarge.map((f) => f.name).join(", ")} exceeds the ${Math.round(
+          MAX_ATTACHMENT_BYTES / 1_000_000,
+        )}MB limit and was not attached.`,
+      );
+    }
+
+    const accepted = files
+      .filter((f) => f.size <= MAX_ATTACHMENT_BYTES)
+      .slice(0, MAX_ATTACHMENTS);
+    if (accepted.length === 0) return;
+
+    accepted.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!dataUrl) return;
+        setAttachments((prev) =>
+          prev.length >= MAX_ATTACHMENTS
+            ? prev
+            : [...prev, { name: file.name, dataUrl, kind: "image" as const }],
+        );
+      };
+      reader.onerror = () => setError(`Could not read ${file.name}.`);
+      reader.readAsDataURL(file);
+    });
+
+    setInput((prev) => {
+      const names = accepted.map((f) => f.name).join(", ");
+      return prev.trim()
+        ? `${prev}\n\n[Attached: ${names}]`
+        : `I'm attaching ${names}. Please help me understand it.`;
+    });
     inputRef.current?.focus();
   }, []);
 
@@ -970,7 +1076,7 @@ export function UserChat() {
                       ) : null}
                     </span>
                   </button>
-                  <div className="flex items-center justify-end gap-1 px-2 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-end gap-1 px-2 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={() => handlePin(c.id!, !c.pinned)}
@@ -1132,15 +1238,7 @@ export function UserChat() {
             <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
             <NotificationCenter />
             <ThemeToggle />
-            <div
-              className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-0.5"
-              aria-hidden="true"
-              title={currentUser?.email ?? "Account"}
-            >
-              {currentUser?.email?.slice(0, 2).toUpperCase() ??
-                currentUser?.user_metadata?.full_name?.slice(0, 2)?.toUpperCase() ??
-                "DU"}
-            </div>
+            <AccountMenu />
           </div>
         </header>
 
@@ -1153,9 +1251,9 @@ export function UserChat() {
         >
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && !streamingText ? (
-              <div className="py-10 sm:py-16 text-center">
+              <div className="py-3 sm:py-12 text-center">
                 {/* Hero — orb + brand mark, layered for depth */}
-                <div className="relative flex justify-center mb-5">
+                <div className="relative flex justify-center mb-3 sm:mb-5">
                   {/* Soft mesh halo behind the orb */}
                   <div
                     className="absolute inset-0 -m-8 rounded-full opacity-60 pointer-events-none"
@@ -1166,26 +1264,32 @@ export function UserChat() {
                       filter: "blur(20px)",
                     }}
                   />
-                  <Suspense
-                    fallback={
-                      <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
-                        <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
-                      </div>
-                    }
-                  >
-                    <AIOrb
-                      state={
-                        sending
-                          ? "thinking"
-                          : streamingText
-                            ? "answering"
-                            : voice.listening
-                              ? "listening"
-                              : "idle"
+                  {/* AIOrb takes a fixed pixel size, so scale it down on
+                      narrow phones — 140px plus the halo eats ~40% of a
+                      360px viewport. The wrapper height matches the scaled
+                      box so no dead space is left behind. */}
+                  <div className="h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100">
+                    <Suspense
+                      fallback={
+                        <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
+                          <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
+                        </div>
                       }
-                      size={140}
-                    />
-                  </Suspense>
+                    >
+                      <AIOrb
+                        state={
+                          sending
+                            ? "thinking"
+                            : streamingText
+                              ? "answering"
+                              : voice.listening
+                                ? "listening"
+                                : "idle"
+                        }
+                        size={140}
+                      />
+                    </Suspense>
+                  </div>
                 </div>
 
                 {/* Role-aware pill badge — replaces generic greeting */}
@@ -1257,12 +1361,15 @@ export function UserChat() {
                         key={p.title}
                         type="button"
                         onClick={() => handleSend(p.text)}
+                        // Visibly inert while a send is in flight. The ref
+                        // guard in handleSend already blocks the duplicate
+                        // request; this makes that state legible.
                         disabled={sending}
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.35, delay: 0.2 + idx * 0.06 }}
-                        whileHover={{ y: -3 }}
-                        whileTap={{ scale: 0.98 }}
+                        whileHover={sending ? undefined : { y: -3 }}
+                        whileTap={sending ? undefined : { scale: 0.98 }}
                         className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${theme.ring}`}
                       >
                         {/* Subtle gradient sheen on hover */}
@@ -1429,18 +1536,41 @@ export function UserChat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`Ask ${BRAND.shortName} anything about Dayjoy products, policies, or training…`}
+                placeholder={composerPlaceholder}
                 rows={1}
                 maxLength={4000}
                 disabled={sending}
                 className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm focus:outline-none disabled:opacity-60"
-                aria-label="Chat message"
+                aria-label={`Ask ${BRAND.shortName} about Dayjoy products, policies, or training`}
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
               <div className="relative flex items-center justify-between gap-2 px-2 pb-2">
                 <div className="flex items-center gap-1">
                   {/* Attach / Tools dropdown */}
                   <div className="relative" ref={attachMenuRef}>
+                    {/* Hidden pickers driven by the menu items below. */}
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesPicked(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,.pdf,.txt,.csv,.doc,.docx"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesPicked(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -1464,7 +1594,7 @@ export function UserChat() {
                         initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute bottom-full mb-2 left-0 w-56 rounded-xl border border-border bg-card shadow-xl py-1.5 z-30"
+                        className="absolute bottom-full mb-2 left-0 w-60 rounded-xl border border-border bg-card shadow-xl py-1.5 z-50"
                         role="menu"
                       >
                         <button
@@ -1482,6 +1612,37 @@ export function UserChat() {
                             <p className="text-[11px] text-muted-foreground">Capture a product label or document</p>
                           </div>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachMenuOpen(false);
+                            photoInputRef.current?.click();
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitem"
+                        >
+                          <ImageIcon className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
+                          <div>
+                            <p className="text-sm font-medium">Photo library</p>
+                            <p className="text-[11px] text-muted-foreground">Attach an image already on your device</p>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachMenuOpen(false);
+                            fileInputRef.current?.click();
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitem"
+                        >
+                          <Paperclip className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
+                          <div>
+                            <p className="text-sm font-medium">Choose file</p>
+                            <p className="text-[11px] text-muted-foreground">Attach a document or image</p>
+                          </div>
+                        </button>
+                        <div className="my-1 h-px bg-border" aria-hidden="true" />
                         <button
                           type="button"
                           onClick={() => {
@@ -1568,7 +1729,7 @@ export function UserChat() {
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
-                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity"
                         aria-label={`Remove ${att.name}`}
                       >
                         <Trash2 className="w-3 h-3" aria-hidden="true" />
@@ -2226,7 +2387,7 @@ function MessageBubble({
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
-        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity">
           <ActionButton
             onClick={() => onCopy(message.content, bubbleId)}
             label={copiedId === bubbleId ? "Copied" : "Copy"}
