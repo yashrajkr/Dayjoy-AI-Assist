@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { generateConversationTitle } from "./api";
+import { generateConversationTitle, streamChatWithBackend } from "./api";
 
 /**
  * generateConversationTitle() calls the existing backend /chat/title
@@ -93,5 +93,91 @@ describe("generateConversationTitle", () => {
         }),
     ) as unknown as typeof fetch;
     await expect(generateConversationTitle("Some question")).resolves.toBeNull();
+  });
+});
+
+/**
+ * streamChatWithBackend() parses the backend's SSE frames into a single
+ * ChatResponse. This covers the AI router labeling fields (answer_source,
+ * web_search_provider) added to the final "done" frame — additive fields
+ * that must survive the SSE parse -> ChatResponse mapping unchanged.
+ */
+describe("streamChatWithBackend — answer_source passthrough", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  /** Builds a fake SSE response body from a list of already-formatted frames. */
+  function makeSSEBody(frames: string[]) {
+    let i = 0;
+    return {
+      getReader() {
+        return {
+          async read() {
+            if (i < frames.length) {
+              const chunk = new TextEncoder().encode(frames[i]);
+              i += 1;
+              return { done: false, value: chunk };
+            }
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    };
+  }
+
+  it("carries answer_source and web_search_provider through to the returned ChatResponse", async () => {
+    const tokenFrame = `data: ${JSON.stringify({ token: "The answer" })}\n\n`;
+    const doneFrame = `data: ${JSON.stringify({
+      done: true,
+      category: "product",
+      sources: [],
+      safety_status: "safe",
+      handoff_required: false,
+      confidence: 0.9,
+      conversation_id: "conv-1",
+      verification_status: "verified",
+      answer_source: "hybrid",
+      web_search_provider: "brave",
+    })}\n\n`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeSSEBody([tokenFrame, doneFrame]),
+    }) as unknown as typeof fetch;
+
+    const result = await streamChatWithBackend(
+      { message: "Compare Dayjoy Spirulina with other brands", role: "customer", language: "English" },
+      () => {},
+    );
+
+    expect(result.answer_source).toBe("hybrid");
+    expect(result.web_search_provider).toBe("brave");
+  });
+
+  it("defaults answer_source to undefined when the backend omits it (older backend / no route computed)", async () => {
+    const doneFrame = `data: ${JSON.stringify({
+      done: true,
+      category: "general",
+      sources: [],
+      safety_status: "safe",
+      handoff_required: false,
+    })}\n\n`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeSSEBody([doneFrame]),
+    }) as unknown as typeof fetch;
+
+    const result = await streamChatWithBackend(
+      { message: "hi", role: "customer", language: "English" },
+      () => {},
+    );
+
+    expect(result.answer_source).toBeUndefined();
+    expect(result.web_search_provider).toBeUndefined();
   });
 });

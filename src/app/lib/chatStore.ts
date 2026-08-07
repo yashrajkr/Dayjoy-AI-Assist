@@ -34,6 +34,8 @@ export type ChatMessage = {
   verification_status?: "verified" | "partial" | "unverified" | null;
   handoff_message?: string | null;
   rag_metadata?: unknown;
+  // ---- AI router labeling (added with the AI router / web search feature) ----
+  answer_source?: string | null;
   // Set on the client when the message rendered from a stream but its
   // Supabase persistence write failed — never sent to/from the backend.
   _unsaved?: boolean;

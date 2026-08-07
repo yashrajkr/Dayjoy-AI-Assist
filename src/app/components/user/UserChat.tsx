@@ -42,6 +42,7 @@ import {
   Eye,
   FileDown,
   Maximize2,
+  GitCompare,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -443,6 +444,8 @@ export function UserChat() {
         verification_status?: "verified" | "partial" | "unverified";
         handoff_message?: string | null;
         rag_metadata?: unknown;
+        answer_source?: string | null;
+        web_search_provider?: string | null;
       } = {};
 
       try {
@@ -470,6 +473,8 @@ export function UserChat() {
           verification_status: res.verification_status,
           handoff_message: res.handoff_message,
           rag_metadata: res.rag_metadata,
+          answer_source: res.answer_source,
+          web_search_provider: res.web_search_provider,
         };
 
         const persisted = await appendMessage(convId!, {
@@ -494,6 +499,7 @@ export function UserChat() {
           verification_status: meta.verification_status ?? null,
           handoff_message: meta.handoff_message ?? null,
           rag_metadata: meta.rag_metadata ?? null,
+          answer_source: meta.answer_source ?? null,
         });
 
         // The answer must always render, even if the Supabase write above
@@ -512,6 +518,7 @@ export function UserChat() {
             verification_status: meta.verification_status ?? null,
             handoff_message: meta.handoff_message ?? null,
             rag_metadata: meta.rag_metadata ?? null,
+            answer_source: meta.answer_source ?? null,
             created_at: new Date().toISOString(),
             _unsaved: !assistantMsg,
           };
@@ -2219,6 +2226,21 @@ export function UserChat() {
                       ) : (
                         <><AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> No approved source found</>
                       )}
+                    </Badge>
+                  ) : null}
+
+                  {/* Answer source badge — which knowledge source(s) produced this answer */}
+                  {lastAssistant.answer_source ? (
+                    <Badge variant="outline" className="px-2 py-1 text-[11px]">
+                      {lastAssistant.answer_source === "dayjoy_knowledge" ? (
+                        <><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Dayjoy Knowledge</>
+                      ) : lastAssistant.answer_source === "web_search" ? (
+                        <><Search className="w-3.5 h-3.5" aria-hidden="true" /> Web Search</>
+                      ) : lastAssistant.answer_source === "hybrid" ? (
+                        <><GitCompare className="w-3.5 h-3.5" aria-hidden="true" /> Hybrid — Dayjoy + Web</>
+                      ) : lastAssistant.answer_source === "general_llm" ? (
+                        <><Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> General AI knowledge</>
+                      ) : null}
                     </Badge>
                   ) : null}
 
