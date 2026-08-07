@@ -43,6 +43,25 @@ function readDemoAuth(): { id: string; role: UserRole } | null {
   }
 }
 
+/**
+ * Builds a minimal Supabase-`User`-shaped object for demo mode so that
+ * every feature keyed on `currentUser.id` (chat, voice sessions, recent
+ * chats list, notifications, profile, settings, ...) works the same way
+ * it would with a real session — chatStore.ts and friends already fall
+ * back to in-memory/local storage when Supabase itself isn't configured,
+ * so only `currentUser` being non-null was actually required here.
+ */
+function buildDemoUser(demo: { id: string; role: UserRole }): User {
+  return {
+    id: demo.id,
+    email: `${demo.id}@demo.dayjoy.local`,
+    app_metadata: {},
+    user_metadata: { full_name: "Dayjoy User" },
+    aud: "authenticated",
+    created_at: new Date().toISOString(),
+  } as User;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
@@ -71,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured()) {
       const demo = readDemoAuth();
       if (demo) {
-        setCurrentUser(null);
+        setCurrentUser(buildDemoUser(demo));
         setRole(demo.role);
       } else {
         setCurrentUser(null);
