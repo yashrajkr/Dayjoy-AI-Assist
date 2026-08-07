@@ -234,3 +234,13 @@ export function deriveTitle(text: string, maxLen = 48): string {
   if (trimmed.length <= maxLen) return trimmed;
   return trimmed.slice(0, maxLen - 1) + "…";
 }
+
+/**
+ * True when a conversation's title is still the default placeholder — i.e.
+ * it has never been auto-titled or manually renamed. Auto-titling flows
+ * (UserChat, VoiceAssistant) must check this before overwriting a title so
+ * a manual rename is never silently clobbered by a later AI suggestion.
+ */
+export function hasDefaultTitle(title: string | null | undefined): boolean {
+  return !title || title === "New conversation";
+}

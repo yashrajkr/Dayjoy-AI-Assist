@@ -32,7 +32,12 @@ import {
   deriveTitle,
   renameConversation,
 } from "../../lib/chatStore";
-import { streamChatWithBackend, chatWithBackend, type ChatSource } from "../../../lib/api";
+import {
+  streamChatWithBackend,
+  chatWithBackend,
+  generateConversationTitle,
+  type ChatSource,
+} from "../../../lib/api";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Modal } from "../common/Modal";
@@ -252,7 +257,17 @@ export function VoiceAssistant() {
             rag_metadata: res.rag_metadata ?? null,
           });
           if (turns.length === 0) {
-            void renameConversation(convId, deriveTitle(trimmed));
+            // Same pattern as UserChat: show the truncated fallback title
+            // instantly, then upgrade to an AI-summarized title if the
+            // backend can produce one. Fires once per session (guarded by
+            // turns.length === 0); any failure silently keeps the fallback.
+            const fallbackTitle = deriveTitle(trimmed);
+            void renameConversation(convId, fallbackTitle);
+            void generateConversationTitle(trimmed).then((summarized) => {
+              if (summarized && summarized !== fallbackTitle) {
+                void renameConversation(convId, summarized);
+              }
+            });
           }
         }
 
