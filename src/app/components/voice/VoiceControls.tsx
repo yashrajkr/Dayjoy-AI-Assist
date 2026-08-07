@@ -105,26 +105,27 @@ export function VoiceControls({
         </Button>
       ) : null}
 
-      {/* Speak / mute toggles — hidden if the browser has no speech synthesis */}
+      {/* Speak / mute toggles — hidden if the browser has no speech synthesis.
+          The "stop speaking" button only renders while TTS is actually
+          playing — previously it stayed mounted (disabled) at all other
+          times showing the same Volume2 icon as the mute toggle right next
+          to it, which read as two identical, confusing speaker buttons. */}
       {voice.ttsSupported ? (
         <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={voice.speaking ? voice.stopSpeaking : undefined}
-            className={`h-auto w-auto p-2 rounded-lg ${
-              voice.speaking
-                ? "bg-primary/15 text-primary animate-pulse hover:bg-primary/20"
-                : "text-muted-foreground"
-            }`}
-            aria-label={voice.speaking ? "Stop speaking" : "Speaking"}
-            aria-pressed={voice.speaking}
-            title={voice.speaking ? "Stop speaking" : "Speaking"}
-            disabled={!voice.speaking}
-          >
-            <Volume2 className="w-4 h-4" aria-hidden="true" />
-          </Button>
+          {voice.speaking ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={voice.stopSpeaking}
+              className="h-auto w-auto p-2 rounded-lg bg-primary/15 text-primary animate-pulse hover:bg-primary/20"
+              aria-label="Stop speaking"
+              aria-pressed={true}
+              title="Stop speaking"
+            >
+              <Volume2 className="w-4 h-4" aria-hidden="true" />
+            </Button>
+          ) : null}
 
           <Button
             type="button"

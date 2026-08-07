@@ -227,7 +227,10 @@ export function EmptyState({
 
 export function LoadingState({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-12">
+    // min-h so `justify-center` actually has room to center against —
+    // without it the spinner just sat at the top of whatever (often tall)
+    // column it was placed in instead of the middle of the visible area.
+    <div className="flex flex-col items-center justify-center gap-3 py-12 min-h-[50vh]">
       <div className="relative w-10 h-10">
         <motion.span
           className="absolute inset-0 rounded-full border-2 border-primary/20"

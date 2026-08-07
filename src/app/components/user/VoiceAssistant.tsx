@@ -63,6 +63,10 @@ const LANGUAGES: Array<{ code: string; label: string; sttCode: string }> = [
   { code: "te", label: "Telugu", sttCode: "te-IN" },
   { code: "gu", label: "Gujarati", sttCode: "gu-IN" },
   { code: "pa", label: "Punjabi", sttCode: "pa-IN" },
+  { code: "kn", label: "Kannada", sttCode: "kn-IN" },
+  { code: "ml", label: "Malayalam", sttCode: "ml-IN" },
+  { code: "or", label: "Odia", sttCode: "or-IN" },
+  { code: "ur", label: "Urdu", sttCode: "ur-IN" },
 ];
 
 const SETTINGS_KEY = "dayjoy.voiceAssistant.settings.v1";
@@ -475,7 +479,12 @@ export function VoiceAssistant() {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6 p-4 sm:p-6 overflow-hidden">
+      {/* On narrow screens the two panels stack instead of sitting
+          side-by-side, and their combined height exceeds the viewport —
+          `overflow-hidden` here clipped the transcript panel instead of
+          letting the page scroll to it. Desktop keeps overflow-hidden since
+          the fixed two-column layout already fits. */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6 p-4 sm:p-6 overflow-y-auto lg:overflow-hidden">
         {/* Center: voice interaction */}
         <div className="flex flex-col items-center justify-center rounded-3xl border border-border bg-card p-6 sm:p-10 relative overflow-hidden min-h-[420px]">
           <div
@@ -565,7 +574,14 @@ export function VoiceAssistant() {
         <div className="flex flex-col rounded-3xl border border-border bg-card overflow-hidden min-h-[320px]">
           <div className="shrink-0 flex items-center justify-between px-4 py-3.5 border-b border-border">
             <h2 className="text-sm font-semibold">Live transcript</h2>
-            <Badge variant="secondary">Auto-saved</Badge>
+            {/* variant="secondary" (muted bg + muted text) was near-invisible
+                against the card background — this status is worth surfacing
+                clearly since it's the only indicator that the session is
+                being persisted. */}
+            <Badge variant="success">
+              <Check className="w-3 h-3" aria-hidden="true" />
+              Auto-saved
+            </Badge>
           </div>
 
           <div className="shrink-0 px-4 py-2 border-b border-border flex items-center gap-2">

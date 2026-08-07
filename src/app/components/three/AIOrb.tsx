@@ -46,7 +46,10 @@ const STATE_PALETTES: Record<AIOrbState, StatePalette> = {
     rim: new THREE.Color("#FFC98B"),
   },
   answering: {
-    outer: new THREE.Color("#FBE7D8"),
+    // Was near-white (#FBE7D8), which combined with Bloom washed out to
+    // nearly invisible against the app's light cream background. A mid-tone
+    // keeps the "answering" state readable in both themes.
+    outer: new THREE.Color("#F0B27E"),
     inner: new THREE.Color("#E8965A"),
     rim: new THREE.Color("#DD6B3D"),
   },
@@ -326,7 +329,11 @@ function OrbScene({ state, mobile }: { state: AIOrbState; mobile: boolean }) {
 
       {!mobile && (
         <EffectComposer>
-          <Bloom intensity={0.8} luminanceThreshold={0.2} luminanceSmoothing={0.9} mipmapBlur />
+          {/* Lower intensity / higher threshold — 0.8 @ 0.2 blew out the
+              lighter palette states (e.g. "answering") to near-white,
+              making the orb blend into the page background instead of
+              standing out. */}
+          <Bloom intensity={0.45} luminanceThreshold={0.45} luminanceSmoothing={0.9} mipmapBlur />
           <ChromaticAberration
             offset={new THREE.Vector2(0.0005, 0.0005)}
             radialModulation={false}
@@ -388,7 +395,15 @@ export function AIOrb({
   return (
     <div
       className={className}
-      style={{ width: size, height: size }}
+      // A faint edge ring so the orb keeps a visible boundary against the
+      // page background even in lighter states (idle/answering) where the
+      // shader color itself is close to the background tone.
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "9999px",
+        boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.05)",
+      }}
       role="img"
       aria-label={`AI assistant is ${state}`}
     >

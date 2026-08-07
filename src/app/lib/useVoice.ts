@@ -89,6 +89,10 @@ const LANG_MAP: Record<string, string> = {
   te: "te-IN",
   gu: "gu-IN",
   pa: "pa-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  or: "or-IN",
+  ur: "ur-IN",
 };
 
 export type VoiceOptions = {
@@ -245,13 +249,28 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(clean);
       const opts = optionsRef.current;
-      utterance.lang = LANG_MAP[language] ?? "en-US";
+      const targetLang = LANG_MAP[language] ?? "en-US";
+      utterance.lang = targetLang;
       utterance.rate = opts.rate ?? 1.0;
       utterance.pitch = opts.pitch ?? 1.0;
       utterance.volume = opts.volume ?? 1.0;
+      const systemVoices = window.speechSynthesis.getVoices();
       if (opts.voiceName) {
-        const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
+        const match = systemVoices.find((v) => v.name === opts.voiceName);
         if (match) utterance.voice = match;
+      } else {
+        // Some browsers silently produce no audio (rather than erroring)
+        // when `lang` is set but no installed voice matches it, and fall
+        // back to the *default* voice's language instead of a same-language
+        // one — e.g. asking for hi-IN with only en-US voices installed goes
+        // mute rather than speaking English. Explicitly pick the best
+        // available voice for the target language so speech is always
+        // audible; only true offline/no-voices browsers stay silent.
+        const targetPrefix = targetLang.split("-")[0].toLowerCase();
+        const exact = systemVoices.find((v) => v.lang.toLowerCase() === targetLang.toLowerCase());
+        const sameLanguage = systemVoices.find((v) => v.lang.toLowerCase().startsWith(targetPrefix));
+        const fallback = exact ?? sameLanguage;
+        if (fallback) utterance.voice = fallback;
       }
       utterance.onstart = () => {
         setSpeaking(true);

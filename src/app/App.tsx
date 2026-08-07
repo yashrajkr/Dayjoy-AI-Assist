@@ -4,7 +4,6 @@ import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "./lib/AuthContext";
 import { ProtectedRoute } from "./lib/ProtectedRoute";
 import { AppShellFallback } from "./components/common/AppShellFallback";
-import { InstallAppPrompt } from "./components/common/InstallAppPrompt";
 import { ThemeProvider } from "./components/common/ThemeProvider";
 import { I18nProvider } from "./lib/i18n/I18nContext";
 import { subscribeToNotificationClicks } from "./lib/pushNotifications";
@@ -188,7 +187,11 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
         <NotificationClickBridge />
-        <InstallAppPrompt />
+        {/* The floating install banner used to reappear on every load until
+            dismissed, which read as a repeating popup. Install is now a
+            persistent button in the sidebar next to the collapse toggle
+            (see UserLayout) — a single always-available control instead of
+            an interruption. */}
         <Routes>
           {/* Public */}
           <Route path="/select" element={<AppSelector />} />

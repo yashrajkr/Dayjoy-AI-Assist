@@ -23,9 +23,11 @@ import {
   Search,
   MoreHorizontal,
   Mic,
+  Download,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Onboarding } from "../onboarding/Onboarding";
@@ -60,6 +62,7 @@ export function UserLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
+  const { installable, promptInstall } = useInstallPrompt();
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -336,6 +339,17 @@ export function UserLayout() {
 
             {/* Desktop collapse control — theme toggle + notifications now live in the shared PageHeader */}
             <div className={`hidden lg:flex items-center gap-1 pt-1 ${collapsed ? "justify-center flex-col" : "justify-end"}`}>
+              {installable ? (
+                <button
+                  type="button"
+                  onClick={() => void promptInstall()}
+                  className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
+                  aria-label="Download app"
+                  title="Download app"
+                >
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={toggleCollapsed}

@@ -1205,7 +1205,7 @@ export function UserChat() {
             >
               <HistoryIcon className="w-5 h-5" aria-hidden="true" />
               {conversations.length > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-3.5 px-[3px] rounded-full bg-primary text-primary-foreground text-[8px] leading-none font-bold flex items-center justify-center ring-2 ring-card">
                   {conversations.length > 99 ? "99+" : conversations.length}
                 </span>
               ) : null}
@@ -1297,7 +1297,7 @@ export function UserChat() {
               )}
               {/* Badge — shows source count when available, hidden when panel open */}
               {!sourcesPanelOpen && lastSources.length > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-3.5 px-[3px] rounded-full bg-primary text-primary-foreground text-[8px] leading-none font-bold flex items-center justify-center ring-2 ring-card">
                   {lastSources.length}
                 </span>
               ) : null}

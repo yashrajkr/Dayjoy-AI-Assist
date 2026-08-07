@@ -1,3 +1,16 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* The app shell manages its own internal scroll regions (sidebar, chat
+   thread, page content) via `overflow-y-auto` containers sized against a
+   100dvh flex layout. Without this, the outer document can also become
+   scrollable whenever any child is a fraction of a pixel taller than the
+   viewport, producing a second, page-level scrollbar stacked on top of the
+   app's own — most visible on mobile. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}

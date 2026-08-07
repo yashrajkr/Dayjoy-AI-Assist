@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 export function AppShellFallback() {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-4 py-16 px-4"
+      className="flex flex-col items-center justify-center gap-4 py-16 px-4 min-h-[60vh]"
       role="status"
       aria-live="polite"
       aria-busy="true"
