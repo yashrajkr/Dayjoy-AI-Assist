@@ -32,7 +32,12 @@ import {
   deriveTitle,
   renameConversation,
 } from "../../lib/chatStore";
-import { streamChatWithBackend, chatWithBackend, type ChatSource } from "../../../lib/api";
+import {
+  streamChatWithBackend,
+  chatWithBackend,
+  generateConversationTitle,
+  type ChatSource,
+} from "../../../lib/api";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Modal } from "../common/Modal";
@@ -50,6 +55,7 @@ type Turn = {
   confidence?: number;
   verified?: boolean;
   sources?: ChatSource[] | string[];
+  answerSource?: string | null;
 };
 
 type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "error" | "offline";
@@ -64,6 +70,16 @@ const LANGUAGES: Array<{ code: string; label: string; sttCode: string }> = [
   { code: "gu", label: "Gujarati", sttCode: "gu-IN" },
   { code: "pa", label: "Punjabi", sttCode: "pa-IN" },
 ];
+
+/** Short, human-readable labels for the AI router's answer_source field. */
+const ANSWER_SOURCE_LABELS: Record<string, string> = {
+  dayjoy_knowledge: "Dayjoy Knowledge",
+  web_search: "Web Search",
+  hybrid: "Hybrid — Dayjoy + Web",
+  general_llm: "General AI knowledge",
+  casual: "",
+  unsafe: "",
+};
 
 const SETTINGS_KEY = "dayjoy.voiceAssistant.settings.v1";
 
@@ -234,6 +250,7 @@ export function VoiceAssistant() {
           confidence: res.confidence,
           verified: res.verification_status === "verified",
           sources: res.sources,
+          answerSource: res.answer_source,
         };
         setTurns((prev) => [...prev, assistantTurn]);
         setStreamingText("");
@@ -250,9 +267,20 @@ export function VoiceAssistant() {
             verification_status: res.verification_status ?? null,
             handoff_message: res.handoff_message ?? null,
             rag_metadata: res.rag_metadata ?? null,
+            answer_source: res.answer_source ?? null,
           });
           if (turns.length === 0) {
-            void renameConversation(convId, deriveTitle(trimmed));
+            // Same pattern as UserChat: show the truncated fallback title
+            // instantly, then upgrade to an AI-summarized title if the
+            // backend can produce one. Fires once per session (guarded by
+            // turns.length === 0); any failure silently keeps the fallback.
+            const fallbackTitle = deriveTitle(trimmed);
+            void renameConversation(convId, fallbackTitle);
+            void generateConversationTitle(trimmed).then((summarized) => {
+              if (summarized && summarized !== fallbackTitle) {
+                void renameConversation(convId, summarized);
+              }
+            });
           }
         }
 
@@ -617,6 +645,11 @@ export function VoiceAssistant() {
                     {t.role === "user" ? "You" : "Dayjoy Assist"}
                   </span>
                   <span className="text-[10px] text-muted-foreground">{formatTime(t.timestamp)}</span>
+                  {t.role === "assistant" && t.answerSource && ANSWER_SOURCE_LABELS[t.answerSource] ? (
+                    <span className="text-[10px] text-muted-foreground">
+                      · {ANSWER_SOURCE_LABELS[t.answerSource]}
+                    </span>
+                  ) : null}
                   {t.role === "assistant" && t.confidence !== undefined ? (
                     <Badge variant={t.verified ? "success" : "warning"} className="ml-auto">
                       {t.verified ? "Verified" : "Needs verification"}

@@ -34,6 +34,8 @@ export type ChatMessage = {
   verification_status?: "verified" | "partial" | "unverified" | null;
   handoff_message?: string | null;
   rag_metadata?: unknown;
+  // ---- AI router labeling (added with the AI router / web search feature) ----
+  answer_source?: string | null;
   // Set on the client when the message rendered from a stream but its
   // Supabase persistence write failed — never sent to/from the backend.
   _unsaved?: boolean;
@@ -233,4 +235,14 @@ export function deriveTitle(text: string, maxLen = 48): string {
   const trimmed = text.trim().replace(/\s+/g, " ");
   if (trimmed.length <= maxLen) return trimmed;
   return trimmed.slice(0, maxLen - 1) + "…";
+}
+
+/**
+ * True when a conversation's title is still the default placeholder — i.e.
+ * it has never been auto-titled or manually renamed. Auto-titling flows
+ * (UserChat, VoiceAssistant) must check this before overwriting a title so
+ * a manual rename is never silently clobbered by a later AI suggestion.
+ */
+export function hasDefaultTitle(title: string | null | undefined): boolean {
+  return !title || title === "New conversation";
 }

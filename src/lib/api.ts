@@ -130,6 +130,11 @@ export type ChatResponse = {
   verification_status?: VerificationStatus;
   handoff_message?: string | null;
   rag_metadata?: RAGMetadata | null;
+  // ---- AI router labeling ----
+  /** Which knowledge source(s) produced this answer. */
+  answer_source?: "dayjoy_knowledge" | "web_search" | "general_llm" | "hybrid" | "casual" | "unsafe" | null;
+  /** Which web search provider served results, when answer_source involved web search. */
+  web_search_provider?: string | null;
 };
 
 const API_BASE_URL: string =
@@ -395,6 +400,8 @@ export async function streamChatWithBackend(
       verification_status: finalMeta.verification_status,
       handoff_message: finalMeta.handoff_message,
       rag_metadata: finalMeta.rag_metadata,
+      answer_source: finalMeta.answer_source,
+      web_search_provider: finalMeta.web_search_provider,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

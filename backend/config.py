@@ -30,6 +30,10 @@ OPTIONAL_VARS: Dict[str, List[Tuple[str, str]]] = {
         ("RAG_EMBEDDING_PROVIDER", "Embedding provider: openai | groq | local"),
         ("RAG_EMBEDDING_MODEL", "Embedding model name"),
     ],
+    "Web search (optional)": [
+        ("TAVILY_API_KEY", "Tavily search API key (primary web search provider)"),
+        ("BRAVE_API_KEY", "Brave Search API key (fallback web search provider)"),
+    ],
     "RAG (optional)": [
         ("RAG_CHUNK_SIZE", "Chunk size in tokens (default: 800)"),
         ("RAG_CHUNK_OVERLAP", "Chunk overlap in tokens (default: 120)"),

@@ -42,6 +42,7 @@ import {
   Eye,
   FileDown,
   Maximize2,
+  GitCompare,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -56,6 +57,7 @@ import {
   appendMessage,
   setMessageFeedback,
   deriveTitle,
+  hasDefaultTitle,
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
@@ -442,6 +444,8 @@ export function UserChat() {
         verification_status?: "verified" | "partial" | "unverified";
         handoff_message?: string | null;
         rag_metadata?: unknown;
+        answer_source?: string | null;
+        web_search_provider?: string | null;
       } = {};
 
       try {
@@ -469,6 +473,8 @@ export function UserChat() {
           verification_status: res.verification_status,
           handoff_message: res.handoff_message,
           rag_metadata: res.rag_metadata,
+          answer_source: res.answer_source,
+          web_search_provider: res.web_search_provider,
         };
 
         const persisted = await appendMessage(convId!, {
@@ -493,6 +499,7 @@ export function UserChat() {
           verification_status: meta.verification_status ?? null,
           handoff_message: meta.handoff_message ?? null,
           rag_metadata: meta.rag_metadata ?? null,
+          answer_source: meta.answer_source ?? null,
         });
 
         // The answer must always render, even if the Supabase write above
@@ -511,6 +518,7 @@ export function UserChat() {
             verification_status: meta.verification_status ?? null,
             handoff_message: meta.handoff_message ?? null,
             rag_metadata: meta.rag_metadata ?? null,
+            answer_source: meta.answer_source ?? null,
             created_at: new Date().toISOString(),
             _unsaved: !assistantMsg,
           };
@@ -525,7 +533,7 @@ export function UserChat() {
         // `deriveTitle` (a truncated first message) is applied immediately so
         // the sidebar is never blank, then upgraded to a short summarized
         // title if the backend can produce one.
-        if (conv && (conv.title === "New conversation" || !conv.title)) {
+        if (conv && hasDefaultTitle(conv.title)) {
           const convIdForTitle = conv.id!;
           const fallbackTitle = deriveTitle(text);
           const applyTitle = (title: string) => {
@@ -835,14 +843,76 @@ export function UserChat() {
     [navigate],
   );
 
-  const handleRename = useCallback(async (id: string) => {
-    const next = window.prompt("Rename conversation", "");
-    if (!next || !next.trim()) return;
-    await renameConversation(id, next.trim());
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title: next.trim() } : c)),
-    );
+  const RENAME_TITLE_MAX_LEN = 80;
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameRegenerating, setRenameRegenerating] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  const openRename = useCallback((id: string, currentTitle: string) => {
+    setRenameTargetId(id);
+    setRenameValue(currentTitle ?? "");
+    setRenameError(null);
+    setRenameRegenerating(false);
   }, []);
+
+  const closeRename = useCallback(() => {
+    if (renameSaving || renameRegenerating) return;
+    setRenameTargetId(null);
+    setRenameValue("");
+    setRenameError(null);
+  }, [renameSaving, renameRegenerating]);
+
+  // Manual rename always wins: this is the only place `chat_conversations.title`
+  // is written outside the once-only auto-title flow, and it's user-initiated
+  // either way (typed by hand or accepted after "Regenerate with AI").
+  const submitRename = useCallback(async () => {
+    const id = renameTargetId;
+    const next = renameValue.trim();
+    if (!id) return;
+    if (!next) {
+      setRenameError("Title can't be empty.");
+      return;
+    }
+    if (next.length > RENAME_TITLE_MAX_LEN) {
+      setRenameError(`Title must be ${RENAME_TITLE_MAX_LEN} characters or fewer.`);
+      return;
+    }
+    setRenameSaving(true);
+    setRenameError(null);
+    try {
+      await renameConversation(id, next);
+      setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: next } : c)));
+      setActiveConv((prev) => (prev && prev.id === id ? { ...prev, title: next } : prev));
+      setRenameTargetId(null);
+      setRenameValue("");
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [renameTargetId, renameValue]);
+
+  const regenerateRenameTitle = useCallback(async () => {
+    if (!renameTargetId) return;
+    setRenameRegenerating(true);
+    setRenameError(null);
+    try {
+      const msgs = await listMessages(renameTargetId);
+      const firstUserMessage = msgs.find((m) => m.role === "user")?.content;
+      if (!firstUserMessage) {
+        setRenameError("This conversation has no messages to summarize yet.");
+        return;
+      }
+      const title = await generateConversationTitle(firstUserMessage);
+      if (title) {
+        setRenameValue(title);
+      } else {
+        setRenameError("Couldn't generate a title right now. Try again, or edit it manually.");
+      }
+    } finally {
+      setRenameRegenerating(false);
+    }
+  }, [renameTargetId]);
 
   const handlePin = useCallback(async (id: string, pinned: boolean) => {
     await pinConversation(id, pinned);
@@ -1150,7 +1220,7 @@ export function UserChat() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleRename(c.id!)}
+                      onClick={() => openRename(c.id!, c.title)}
                       className="p-1 rounded hover:bg-background"
                       aria-label="Rename conversation"
                       title="Rename"
@@ -2159,6 +2229,21 @@ export function UserChat() {
                     </Badge>
                   ) : null}
 
+                  {/* Answer source badge — which knowledge source(s) produced this answer */}
+                  {lastAssistant.answer_source ? (
+                    <Badge variant="outline" className="px-2 py-1 text-[11px]">
+                      {lastAssistant.answer_source === "dayjoy_knowledge" ? (
+                        <><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" /> Dayjoy Knowledge</>
+                      ) : lastAssistant.answer_source === "web_search" ? (
+                        <><Search className="w-3.5 h-3.5" aria-hidden="true" /> Web Search</>
+                      ) : lastAssistant.answer_source === "hybrid" ? (
+                        <><GitCompare className="w-3.5 h-3.5" aria-hidden="true" /> Hybrid — Dayjoy + Web</>
+                      ) : lastAssistant.answer_source === "general_llm" ? (
+                        <><Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> General AI knowledge</>
+                      ) : null}
+                    </Badge>
+                  ) : null}
+
                   {/* Confidence meter */}
                   {typeof lastAssistant.confidence === "number" ? (
                     <Card className="px-3 py-2 shadow-none">
@@ -2381,6 +2466,66 @@ export function UserChat() {
             />
           </div>
         ) : null}
+      </Modal>
+
+      {/* Rename conversation modal */}
+      <Modal
+        open={!!renameTargetId}
+        onClose={closeRename}
+        title="Rename conversation"
+        description="Give this conversation a title, or let AI suggest one from the first message."
+        size="sm"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={closeRename} disabled={renameSaving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitRename()} disabled={renameSaving || renameRegenerating}>
+              {renameSaving ? "Saving…" : "Save"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <label htmlFor="rename-conversation-input" className="text-xs font-medium text-muted-foreground">
+            Title
+          </label>
+          <input
+            id="rename-conversation-input"
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submitRename();
+              }
+            }}
+            maxLength={RENAME_TITLE_MAX_LEN}
+            autoFocus
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder="Conversation title"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-muted-foreground">
+              {renameValue.length}/{RENAME_TITLE_MAX_LEN}
+            </span>
+            <button
+              type="button"
+              onClick={() => void regenerateRenameTitle()}
+              disabled={renameRegenerating || renameSaving}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${renameRegenerating ? "animate-spin" : ""}`} aria-hidden="true" />
+              {renameRegenerating ? "Generating…" : "Regenerate with AI"}
+            </button>
+          </div>
+          {renameError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {renameError}
+            </p>
+          ) : null}
+        </div>
       </Modal>
     </div>
   );
