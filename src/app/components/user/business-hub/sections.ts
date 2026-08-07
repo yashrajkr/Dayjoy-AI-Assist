@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, Wallet, TrendingUp, ShoppingCart, UserCircle,
   Package, Target, Flag, BarChart3, Sparkles, Lightbulb, Bell, UserX,
   CalendarClock, ListChecks, FileText, Award, Percent, Settings as SettingsIcon,
-  MessageSquareText,
+  MessageSquareText, GraduationCap,
 } from "lucide-react";
 
 export type BusinessHubSection = {
@@ -38,6 +38,7 @@ export const BUSINESS_HUB_SECTIONS: BusinessHubSection[] = [
   { key: "rank-progress", path: "rank-progress", label: "Rank Progress", icon: Award },
   { key: "commission", path: "commission", label: "Commission", icon: Percent },
   { key: "inventory", path: "inventory", label: "Inventory", icon: Package },
+  { key: "training", path: "training", label: "Training", icon: GraduationCap },
   { key: "settings", path: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
