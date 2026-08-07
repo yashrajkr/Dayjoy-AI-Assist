@@ -22,20 +22,31 @@ export function VoiceControls({
   voice,
   onTranscript,
   className = "",
+  voiceMode = false,
+  onToggleVoiceMode,
 }: {
   voice: VoiceState;
   onTranscript: (text: string) => void;
   className?: string;
+  /** True while the caller's hands-free "tap the orb" voice mode owns the mic. */
+  voiceMode?: boolean;
+  /** When provided, the mic button toggles hands-free voice mode instead of
+   *  one-shot dictate-into-input. */
+  onToggleVoiceMode?: () => void;
 }) {
   // When recognition produces a final transcript, push it to the composer
   // and immediately clear it — otherwise it lingers in hook state and can
   // leak back into the input box (and get re-sent) on a later render.
+  // Skipped while `voiceMode` is active: the parent owns the transcript then
+  // (auto-sends it as a message) — if both effects raced on the same
+  // `voice.transcript` change, the dictate-to-input path would grab and
+  // clear it first, so voice mode would never see a result to send.
   useEffect(() => {
-    if (voice.transcript) {
+    if (!voiceMode && voice.transcript) {
       onTranscript(voice.transcript);
       voice.clearTranscript();
     }
-  }, [voice.transcript, voice.clearTranscript, onTranscript]);
+  }, [voiceMode, voice.transcript, voice.clearTranscript, onTranscript]);
 
   if (!voice.supported) {
     // Hide entirely when unsupported — no broken buttons.
@@ -70,17 +81,23 @@ export function VoiceControls({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={voice.listening ? voice.stopListening : voice.startListening}
+          onClick={onToggleVoiceMode ?? (voice.listening ? voice.stopListening : voice.startListening)}
           className={`h-auto w-auto p-2 rounded-lg ${
-            voice.listening
+            voiceMode || voice.listening
               ? "bg-destructive/15 text-destructive hover:bg-destructive/20"
               : "text-muted-foreground"
           }`}
-          aria-label={voice.listening ? "Stop listening" : "Start voice input"}
-          aria-pressed={voice.listening}
-          title={voice.listening ? "Stop listening" : "Voice input"}
+          aria-label={
+            voiceMode
+              ? "End voice conversation"
+              : voice.listening
+                ? "Stop listening"
+                : "Start voice conversation"
+          }
+          aria-pressed={voiceMode || voice.listening}
+          title={voiceMode ? "Voice mode active — tap to end" : "Voice mode"}
         >
-          {voice.listening ? (
+          {voiceMode || voice.listening ? (
             <Square className="w-4 h-4" aria-hidden="true" />
           ) : (
             <Mic className="w-4 h-4" aria-hidden="true" />

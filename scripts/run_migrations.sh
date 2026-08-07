@@ -44,6 +44,8 @@ MIGRATIONS=(
     "supabase_schema_v11_communication.sql"
     "supabase_schema_v12_workflow.sql"
     "supabase_schema_v13_security.sql"
+    "supabase_schema_v14_business_intelligence.sql"
+    "supabase_schema_v15_chat_messages_rag_columns.sql"
 )
 
 echo "Applying ${#MIGRATIONS[@]} migrations..."

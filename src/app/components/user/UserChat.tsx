@@ -264,6 +264,14 @@ export function UserChat() {
   // Voice AI (Web Speech API — gracefully degrades if unsupported)
   const voice = useVoice(language === "Hindi" ? "hi" : "en");
 
+  // ---- Tap-the-orb hands-free voice mode ----
+  // Distinct from the composer's dictate-to-input mic (VoiceControls): this
+  // is a continuous loop — tap the orb once to start, speak your question,
+  // it's sent and answered in this same chat, and the mic re-opens
+  // automatically once the answer finishes speaking. Tap again to end.
+  // (Effects that drive this loop are defined after handleSend, below.)
+  const [voiceMode, setVoiceMode] = useState(false);
+
   // Tools state: camera / QR / OCR modals + attach menu
   const [cameraOpen, setCameraOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -592,6 +600,49 @@ export function UserChat() {
     [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role],
   );
 
+  const toggleVoiceMode = useCallback(() => {
+    if (voiceMode) {
+      voice.stopListening();
+      voice.stopSpeaking();
+      setVoiceMode(false);
+    } else if (voice.sttSupported) {
+      setVoiceMode(true);
+      voice.startListening();
+    }
+  }, [voiceMode, voice]);
+
+  // Finalized speech -> send as a normal chat message, same as typing + Enter.
+  useEffect(() => {
+    if (voiceMode && voice.transcript) {
+      const text = voice.transcript;
+      voice.clearTranscript();
+      void handleSend(text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMode, voice.transcript]);
+
+  // Hands-free loop: once the spoken answer finishes and nothing else is in
+  // flight, re-open the mic automatically so the conversation keeps going
+  // without another tap.
+  useEffect(() => {
+    if (!voiceMode || !voice.sttSupported) return;
+    if (voice.listening || voice.speaking || sending || streamingText) return;
+    const t = window.setTimeout(() => voice.startListening(), 500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMode, voice.listening, voice.speaking, sending, streamingText, voice.sttSupported]);
+
+  // Leaving the page mid-voice-mode shouldn't leave the mic running.
+  useEffect(() => {
+    return () => {
+      if (voiceMode) {
+        voice.stopListening();
+        voice.stopSpeaking();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ---- Stop generation ----
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -849,12 +900,19 @@ export function UserChat() {
     lines.push(`</body></html>`);
     const blob = new Blob([lines.join("\n")], { type: "text/html" });
     const url = URL.createObjectURL(blob);
-    const w = window.open(url, "_blank");
-    if (w) {
-      w.onload = () => {
-        setTimeout(() => w.print(), 500);
-      };
-    }
+    // A real file download via a temporary <a download>, not window.open()
+    // + print(). The popup-and-print-dialog approach silently produced no
+    // file on mobile browsers (many block or ignore programmatic print()
+    // on a page they didn't navigate to directly), even though the button
+    // was labeled "Export as PDF". This always saves a file the user can
+    // open, print, or convert themselves.
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(activeConv?.title ?? "conversation").replace(/[^\w\- ]+/g, "").trim() || "conversation"}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [activeConv, messages]);
 
   // ---- Share conversation (copy link to clipboard) ----
@@ -1191,10 +1249,19 @@ export function UserChat() {
                   size="icon"
                   onClick={handleShareConversation}
                   className="h-auto w-auto p-2 hidden sm:inline-flex"
-                  aria-label="Share conversation link"
-                  title="Share link"
+                  aria-label={
+                    copiedId === `share-${activeConv.id}` ? "Link copied" : "Share conversation link"
+                  }
+                  title={copiedId === `share-${activeConv.id}` ? "Link copied!" : "Share link"}
                 >
-                  <Share2 className="w-4 h-4" aria-hidden="true" />
+                  {/* Previously this set `copiedId` but nothing ever read that
+                      exact value, so clicking Share had zero visible
+                      feedback — a silent clipboard write that looked broken. */}
+                  {copiedId === `share-${activeConv.id}` ? (
+                    <Check className="w-4 h-4 text-primary" aria-hidden="true" />
+                  ) : (
+                    <Share2 className="w-4 h-4" aria-hidden="true" />
+                  )}
                 </Button>
               </>
             ) : null}
@@ -1267,8 +1334,24 @@ export function UserChat() {
                   {/* AIOrb takes a fixed pixel size, so scale it down on
                       narrow phones — 140px plus the halo eats ~40% of a
                       360px viewport. The wrapper height matches the scaled
-                      box so no dead space is left behind. */}
-                  <div className="h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100">
+                      box so no dead space is left behind.
+                      Tappable: starts hands-free voice mode (speak your
+                      question, hear the answer, mic re-opens automatically)
+                      — tap again, or the mic button in the composer, to end. */}
+                  <button
+                    type="button"
+                    onClick={toggleVoiceMode}
+                    disabled={!voice.sttSupported}
+                    className="h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
+                    aria-label={
+                      voiceMode
+                        ? "Voice mode active — tap to end"
+                        : voice.sttSupported
+                          ? "Tap to start voice conversation"
+                          : "Voice input is not supported in this browser"
+                    }
+                    aria-pressed={voiceMode}
+                  >
                     <Suspense
                       fallback={
                         <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
@@ -1289,8 +1372,19 @@ export function UserChat() {
                         size={140}
                       />
                     </Suspense>
-                  </div>
+                  </button>
                 </div>
+                {voice.sttSupported ? (
+                  <p className="text-xs text-muted-foreground -mt-1 mb-2" aria-live="polite">
+                    {voiceMode
+                      ? voice.listening
+                        ? "Listening… tap the orb or the mic below to stop"
+                        : voice.speaking
+                          ? "Speaking…"
+                          : "Voice mode on — tap the orb or the mic below to stop"
+                      : "Tap the orb to talk"}
+                  </p>
+                ) : null}
 
                 {/* Role-aware pill badge — replaces generic greeting */}
                 {(() => {
@@ -1676,7 +1770,12 @@ export function UserChat() {
                       </motion.div>
                     ) : null}
                   </div>
-                  <VoiceControls voice={voice} onTranscript={setInput} />
+                  <VoiceControls
+                    voice={voice}
+                    onTranscript={setInput}
+                    voiceMode={voiceMode}
+                    onToggleVoiceMode={toggleVoiceMode}
+                  />
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}
@@ -2457,7 +2556,11 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`group/action relative p-1.5 rounded-lg hover:bg-accent/60 transition-colors ${
+      // Explicit flex centering — a bare <button> falls back to inline-block
+      // in some browsers, which can leave the icon riding the text baseline
+      // instead of sitting centered in the padded box (the reported
+      // off-center refresh/regenerate icon).
+      className={`group/action relative inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-accent/60 transition-colors ${
         active ? activeBg : "text-muted-foreground"
       }`}
       aria-label={label}

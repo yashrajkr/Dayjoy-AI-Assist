@@ -342,6 +342,28 @@ async def load_safety_rules() -> List[Dict[str, str]]:
     return _safety_cache
 
 
+_CASUAL_MESSAGE_RE = re.compile(
+    r"^\s*("
+    r"hi|hii+|hey+|hello+|namaste|namaskar|yo|sup"
+    r"|good\s?(morning|afternoon|evening|night)"
+    r"|how\s?are\s?(you|u)|kaise\s?ho|kya\s?hal\s?hai"
+    r"|thanks?(\s?you)?|thank\s?you|shukriya|dhanyavaad"
+    r"|ok(ay)?|bye|goodbye|see\s?you|alright|cool|nice|great"
+    r")\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_casual_message(text: str) -> bool:
+    """
+    True for greetings/small-talk with no Dayjoy business content — "hii",
+    "how are you", "thanks", "ok" and similar. These don't need a document
+    search or a "verify with human support" disclaimer; the model can just
+    answer directly, the way any normal chat assistant would.
+    """
+    return bool(_CASUAL_MESSAGE_RE.match(text.strip()))
+
+
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
     """Returns (is_blocked, rule_key)."""
     lowered = message.lower()
@@ -554,19 +576,27 @@ async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSo
 SYSTEM_PROMPT = (
     "You are Dayjoy AI Assist, an enterprise assistant for the Dayjoy wellness, healthcare, "
     "agriculture, lifestyle, and direct-selling ecosystem.\n\n"
-    "The context you're given below may contain two kinds of material, each labeled:\n"
-    "- Approved Dayjoy knowledge (products, FAQs, policies, training) — treat as authoritative "
-    "for anything about Dayjoy itself.\n"
+    "FIRST decide whether the message is casual conversation or a Dayjoy-specific question:\n"
+    "- Greetings, small talk, thanks, or general-knowledge questions with no connection to "
+    "Dayjoy's products or business (e.g. \"hi\", \"how are you\", \"who is the president of "
+    "India\") — answer directly and naturally from your own knowledge, like any normal "
+    "assistant. Do NOT mention documents, approved knowledge, or human handoff for these; "
+    "there is nothing to look up.\n"
+    "- Anything about Dayjoy itself (products, health claims, policies, business/compensation) "
+    "— use ONLY the approved Dayjoy knowledge below, never your own general knowledge or the "
+    "web results, even if one seems relevant. Do NOT make medical claims, diagnosis, or "
+    "treatment promises. Do NOT provide guaranteed income claims. If it isn't answerable from "
+    "the approved context, say you need a human handoff and recommend contacting Dayjoy "
+    "support — do not fill the gap with a web result or your own general knowledge.\n\n"
+    "The context below may contain two kinds of material, each labeled:\n"
+    "- Approved Dayjoy knowledge (products, FAQs, policies, training).\n"
     "- Lines marked \"[web]\" — general/current-events web search results, NOT Dayjoy-approved. "
-    "Use these only for general knowledge questions unrelated to Dayjoy's own products or "
-    "business (e.g. the current date/time, world news, general facts), and say the information "
-    "comes from a web search, not from Dayjoy's own materials.\n\n"
-    "For anything about Dayjoy products, health, or business: use ONLY the approved Dayjoy "
-    "knowledge, never the web results, even if a web result seems relevant. Do NOT make medical "
-    "claims, diagnosis, or treatment promises. Do NOT provide guaranteed income claims. If a "
-    "Dayjoy-related question isn't answerable from the approved context, say you need a human "
-    "handoff and recommend contacting Dayjoy support — do not fill the gap with a web result or "
-    "your own general knowledge.\n\n"
+    "Only relevant to general questions (current date/time, world news, general facts); say "
+    "when information comes from a web search rather than Dayjoy's own materials.\n\n"
+    "Language: you are fully fluent in English, Hindi (Devanagari script), and Hinglish "
+    "(Hindi written in Latin letters). You can and must respond in whichever of these the user "
+    "asks for — never say you are unable to reply in Hindi or Hinglish. Match the script the "
+    "user's own message is written in when no language is explicitly requested.\n\n"
     "Be concise, professional, and helpful. Cite source IDs/URLs where relevant."
 )
 
@@ -795,7 +825,15 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     elif token and user_id:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
-    context, sources, category, rag_metadata = await retrieve_context(token, req.message)
+    casual = is_casual_message(req.message)
+    if casual:
+        # Greetings/small talk skip document search entirely — there is
+        # nothing Dayjoy-specific to look up, and running RAG + web search
+        # on "hii" only added latency and produced an irrelevant "needs
+        # human handoff" disclaimer on a completely normal reply.
+        context, sources, category, rag_metadata = "", [], "general", None
+    else:
+        context, sources, category, rag_metadata = await retrieve_context(token, req.message)
 
     # No approved Dayjoy knowledge matched — fall back to a live web search
     # for general questions (current time, world events, general facts)
@@ -804,7 +842,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     web_context = ""
     web_sources: List[ChatSource] = []
     used_web_search = False
-    if not context and TAVILY_API_KEY:
+    if not casual and not context and TAVILY_API_KEY:
         web_context, web_sources = await web_search(req.message)
         if web_context:
             used_web_search = True
@@ -819,7 +857,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     answer = "".join(answer_parts).strip()
 
     # Compute confidence: prefer RAG confidence; fall back to legacy heuristic
-    if rag_metadata and rag_metadata.get("confidence") is not None:
+    if casual:
+        confidence = 1.0
+        verification_status = "verified"
+    elif rag_metadata and rag_metadata.get("confidence") is not None:
         confidence = rag_metadata["confidence"]
         verification_status = rag_metadata.get("verification_status", "unverified")
     elif used_web_search:
@@ -828,7 +869,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     else:
         confidence = 0.85 if context else 0.4
         verification_status = "verified" if context else "unverified"
-    handoff_required = not used_web_search and (
+    handoff_required = not casual and not used_web_search and (
         verification_status == "unverified"
         or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
         or not bool(context)
@@ -956,15 +997,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         elif token and user_id:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
-        yield _sse({"status": "searching_knowledge"})
+        casual = is_casual_message(req.message)
+        if casual:
+            # Greetings/small talk skip document search entirely — see the
+            # matching comment in the non-streaming /chat handler.
+            context, sources, category, rag_metadata = "", [], "general", None
+        else:
+            yield _sse({"status": "searching_knowledge"})
+            context, sources, category, rag_metadata = await retrieve_context(token, req.message)
 
-        context, sources, category, rag_metadata = await retrieve_context(token, req.message)
-
-        # See the matching comment in the non-streaming /chat handler.
         web_context = ""
         web_sources: List[ChatSource] = []
         used_web_search = False
-        if not context and TAVILY_API_KEY:
+        if not casual and not context and TAVILY_API_KEY:
             yield _sse({"status": "searching_web"})
             web_context, web_sources = await web_search(req.message)
             if web_context:
@@ -978,7 +1023,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             aggregated += tok
             yield _sse({"token": tok})
 
-        if rag_metadata and rag_metadata.get("confidence") is not None:
+        if casual:
+            confidence = 1.0
+            verification_status = "verified"
+        elif rag_metadata and rag_metadata.get("confidence") is not None:
             confidence = rag_metadata["confidence"]
             verification_status = rag_metadata.get("verification_status", "unverified")
         elif used_web_search:
@@ -987,7 +1035,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         else:
             confidence = 0.85 if context else 0.4
             verification_status = "verified" if context else "unverified"
-        handoff_required = not used_web_search and (
+        handoff_required = not casual and not used_web_search and (
             verification_status == "unverified"
             or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
             or not bool(context)
