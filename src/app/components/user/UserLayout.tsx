@@ -141,7 +141,7 @@ export function UserLayout() {
           { to: "/distributor/dashboard/content", icon: Sparkles, label: "Business Hub — Content Generator", group: "Business Hub" },
           { to: "/distributor/dashboard/analytics", icon: BarChart3, label: "Business Hub — Analytics", group: "Business Hub" },
           { to: "/distributor/dashboard/ai-sales-coach", icon: Users, label: "Business Hub — AI Sales Coach", group: "Business Hub" },
-          { to: "/training", icon: GraduationCap, label: "Training", group: "Business Hub" },
+          { to: "/distributor/dashboard/training", icon: GraduationCap, label: "Business Hub — Training", group: "Business Hub" },
         ]
       : []),
     { to: "/settings", icon: Settings, label: "Settings", group: "Account" },
@@ -268,9 +268,6 @@ export function UserLayout() {
                 // AI Sales Coach, ...) live inside the Business Hub workspace's
                 // own secondary sidebar now — not duplicated here.
                 <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              ) : null}
-              {canDistributor ? (
-                <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
             </div>
 

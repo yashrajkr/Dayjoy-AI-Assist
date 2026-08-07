@@ -346,6 +346,7 @@ export default function App() {
               <Route path="tasks" element={<Suspense fallback={<AppShellFallback />}><TasksPage /></Suspense>} />
               <Route path="reports" element={<Suspense fallback={<AppShellFallback />}><ReportsPage /></Suspense>} />
               <Route path="rank-progress" element={<Suspense fallback={<AppShellFallback />}><RankProgressPage /></Suspense>} />
+              <Route path="training" element={<Suspense fallback={<AppShellFallback />}><DistributorTraining /></Suspense>} />
               <Route path="settings" element={<Suspense fallback={<AppShellFallback />}><BusinessHubSettingsPage /></Suspense>} />
             </Route>
             <Route
