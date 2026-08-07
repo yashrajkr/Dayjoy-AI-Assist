@@ -25,7 +25,7 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 5173,
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
     // Don't watch backend, node_modules, dist, etc. — causes ENOSPC.
     watch: {
       ignored: [

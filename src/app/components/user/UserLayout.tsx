@@ -42,6 +42,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/
 import { listConversations, type Conversation } from "../../lib/chatStore";
 
 /**
+ * Groups pathnames that belong to the same logical page so `AnimatePresence`
+ * doesn't remount it on every sub-navigation. Without this, `key={pathname}`
+ * force-unmounted UserChat the instant a new conversation got its `/chat/:id`
+ * URL (which happens mid-send, on every first message) — killing the
+ * in-flight request before the answer could render. Same risk applies to
+ * the Business Hub workspace, whose secondary sidebar swaps `/distributor/
+ * dashboard/<section>` without an intended full remount.
+ */
+function pageTransitionKey(pathname: string): string {
+  if (pathname === "/" || pathname.startsWith("/chat/")) return "chat";
+  if (pathname.startsWith("/distributor/dashboard")) return "business-hub";
+  return pathname;
+}
+
+/**
  * User-facing app shell — left sidebar with primary nav + user card.
  *
  * Mobile: a fixed bottom tab bar covers the 4 most-used destinations plus
@@ -80,7 +95,18 @@ export function UserLayout() {
     });
   };
 
-  const canDistributor = role === "distributor" || role === "admin" || role === "management";
+  // Must match the `allowedRoles` on the /distributor/* routes in App.tsx
+  // (["distributor", "leader", ...STAFF_ONLY]) — otherwise a role that can
+  // open Business Hub by URL never sees the nav link to it at all.
+  const canDistributor =
+    role === "distributor" ||
+    role === "leader" ||
+    role === "trainer" ||
+    role === "employee" ||
+    role === "support" ||
+    role === "admin" ||
+    role === "management" ||
+    role === "super_admin";
 
   const userInitials =
     currentUser?.email?.slice(0, 2).toUpperCase() ??
@@ -105,19 +131,19 @@ export function UserLayout() {
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
     { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
+    { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
     ...(canDistributor
       ? [
-          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Intelligence", group: "Distributor Hub" },
-          { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Distributor Hub" },
-          { to: "/distributor/customers", icon: Users, label: "Customers", group: "Distributor Hub" },
-          { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Distributor Hub" },
-          { to: "/distributor/content", icon: Sparkles, label: "Content Generator", group: "Distributor Hub" },
-          { to: "/distributor/team", icon: Users, label: "My Team", group: "Distributor Hub" },
-          { to: "/distributor/analytics", icon: BarChart3, label: "Analytics", group: "Distributor Hub" },
-          { to: "/training", icon: GraduationCap, label: "Training", group: "Distributor Hub" },
+          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Hub", group: "Business Hub" },
+          { to: "/distributor/dashboard/team", icon: Users, label: "Business Hub — Team", group: "Business Hub" },
+          { to: "/distributor/dashboard/customers", icon: Users, label: "Business Hub — Customers", group: "Business Hub" },
+          { to: "/distributor/dashboard/follow-ups", icon: Clock, label: "Business Hub — Follow-ups", group: "Business Hub" },
+          { to: "/distributor/dashboard/content", icon: Sparkles, label: "Business Hub — Content Generator", group: "Business Hub" },
+          { to: "/distributor/dashboard/analytics", icon: BarChart3, label: "Business Hub — Analytics", group: "Business Hub" },
+          { to: "/distributor/dashboard/ai-sales-coach", icon: Users, label: "Business Hub — AI Sales Coach", group: "Business Hub" },
+          { to: "/training", icon: GraduationCap, label: "Training", group: "Business Hub" },
         ]
       : []),
-    { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
     { to: "/settings", icon: Settings, label: "Settings", group: "Account" },
   ];
 
@@ -236,24 +262,16 @@ export function UserLayout() {
               <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
-                <>
-                  {!collapsed ? (
-                    <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
-                  ) : <div className="pt-2" />}
-                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Intelligence" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/content" icon={Sparkles} label="Content Generator" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/team" icon={Users} label="My Team" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/analytics" icon={BarChart3} label="Analytics" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                </>
+                // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,
+                // AI Sales Coach, ...) live inside the Business Hub workspace's
+                // own secondary sidebar now — not duplicated here.
+                <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
               {canDistributor ? (
                 <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
-              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </div>
 
             {!collapsed && recentChats.length > 0 ? (
@@ -357,7 +375,7 @@ export function UserLayout() {
         >
           <AnimatePresence mode="wait">
             <motion.div
-              key={location.pathname}
+              key={pageTransitionKey(location.pathname)}
               initial="initial"
               animate="animate"
               exit="exit"
