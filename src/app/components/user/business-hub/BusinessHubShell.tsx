@@ -30,8 +30,11 @@ export function BusinessHubShell() {
   const activeSection = BUSINESS_HUB_SECTIONS.find((s) => s.path === section);
 
   return (
-    <div className="flex-1 flex min-h-0 min-w-0">
-      {/* Mobile top bar for the workspace */}
+    <div className="flex-1 flex flex-col lg:flex-row min-h-0 min-w-0">
+      {/* Mobile top bar for the workspace. Must stack ABOVE the sidebar+content
+          row (hence flex-col on the outer container above `lg:`) — as a sibling
+          in a row flex container it used to claim its own column, squeezing
+          the content area down to a sliver on phones. */}
       <div className="lg:hidden flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <button
           type="button"

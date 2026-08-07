@@ -72,6 +72,11 @@ export function UserLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { role, currentUser, logout } = useAuth();
+  // The Business Hub workspace has its own mobile top bar + section drawer
+  // (BusinessHubShell), so the app-level mobile header and bottom tab bar
+  // would otherwise stack on top of it — two hamburgers, two nav layers,
+  // and less vertical room for actual content on a phone screen.
+  const isBusinessHub = location.pathname.startsWith("/distributor/dashboard");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
@@ -166,7 +171,10 @@ export function UserLayout() {
           Skip to main content
         </a>
 
-        {/* Mobile top bar */}
+        {/* Mobile top bar. Kept even inside Business Hub — its hamburger is
+            the only escape hatch back to primary nav (Chat, Products, Sign
+            out, ...) on mobile, since Business Hub's own drawer only lists
+            its sections. */}
         <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
           <button
             type="button"
@@ -367,7 +375,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 pb-16 lg:pb-0"
+          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 ${isBusinessHub ? "pb-0" : "pb-16 lg:pb-0"}`}
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">
@@ -384,7 +392,12 @@ export function UserLayout() {
           </AnimatePresence>
         </main>
 
-        {/* Mobile bottom tab bar */}
+        {/* Mobile bottom tab bar — hidden inside Business Hub. None of these
+            4 destinations (Chat/Dashboard/Products/Knowledge) are Business
+            Hub sections, and BusinessHubShell's own drawer already covers
+            in-workspace navigation; keeping this bar just ate a fixed strip
+            of vertical space for nothing. */}
+        {!isBusinessHub ? (
         <nav
           // Below the drawer backdrop (z-40) so an open drawer covers the tab
           // bar instead of the two fighting at the same level.
@@ -416,6 +429,7 @@ export function UserLayout() {
             More
           </button>
         </nav>
+        ) : null}
 
         {/* First-time user onboarding overlay */}
         <Onboarding />
