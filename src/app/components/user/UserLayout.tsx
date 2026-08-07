@@ -110,14 +110,14 @@ export function UserLayout() {
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
     ...(canDistributor
       ? [
-          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Intelligence", group: "Distributor Hub" },
-          { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Distributor Hub" },
-          { to: "/distributor/customers", icon: Users, label: "Customers", group: "Distributor Hub" },
-          { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Distributor Hub" },
-          { to: "/distributor/content", icon: Sparkles, label: "Content Generator", group: "Distributor Hub" },
-          { to: "/distributor/team", icon: Users, label: "My Team", group: "Distributor Hub" },
-          { to: "/distributor/analytics", icon: BarChart3, label: "Analytics", group: "Distributor Hub" },
-          { to: "/training", icon: GraduationCap, label: "Training", group: "Distributor Hub" },
+          { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Hub", group: "Business Hub" },
+          { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Business Hub" },
+          { to: "/distributor/customers", icon: Users, label: "Customers", group: "Business Hub" },
+          { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Business Hub" },
+          { to: "/distributor/content", icon: Sparkles, label: "Content Generator", group: "Business Hub" },
+          { to: "/distributor/team", icon: Users, label: "My Team", group: "Business Hub" },
+          { to: "/distributor/analytics", icon: BarChart3, label: "Analytics", group: "Business Hub" },
+          { to: "/training", icon: GraduationCap, label: "Training", group: "Business Hub" },
         ]
       : []),
     { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
@@ -242,9 +242,9 @@ export function UserLayout() {
               {canDistributor ? (
                 <>
                   {!collapsed ? (
-                    <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Distributor Hub</div>
+                    <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Business Hub</div>
                   ) : <div className="pt-2" />}
-                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Intelligence" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
                   <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
@@ -337,19 +337,25 @@ export function UserLayout() {
               </NavLink>
             ) : null}
 
+            {/* Install button: shown on mobile (inside the drawer) too — it
+                used to live only in the desktop-only row below, so on
+                phones there was no way to trigger it even when the browser
+                reported the app as installable. */}
+            {installable ? (
+              <button
+                type="button"
+                onClick={() => void promptInstall()}
+                className={`w-full flex items-center gap-2 px-3 py-2 mt-1 text-xs font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+                aria-label="Download app"
+                title="Download app"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                {!collapsed ? <span>Download app</span> : null}
+              </button>
+            ) : null}
+
             {/* Desktop collapse control — theme toggle + notifications now live in the shared PageHeader */}
             <div className={`hidden lg:flex items-center gap-1 pt-1 ${collapsed ? "justify-center flex-col" : "justify-end"}`}>
-              {installable ? (
-                <button
-                  type="button"
-                  onClick={() => void promptInstall()}
-                  className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground transition-colors"
-                  aria-label="Download app"
-                  title="Download app"
-                >
-                  <Download className="w-4 h-4" aria-hidden="true" />
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={toggleCollapsed}

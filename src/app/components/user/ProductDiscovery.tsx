@@ -369,6 +369,13 @@ export function ProductDiscovery() {
                       <p className="text-sm mb-3 line-clamp-2 text-muted-foreground">{p.benefits}</p>
                     ) : null}
 
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className={`text-lg font-semibold ${p.price == null ? "text-sm text-muted-foreground font-normal" : "text-primary"}`}>
+                        {formatPrice(p)}
+                      </span>
+                      <StockBadge status={p.stock_status} />
+                    </div>
+
                     <div className="flex gap-2 mt-auto">
                       <Button type="button" onClick={() => openDetail(p)} className="flex-1 rounded-xl">
                         <Eye className="w-4 h-4" aria-hidden="true" /> Details
@@ -438,6 +445,15 @@ export function ProductDiscovery() {
       >
         {detail ? (
           <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-accent/30 px-4 py-3">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Price</p>
+                <p className={`text-2xl font-semibold ${detail.price == null ? "text-base text-muted-foreground font-normal" : "text-primary"}`}>
+                  {formatPrice(detail)}
+                </p>
+              </div>
+              <StockBadge status={detail.stock_status} />
+            </div>
             {detail.brand ? (
               <DetailRow label="Brand" value={detail.brand} />
             ) : null}
@@ -506,6 +522,7 @@ export function ProductDiscovery() {
               </thead>
               <tbody>
                 {[
+                  { label: "Price", get: (p: Product) => formatPrice(p) },
                   { label: "Category", get: (p: Product) => p.category },
                   { label: "Brand", get: (p: Product) => p.brand ?? "—" },
                   { label: "Benefits", get: (p: Product) => p.benefits ?? "—" },
@@ -549,6 +566,22 @@ export function ProductDiscovery() {
         title="Extract text from product label"
       />
     </div>
+  );
+}
+
+function formatPrice(p: Product): string {
+  if (p.price == null) return "Price on request";
+  const symbol = p.currency === "USD" ? "$" : "₹";
+  return `${symbol}${Number(p.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function StockBadge({ status }: { status?: string | null }) {
+  if (!status || status === "in_stock") return null;
+  const isOut = status === "out_of_stock";
+  return (
+    <Badge variant={isOut ? "destructive" : "warning"} className="text-[10px]">
+      {isOut ? "Out of stock" : "Low stock"}
+    </Badge>
   );
 }
 

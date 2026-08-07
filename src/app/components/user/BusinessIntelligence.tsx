@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Sparkles, TrendingUp, TrendingDown, Users, Award, Target, Calendar,
   Send, AlertTriangle, ShieldCheck, Gift, Activity,
-  Bot, ArrowUp, ArrowDown, Minus,
+  Bot, ArrowUp, ArrowDown, Minus, UserPlus, Clock, PenSquare,
+  BarChart3, GraduationCap, ArrowRight,
 } from "lucide-react";
 import {
   biOverview, biInsights, biAsk, biTimeline, biForecast, biTeamAnalytics,
@@ -11,6 +13,16 @@ import {
 import { LoadingState, ErrorState } from "../common/AdminUI";
 import { LineChart, ProgressBar } from "../common/Charts";
 import { Button } from "../ui/button";
+
+const QUICK_ACTIONS: Array<{ to: string; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { to: "/distributor", label: "AI Sales Coach", icon: Bot },
+  { to: "/distributor/customers", label: "Customers", icon: Users },
+  { to: "/distributor/follow-ups", label: "Follow-ups", icon: Clock },
+  { to: "/distributor/team", label: "My Team", icon: UserPlus },
+  { to: "/distributor/content", label: "Content Generator", icon: PenSquare },
+  { to: "/distributor/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/training", label: "Training", icon: GraduationCap },
+];
 
 // ---------------------------------------------------------------------------
 // Small shared pieces
@@ -128,7 +140,7 @@ export function BusinessIntelligence() {
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" /> Business Intelligence
+            <Sparkles className="w-5 h-5 text-primary" /> Business Hub
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             {overview.distributor.full_name ? `Welcome back, ${overview.distributor.full_name.split(" ")[0]}. ` : ""}
@@ -160,6 +172,22 @@ export function BusinessIntelligence() {
         <KpiCard label="Achievement" value={`${overview.target.achievement_pct}%`} icon={<Target className="w-4 h-4" />} />
         <KpiCard label="Projected Income" value={fmtInr(overview.projected_income)} icon={<TrendingUp className="w-4 h-4" />} />
         <KpiCard label="Potential Incentive" value={fmtInr(overview.incentive.potential_value)} icon={<Gift className="w-4 h-4" />} />
+      </div>
+
+      {/* Quick access to the rest of the distributor toolset — keeps this
+          page usable as a single home base instead of just an overview. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        {QUICK_ACTIONS.map((a) => (
+          <Link
+            key={a.to}
+            to={a.to}
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card p-3 text-center hover:bg-accent/40 hover:border-primary/30 transition-colors group"
+          >
+            <a.icon className="w-4 h-4 text-primary" />
+            <span className="text-[11px] font-medium leading-tight">{a.label}</span>
+            <ArrowRight className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity -mt-0.5" aria-hidden="true" />
+          </Link>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

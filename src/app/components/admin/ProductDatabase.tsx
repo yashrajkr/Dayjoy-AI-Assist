@@ -46,6 +46,9 @@ type ProductFormData = {
   safety_note: string;
   approval_status: "pending" | "approved" | "rejected";
   is_archived: boolean;
+  price: string;
+  currency: string;
+  stock_status: "in_stock" | "low_stock" | "out_of_stock";
 };
 
 const EMPTY_FORM: ProductFormData = {
@@ -61,6 +64,9 @@ const EMPTY_FORM: ProductFormData = {
   safety_note: "",
   approval_status: "pending",
   is_archived: false,
+  price: "",
+  currency: "INR",
+  stock_status: "in_stock",
 };
 
 export function ProductDatabase() {
@@ -139,6 +145,9 @@ export function ProductDatabase() {
       safety_note: p.safety_note ?? "",
       approval_status: (p.approval_status as "pending" | "approved" | "rejected") ?? "pending",
       is_archived: Boolean(p.is_archived),
+      price: p.price != null ? String(p.price) : "",
+      currency: p.currency ?? "INR",
+      stock_status: (p.stock_status as "in_stock" | "low_stock" | "out_of_stock") ?? "in_stock",
     });
     setModalOpen(true);
   };
@@ -146,6 +155,11 @@ export function ProductDatabase() {
   const handleSave = async () => {
     if (!form.product_name.trim()) {
       setError("Product name is required.");
+      return;
+    }
+    const trimmedPrice = form.price.trim();
+    if (trimmedPrice && (Number.isNaN(Number(trimmedPrice)) || Number(trimmedPrice) < 0)) {
+      setError("Price must be a positive number.");
       return;
     }
     setSaving(true);
@@ -164,6 +178,9 @@ export function ProductDatabase() {
         safety_note: form.safety_note.trim() || null,
         approval_status: form.approval_status,
         is_archived: form.is_archived,
+        price: trimmedPrice ? Number(trimmedPrice) : null,
+        currency: form.currency.trim() || null,
+        stock_status: form.stock_status,
       };
 
       if (editingId) {
@@ -344,6 +361,7 @@ export function ProductDatabase() {
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden sm:table-cell">SKU</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden sm:table-cell">Price</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden lg:table-cell">Updated</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
@@ -351,9 +369,9 @@ export function ProductDatabase() {
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
-                <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-muted-foreground">Loading…</td></tr>
               ) : filteredProducts.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-muted-foreground">No products found.</td></tr>
+                <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-muted-foreground">No products found.</td></tr>
               ) : (
                 filteredProducts.map((p) => (
                   <ProductRow
@@ -430,6 +448,29 @@ export function ProductDatabase() {
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Price</label>
+              <Input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="e.g. 499.00"
+                className="w-full px-3 py-2 h-auto rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Currency</label>
+              <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                <option value="INR">INR (₹)</option>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Stock Status</label>
+              <select value={form.stock_status} onChange={(e) => setForm({ ...form, stock_status: e.target.value as "in_stock" | "low_stock" | "out_of_stock" })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                <option value="in_stock">In stock</option>
+                <option value="low_stock">Low stock</option>
+                <option value="out_of_stock">Out of stock</option>
               </select>
             </div>
           </div>
@@ -514,6 +555,16 @@ function ProductRow({
       <td className="px-4 py-3">
         <Badge>{product.category}</Badge>
         {product.sub_category ? <div className="text-[10px] text-muted-foreground mt-0.5">{product.sub_category}</div> : null}
+      </td>
+      <td className="px-4 py-3 hidden sm:table-cell text-sm">
+        {product.price != null ? (
+          <span className="font-medium">
+            {product.currency === "USD" ? "$" : "₹"}
+            {Number(product.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Not set</span>
+        )}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">

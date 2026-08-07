@@ -36,6 +36,12 @@ export type Product = {
   faqs_json?: Record<string, unknown> | null;
   created_at?: string | null;
   tags?: string[] | null; // kept for existing UI usage
+  price?: number | null;
+  currency?: string | null;
+  image_url?: string | null;
+  rating?: number | null;
+  review_count?: number | null;
+  stock_status?: string | null;
 };
 
 export type FAQ = {

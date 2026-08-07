@@ -858,6 +858,9 @@ export type AdminProduct = {
   approval_status?: string | null;
   is_archived?: boolean | null;
   created_at?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  stock_status?: string | null;
 };
 
 export type AdminFAQ = {

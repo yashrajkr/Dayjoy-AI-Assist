@@ -402,6 +402,16 @@ export function AIOrb({
         width: size,
         height: size,
         borderRadius: "9999px",
+        // `borderRadius` alone doesn't clip children — without `overflow`,
+        // the canvas briefly paints as a hard-edged square (visible during
+        // WebGL init, and in the Suspense fallback frame) instead of a
+        // circle. `position: relative` + `zIndex: 0` gives the canvas its
+        // own stacking context so it can never paint above sibling
+        // overlays (notification dropdown, toasts, modals) regardless of
+        // how the 3D layer composites.
+        overflow: "hidden",
+        position: "relative",
+        zIndex: 0,
         boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.05)",
       }}
       role="img"
