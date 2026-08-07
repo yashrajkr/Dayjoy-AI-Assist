@@ -1262,16 +1262,54 @@ export type TeamMember = {
   notes?: string | null;
 };
 
+/**
+ * Timeout + single-retry wrapper for Business Hub data fetches.
+ *
+ * The backend (Render free tier) spins down after ~15min idle and takes
+ * 20-50s to cold-start on the next request. A plain `fetch` here had no
+ * timeout at all, so the first request after any idle period either hung
+ * indefinitely or surfaced the browser's raw "Failed to fetch" as the
+ * entire page content (every Business Hub page's `catch` rendered
+ * `e.message` verbatim). This bounds the wait, retries once after a short
+ * delay (covers transient blips and gives a cold instance a second shot),
+ * and normalizes failures into a message users can actually act on.
+ */
+const DIST_FETCH_TIMEOUT_MS = 25_000;
+const DIST_FETCH_RETRY_DELAY_MS = 2_500;
+
+async function resilientFetch(url: string, init: RequestInit = {}, attempt = 0): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DIST_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!attempt && [502, 503, 504].includes(res.status)) {
+      await new Promise((r) => setTimeout(r, DIST_FETCH_RETRY_DELAY_MS));
+      return resilientFetch(url, init, attempt + 1);
+    }
+    return res;
+  } catch {
+    if (!attempt) {
+      await new Promise((r) => setTimeout(r, DIST_FETCH_RETRY_DELAY_MS));
+      return resilientFetch(url, init, attempt + 1);
+    }
+    throw new Error(
+      "Couldn't reach the server — it may be waking up after being idle. Please try again in a few seconds.",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function distGet<T>(path: string): Promise<T> {
   const headers = await ragHeaders();
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { headers });
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, { headers });
   if (!res.ok) throw new Error(`Distributor GET ${path} failed (${res.status})`);
   return await res.json();
 }
 
 async function distJson<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers = await ragHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${getApiBaseUrl()}${path}`, {
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -1285,7 +1323,7 @@ async function distJson<T>(method: string, path: string, body?: unknown): Promis
 
 async function distDelete(path: string): Promise<{ status: string }> {
   const headers = await ragHeaders();
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { method: "DELETE", headers });
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, { method: "DELETE", headers });
   if (!res.ok) throw new Error(`Distributor DELETE ${path} failed (${res.status})`);
   return await res.json();
 }
@@ -1735,14 +1773,14 @@ export type KnowledgeSearchResult = {
 
 async function custGet<T>(path: string): Promise<T> {
   const headers = await ragHeaders();
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { headers });
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, { headers });
   if (!res.ok) throw new Error(`Customer GET ${path} failed (${res.status})`);
   return await res.json();
 }
 
 async function custJson<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers = await ragHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Customer ${method} ${path} failed (${res.status}): ${text}`);
@@ -1752,7 +1790,7 @@ async function custJson<T>(method: string, path: string, body?: unknown): Promis
 
 async function custDelete(path: string): Promise<{ status: string }> {
   const headers = await ragHeaders();
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { method: "DELETE", headers });
+  const res = await resilientFetch(`${getApiBaseUrl()}${path}`, { method: "DELETE", headers });
   if (!res.ok) throw new Error(`Customer DELETE ${path} failed (${res.status})`);
   return await res.json();
 }

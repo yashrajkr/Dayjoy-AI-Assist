@@ -36,7 +36,7 @@ export function ProtectedRoute({
 
   if (allowedRoles && allowedRoles.length > 0) {
     if (!allowedRoles.includes(role)) {
-      return <PermissionDenied />;
+      return <PermissionDenied requiredRoles={allowedRoles} />;
     }
   }
 
