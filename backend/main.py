@@ -25,6 +25,7 @@ import os
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
@@ -36,6 +37,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from collections import defaultdict
 import time
+
+from backend.search_providers import get_search_providers, web_search_multi
 
 load_dotenv()
 
@@ -102,7 +105,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
+# Web search API keys (TAVILY_API_KEY, BRAVE_API_KEY) are read directly by
+# their provider classes in backend/search_providers.py, not here.
 ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v2.sql
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
@@ -299,6 +303,10 @@ class ChatResponse(BaseModel):
     verification_status: Optional[str] = None  # verified | partial | unverified
     handoff_message: Optional[str] = None
     rag_metadata: Optional[Dict[str, Any]] = None
+    # AI router labeling (added for the AI router / web search feature) —
+    # which knowledge source(s) actually produced this answer.
+    answer_source: Optional[str] = None  # dayjoy_knowledge | web_search | general_llm | hybrid | casual | unsafe
+    web_search_provider: Optional[str] = None  # tavily | brave | None
 
 
 class FeedbackRequest(BaseModel):
@@ -362,6 +370,22 @@ def is_casual_message(text: str) -> bool:
     answer directly, the way any normal chat assistant would.
     """
     return bool(_CASUAL_MESSAGE_RE.match(text.strip()))
+
+
+_HYBRID_CUES_RE = re.compile(
+    r"\b(compare|comparison|vs\.?|versus|difference between|better than|alternative to)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_hybrid_comparison(text: str) -> bool:
+    """True when the message asks to compare/relate something against an
+    external reference point (e.g. "compare Dayjoy Spirulina with other
+    Spirulina products"). Only meaningful when Dayjoy context was actually
+    found — see the hybrid branch in /chat and /chat/stream — so this alone
+    never changes behavior for questions with no Dayjoy match.
+    """
+    return bool(_HYBRID_CUES_RE.search(text))
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -527,47 +551,138 @@ def current_time_context() -> str:
     return f"Current date/time: {now.strftime('%A, %B %d, %Y, %H:%M')} UTC."
 
 
-async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSource]]:
-    """General-knowledge / current-events fallback via Tavily's search API.
+async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSource], Optional[str]]:
+    """General-knowledge / current-events fallback via the search provider chain
+    (see `backend/search_providers.py` — Tavily primary, Brave fallback).
 
-    Returns ("", []) — never raises — when TAVILY_API_KEY isn't configured
-    or the request fails, so callers can treat it identically to an empty
-    Dayjoy-knowledge match.
+    Returns ("", [], None) — never raises — when no provider is configured
+    or every configured provider's request fails, so callers can treat it
+    identically to an empty Dayjoy-knowledge match. The third element is the
+    name of the provider that actually served results (for response
+    labeling / admin visibility), or None if none did.
     """
-    if not TAVILY_API_KEY:
-        return "", []
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": TAVILY_API_KEY,
-                    "query": query,
-                    "search_depth": "basic",
-                    "max_results": max_results,
-                    "include_answer": False,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        print(f"[web_search] Tavily request failed: {e}")
-        return "", []
+    results, provider_used, _any_configured = await web_search_multi(query, max_results)
+    if not results:
+        return "", [], None
 
     context_parts: List[str] = []
     sources: List[ChatSource] = []
-    for r in data.get("results", [])[:max_results]:
-        content = str(r.get("content") or "").strip()
-        if not content:
-            continue
-        title = r.get("title") or r.get("url") or "Web result"
-        url = r.get("url")
+    for r in results:
         # "[web]" label lets the system prompt tell this apart from
         # approved Dayjoy knowledge context.
-        context_parts.append(f"[web] {title} ({url or 'no url'})\n{content[:600]}")
-        sources.append(ChatSource(table="web", id=str(url or title), title=title, url=url))
+        context_parts.append(f"[web] {r.title} ({r.url or 'no url'})\n{r.content[:600]}")
+        sources.append(ChatSource(table="web", id=str(r.url or r.title), title=r.title, url=r.url))
 
-    return "\n\n".join(context_parts), sources
+    return "\n\n".join(context_parts), sources, provider_used
+
+
+# ----------------------------------------------------------------------------
+# AI router — decides which knowledge source(s) answer a message.
+# ----------------------------------------------------------------------------
+@dataclass
+class RouteResult:
+    context: str  # Dayjoy RAG/legacy context only ("" if no match)
+    web_context: str  # Web search context only ("" if unused/unavailable)
+    sources: List[ChatSource]  # Dayjoy sources only
+    web_sources: List[ChatSource]
+    category: str
+    rag_metadata: Optional[Dict[str, Any]]
+    mode: str  # "dayjoy" | "hybrid" — selects the system-prompt variant
+    answer_source: str  # dayjoy_knowledge | web_search | general_llm | hybrid | casual
+    web_search_provider: Optional[str]  # tavily | brave | None
+    used_web_search: bool
+
+
+async def _route_events(
+    token: Optional[str], message: str, casual: bool
+) -> AsyncIterator[Tuple[str, Any]]:
+    """Router core, shared by /chat and /chat/stream so routing logic can't
+    drift between the two endpoints.
+
+    Yields ("status", str) progress events (mirroring the SSE status frames
+    the streaming endpoint already emits), then exactly one
+    ("result", RouteResult) as the final item. /chat discards the status
+    events; /chat/stream forwards them as SSE frames.
+
+    Routing decisions:
+    - Casual small talk: skip retrieval entirely (answer_source="casual").
+    - Dayjoy context found + a comparison cue ("compare", "vs", ...): also
+      fetch web results and answer in hybrid mode, each claim attributed
+      (answer_source="hybrid").
+    - Dayjoy context found, no comparison cue: answer from Dayjoy knowledge
+      alone, unchanged from existing behavior (answer_source="dayjoy_knowledge").
+    - No Dayjoy context: fall back to web search; if that also finds
+      nothing (or no provider is configured), the LLM answers from its own
+      general knowledge (answer_source="web_search" / "general_llm").
+    """
+    if casual:
+        # Greetings/small talk skip document search entirely — there is
+        # nothing Dayjoy-specific to look up, and running RAG + web search
+        # on "hii" only added latency and produced an irrelevant "needs
+        # human handoff" disclaimer on a completely normal reply.
+        yield ("result", RouteResult("", "", [], [], "general", None, "dayjoy", "casual", None, False))
+        return
+
+    yield ("status", "searching_knowledge")
+    context, sources, category, rag_metadata = await retrieve_context(token, message)
+
+    web_context = ""
+    web_sources: List[ChatSource] = []
+    web_search_provider: Optional[str] = None
+    used_web_search = False
+    mode = "dayjoy"
+
+    if context and wants_hybrid_comparison(message):
+        # Dayjoy match + an explicit comparison cue: pull web results too so
+        # the model can reason across both, with each claim clearly
+        # attributed (see HYBRID_MODE_ADDENDUM below).
+        yield ("status", "searching_web")
+        web_context, web_sources, web_search_provider = await web_search(message)
+        if web_context:
+            used_web_search = True
+            mode = "hybrid"
+            answer_source = "hybrid"
+        else:
+            answer_source = "dayjoy_knowledge"
+    elif not context:
+        # No approved Dayjoy knowledge matched — fall back to a live web
+        # search for general questions (current time, world events, general
+        # facts) instead of the model refusing outright. Dayjoy-specific
+        # questions are unaffected: this only runs when `context` is empty.
+        yield ("status", "searching_web")
+        web_context, web_sources, web_search_provider = await web_search(message)
+        if web_context:
+            used_web_search = True
+            category = "general"
+            answer_source = "web_search"
+        else:
+            answer_source = "general_llm"
+    else:
+        answer_source = "dayjoy_knowledge"
+
+    yield (
+        "result",
+        RouteResult(
+            context=context,
+            web_context=web_context,
+            sources=sources,
+            web_sources=web_sources,
+            category=category,
+            rag_metadata=rag_metadata,
+            mode=mode,
+            answer_source=answer_source,
+            web_search_provider=web_search_provider,
+            used_web_search=used_web_search,
+        ),
+    )
+
+
+async def determine_route(token: Optional[str], message: str, casual: bool) -> RouteResult:
+    """Non-streaming convenience wrapper around `_route_events` — used by /chat."""
+    async for kind, payload in _route_events(token, message, casual):
+        if kind == "result":
+            return payload
+    raise AssertionError("_route_events did not yield a result")  # pragma: no cover
 
 
 # ----------------------------------------------------------------------------
@@ -600,15 +715,35 @@ SYSTEM_PROMPT = (
     "Be concise, professional, and helpful. Cite source IDs/URLs where relevant."
 )
 
+# Appended to SYSTEM_PROMPT only for hybrid-mode requests (Dayjoy context
+# found AND the question asks for a comparison — see wants_hybrid_comparison).
+# The base SYSTEM_PROMPT normally forbids mixing Dayjoy knowledge with web
+# results; this addendum is the one deliberate, explicit exception, scoped
+# to exactly this case so the other three routes are unaffected.
+HYBRID_MODE_ADDENDUM = (
+    "\n\nHYBRID MODE: this question asks you to compare or relate Dayjoy to something "
+    "external. The context below contains BOTH approved Dayjoy knowledge and \"[web]\"-labeled "
+    "general/competitor information. For this answer only: use the approved Dayjoy context for "
+    "any claim about Dayjoy itself, and the \"[web]\" context (plus your own general knowledge) "
+    "for the external/competitor side. Label each claim's source inline, e.g. \"(Dayjoy "
+    "knowledge)\" or \"(web)\". Never invent Dayjoy product specs, ingredients, or pricing that "
+    "aren't in the approved context — if the approved context doesn't cover something, say so "
+    "rather than guessing."
+)
+
+
+def _system_prompt_for(mode: str) -> str:
+    return SYSTEM_PROMPT + HYBRID_MODE_ADDENDUM if mode == "hybrid" else SYSTEM_PROMPT
+
 
 async def stream_groq(
-    message: str, history: List[Dict[str, str]], context: str, language: str
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
 ) -> AsyncIterator[str]:
     """Stream tokens from Groq's OpenAI-compatible /chat/completions endpoint."""
     if not GROQ_API_KEY:
         return
     url = "https://api.groq.com/openai/v1/chat/completions"
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _system_prompt_for(mode)}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append(
@@ -646,13 +781,13 @@ async def stream_groq(
 
 
 async def stream_openai(
-    message: str, history: List[Dict[str, str]], context: str, language: str
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
 ) -> AsyncIterator[str]:
     """Stream tokens from OpenAI Chat Completions."""
     if not OPENAI_API_KEY:
         return
     url = "https://api.openai.com/v1/chat/completions"
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _system_prompt_for(mode)}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append(
@@ -690,19 +825,19 @@ async def stream_openai(
 
 
 async def stream_response(
-    message: str, history: List[Dict[str, str]], context: str, language: str
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
 ) -> AsyncIterator[str]:
     """Try Groq first, then OpenAI. Falls back to a context-only answer."""
     if GROQ_API_KEY:
         collected = ""
-        async for tok in stream_groq(message, history, context, language):
+        async for tok in stream_groq(message, history, context, language, mode):
             collected += tok
             yield tok
         if collected:
             return
     if OPENAI_API_KEY:
         collected = ""
-        async for tok in stream_openai(message, history, context, language):
+        async for tok in stream_openai(message, history, context, language, mode):
             collected += tok
             yield tok
         if collected:
@@ -759,7 +894,8 @@ async def health() -> Dict[str, Any]:
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_ANON_KEY),
         "groq_configured": bool(GROQ_API_KEY),
         "openai_configured": bool(OPENAI_API_KEY),
-        "web_search_configured": bool(TAVILY_API_KEY),
+        "web_search_configured": any(p.is_configured() for p in get_search_providers()),
+        "web_search_providers": [p.name for p in get_search_providers() if p.is_configured()],
         "rag_available": RAG_AVAILABLE,
         "rag_import_error": RAG_IMPORT_ERROR,
         "jwks_url": SUPABASE_JWKS_URL,
@@ -809,13 +945,14 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     rules = await load_safety_rules()
     is_blocked, rule_key = run_safety_check(req.message, rules)
     if is_blocked:
-        await _log_analytics(token, user_id, req, "blocked", [], 0.0)
+        await _log_analytics(token, user_id, req, "blocked", [], 0.0, "unsafe")
         return ChatResponse(
             answer=f"Sorry, I can't help with that. Safety rule triggered: {rule_key}.",
             category="unsafe",
             sources=[],
             safety_status="blocked",
             handoff_required=True,
+            answer_source="unsafe",
         )
 
     history: List[Dict[str, str]] = []
@@ -826,33 +963,13 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
     casual = is_casual_message(req.message)
-    if casual:
-        # Greetings/small talk skip document search entirely — there is
-        # nothing Dayjoy-specific to look up, and running RAG + web search
-        # on "hii" only added latency and produced an irrelevant "needs
-        # human handoff" disclaimer on a completely normal reply.
-        context, sources, category, rag_metadata = "", [], "general", None
-    else:
-        context, sources, category, rag_metadata = await retrieve_context(token, req.message)
+    route = await determine_route(token, req.message, casual)
 
-    # No approved Dayjoy knowledge matched — fall back to a live web search
-    # for general questions (current time, world events, general facts)
-    # instead of the model refusing outright. Dayjoy-specific questions are
-    # unaffected: this only runs when `context` is already empty.
-    web_context = ""
-    web_sources: List[ChatSource] = []
-    used_web_search = False
-    if not casual and not context and TAVILY_API_KEY:
-        web_context, web_sources = await web_search(req.message)
-        if web_context:
-            used_web_search = True
-            category = "general"
-
-    full_context = "\n\n".join(p for p in [current_time_context(), context, web_context] if p)
+    full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
 
     # Collect streamed tokens into a single string
     answer_parts: List[str] = []
-    async for tok in stream_response(req.message, history, full_context, req.language):
+    async for tok in stream_response(req.message, history, full_context, req.language, route.mode):
         answer_parts.append(tok)
     answer = "".join(answer_parts).strip()
 
@@ -860,21 +977,22 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if casual:
         confidence = 1.0
         verification_status = "verified"
-    elif rag_metadata and rag_metadata.get("confidence") is not None:
-        confidence = rag_metadata["confidence"]
-        verification_status = rag_metadata.get("verification_status", "unverified")
-    elif used_web_search:
+    elif route.rag_metadata and route.rag_metadata.get("confidence") is not None:
+        confidence = route.rag_metadata["confidence"]
+        verification_status = route.rag_metadata.get("verification_status", "unverified")
+    elif route.used_web_search:
         confidence = 0.6
         verification_status = "unverified"
     else:
-        confidence = 0.85 if context else 0.4
-        verification_status = "verified" if context else "unverified"
-    handoff_required = not casual and not used_web_search and (
+        confidence = 0.85 if route.context else 0.4
+        verification_status = "verified" if route.context else "unverified"
+    handoff_required = not casual and not route.used_web_search and (
         verification_status == "unverified"
         or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
-        or not bool(context)
+        or not bool(route.context)
     )
-    sources = sources + web_sources
+    category = route.category
+    sources = route.sources + route.web_sources
 
     # NOTE: message persistence is owned by the frontend (see UserChat.tsx's
     # handleSend -> appendMessage), which needs the real DB-assigned row ids
@@ -882,7 +1000,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     # features. Inserting here too duplicated every message in
     # chat_messages — this endpoint only needs conv_id for history/context.
 
-    await _log_analytics(token, user_id, req, category, sources, confidence)
+    await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
 
     handoff_msg = None
     if handoff_required:
@@ -901,7 +1019,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         conversation_id=conv_id,
         verification_status=verification_status,
         handoff_message=handoff_msg,
-        rag_metadata=rag_metadata,
+        rag_metadata=route.rag_metadata,
+        answer_source=route.answer_source,
+        web_search_provider=route.web_search_provider,
     )
 
 
@@ -979,7 +1099,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
     async def event_gen() -> AsyncIterator[str]:
         if is_blocked:
-            yield _sse({"token": "", "done": True, "safety_status": "blocked", "category": "unsafe", "handoff_required": True})
+            yield _sse({"token": "", "done": True, "safety_status": "blocked", "category": "unsafe", "handoff_required": True, "answer_source": "unsafe"})
             return
 
         # Emit an immediate frame so the client knows the connection is live.
@@ -998,49 +1118,40 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
         casual = is_casual_message(req.message)
-        if casual:
-            # Greetings/small talk skip document search entirely — see the
-            # matching comment in the non-streaming /chat handler.
-            context, sources, category, rag_metadata = "", [], "general", None
-        else:
-            yield _sse({"status": "searching_knowledge"})
-            context, sources, category, rag_metadata = await retrieve_context(token, req.message)
+        route: Optional[RouteResult] = None
+        async for kind, payload in _route_events(token, req.message, casual):
+            if kind == "status":
+                yield _sse({"status": payload})
+            else:
+                route = payload
+        assert route is not None  # _route_events always yields exactly one "result"
 
-        web_context = ""
-        web_sources: List[ChatSource] = []
-        used_web_search = False
-        if not casual and not context and TAVILY_API_KEY:
-            yield _sse({"status": "searching_web"})
-            web_context, web_sources = await web_search(req.message)
-            if web_context:
-                used_web_search = True
-                category = "general"
-
-        full_context = "\n\n".join(p for p in [current_time_context(), context, web_context] if p)
+        full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
         aggregated = ""
 
-        async for tok in stream_response(req.message, history, full_context, req.language):
+        async for tok in stream_response(req.message, history, full_context, req.language, route.mode):
             aggregated += tok
             yield _sse({"token": tok})
 
         if casual:
             confidence = 1.0
             verification_status = "verified"
-        elif rag_metadata and rag_metadata.get("confidence") is not None:
-            confidence = rag_metadata["confidence"]
-            verification_status = rag_metadata.get("verification_status", "unverified")
-        elif used_web_search:
+        elif route.rag_metadata and route.rag_metadata.get("confidence") is not None:
+            confidence = route.rag_metadata["confidence"]
+            verification_status = route.rag_metadata.get("verification_status", "unverified")
+        elif route.used_web_search:
             confidence = 0.6
             verification_status = "unverified"
         else:
-            confidence = 0.85 if context else 0.4
-            verification_status = "verified" if context else "unverified"
-        handoff_required = not casual and not used_web_search and (
+            confidence = 0.85 if route.context else 0.4
+            verification_status = "verified" if route.context else "unverified"
+        handoff_required = not casual and not route.used_web_search and (
             verification_status == "unverified"
             or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
-            or not bool(context)
+            or not bool(route.context)
         )
-        sources = sources + web_sources
+        category = route.category
+        sources = route.sources + route.web_sources
         handoff_msg = None
         if handoff_required:
             handoff_msg = (
@@ -1051,7 +1162,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # NOTE: message persistence is owned by the frontend — see the same
         # note in the non-streaming /chat handler above.
 
-        await _log_analytics(token, user_id, req, category, sources, confidence)
+        await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
 
         yield _sse({
             "done": True,
@@ -1063,7 +1174,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "conversation_id": conv_id,
             "verification_status": verification_status,
             "handoff_message": handoff_msg,
-            "rag_metadata": rag_metadata,
+            "rag_metadata": route.rag_metadata,
+            "answer_source": route.answer_source,
+            "web_search_provider": route.web_search_provider,
         })
 
     return StreamingResponse(
@@ -1111,6 +1224,7 @@ async def _log_analytics(
     category: str,
     sources: List[ChatSource],
     confidence: float,
+    answer_route: Optional[str] = None,
 ) -> None:
     """Best-effort analytics insert."""
     if not SUPABASE_URL:
@@ -1123,6 +1237,7 @@ async def _log_analytics(
         "category": category,
         "source_used": ",".join(s.table for s in sources[:3]) or None,
         "safety_status": "safe",
+        "answer_route": answer_route,
     }
     # Use anon-key insert (no RLS on user_id=NULL or matching auth.uid())
     headers = {
