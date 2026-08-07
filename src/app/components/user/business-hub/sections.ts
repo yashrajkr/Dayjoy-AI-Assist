@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Users, Wallet, TrendingUp, ShoppingCart, UserCircle,
   Package, Target, Flag, BarChart3, Sparkles, Lightbulb, Bell, UserX,
   CalendarClock, ListChecks, FileText, Award, Percent, Settings as SettingsIcon,
+  MessageSquareText,
 } from "lucide-react";
 
 export type BusinessHubSection = {
@@ -15,11 +16,13 @@ export type BusinessHubSection = {
 /** Secondary-sidebar nav for the Business Hub workspace. Order = display order. */
 export const BUSINESS_HUB_SECTIONS: BusinessHubSection[] = [
   { key: "overview", path: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "ai-sales-coach", path: "ai-sales-coach", label: "AI Sales Coach", icon: MessageSquareText },
   { key: "team", path: "team", label: "Team", icon: Users },
   { key: "income", path: "income", label: "Income", icon: Wallet },
   { key: "sales", path: "sales", label: "Sales", icon: TrendingUp },
   { key: "orders", path: "orders", label: "Orders", icon: ShoppingCart },
   { key: "customers", path: "customers", label: "Customers", icon: UserCircle },
+  { key: "content", path: "content", label: "Content Generator", icon: Sparkles },
   { key: "products", path: "products", label: "Products", icon: Package },
   { key: "goals", path: "goals", label: "Goals", icon: Target },
   { key: "targets", path: "targets", label: "Targets", icon: Flag },

@@ -324,8 +324,10 @@ export default function App() {
             >
               <Route index element={<Suspense fallback={<AppShellFallback />}><BusinessHubIndexRedirect /></Suspense>} />
               <Route path="overview" element={<Suspense fallback={<AppShellFallback />}><BusinessIntelligence /></Suspense>} />
+              <Route path="ai-sales-coach" element={<Suspense fallback={<AppShellFallback />}><DistributorAssistant /></Suspense>} />
               <Route path="team" element={<Suspense fallback={<AppShellFallback />}><TeamManagement /></Suspense>} />
               <Route path="customers" element={<Suspense fallback={<AppShellFallback />}><CustomerProfiles /></Suspense>} />
+              <Route path="content" element={<Suspense fallback={<AppShellFallback />}><ContentGenerator /></Suspense>} />
               <Route path="follow-ups" element={<Suspense fallback={<AppShellFallback />}><FollowUpManager /></Suspense>} />
               <Route path="analytics" element={<Suspense fallback={<AppShellFallback />}><BusinessAnalytics /></Suspense>} />
               <Route path="income" element={<Suspense fallback={<AppShellFallback />}><IncomePage /></Suspense>} />

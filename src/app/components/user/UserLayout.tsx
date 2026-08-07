@@ -131,19 +131,19 @@ export function UserLayout() {
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
     { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
+    { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
     ...(canDistributor
       ? [
           { to: "/distributor/dashboard", icon: LayoutDashboard, label: "Business Hub", group: "Business Hub" },
-          { to: "/distributor", icon: Users, label: "AI Sales Coach", group: "Business Hub" },
-          { to: "/distributor/customers", icon: Users, label: "Customers", group: "Business Hub" },
-          { to: "/distributor/follow-ups", icon: Clock, label: "Follow-ups", group: "Business Hub" },
-          { to: "/distributor/content", icon: Sparkles, label: "Content Generator", group: "Business Hub" },
-          { to: "/distributor/team", icon: Users, label: "My Team", group: "Business Hub" },
-          { to: "/distributor/analytics", icon: BarChart3, label: "Analytics", group: "Business Hub" },
+          { to: "/distributor/dashboard/team", icon: Users, label: "Business Hub — Team", group: "Business Hub" },
+          { to: "/distributor/dashboard/customers", icon: Users, label: "Business Hub — Customers", group: "Business Hub" },
+          { to: "/distributor/dashboard/follow-ups", icon: Clock, label: "Business Hub — Follow-ups", group: "Business Hub" },
+          { to: "/distributor/dashboard/content", icon: Sparkles, label: "Business Hub — Content Generator", group: "Business Hub" },
+          { to: "/distributor/dashboard/analytics", icon: BarChart3, label: "Business Hub — Analytics", group: "Business Hub" },
+          { to: "/distributor/dashboard/ai-sales-coach", icon: Users, label: "Business Hub — AI Sales Coach", group: "Business Hub" },
           { to: "/training", icon: GraduationCap, label: "Training", group: "Business Hub" },
         ]
       : []),
-    { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
     { to: "/settings", icon: Settings, label: "Settings", group: "Account" },
   ];
 
@@ -262,24 +262,16 @@ export function UserLayout() {
               <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
-                <>
-                  {!collapsed ? (
-                    <div className="pt-3 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Business Hub</div>
-                  ) : <div className="pt-2" />}
-                  <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor" icon={Users} label="AI Sales Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/customers" icon={Users} label="Customers" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/follow-ups" icon={Clock} label="Follow-ups" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/content" icon={Sparkles} label="Content Generator" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/team" icon={Users} label="My Team" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                  <NavItem to="/distributor/analytics" icon={BarChart3} label="Analytics" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-                </>
+                // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,
+                // AI Sales Coach, ...) live inside the Business Hub workspace's
+                // own secondary sidebar now — not duplicated here.
+                <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
               {canDistributor ? (
                 <NavItem to="/training" icon={GraduationCap} label="Training" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
-              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </div>
 
             {!collapsed && recentChats.length > 0 ? (
