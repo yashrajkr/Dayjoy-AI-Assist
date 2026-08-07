@@ -128,6 +128,63 @@ const UniversalSearch = lazy(() =>
 const BusinessIntelligence = lazy(() =>
   import("./components/user/BusinessIntelligence").then((m) => ({ default: m.BusinessIntelligence })),
 );
+
+// Business Hub workspace — secondary-sidebar shell + section pages, each
+// code-split individually so switching sections only downloads what's needed.
+const BusinessHubShell = lazy(() =>
+  import("./components/user/business-hub/BusinessHubShell").then((m) => ({ default: m.BusinessHubShell })),
+);
+const BusinessHubIndexRedirect = lazy(() =>
+  import("./components/user/business-hub/BusinessHubShell").then((m) => ({ default: m.BusinessHubIndexRedirect })),
+);
+const IncomePage = lazy(() =>
+  import("./components/user/business-hub/pages/IncomePage").then((m) => ({ default: m.IncomePage })),
+);
+const CommissionPage = lazy(() =>
+  import("./components/user/business-hub/pages/CommissionPage").then((m) => ({ default: m.CommissionPage })),
+);
+const SalesPage = lazy(() =>
+  import("./components/user/business-hub/pages/SalesPage").then((m) => ({ default: m.SalesPage })),
+);
+const OrdersPage = lazy(() =>
+  import("./components/user/business-hub/pages/OrdersPage").then((m) => ({ default: m.OrdersPage })),
+);
+const GoalsPage = lazy(() =>
+  import("./components/user/business-hub/pages/GoalsPage").then((m) => ({ default: m.GoalsPage })),
+);
+const TargetsPage = lazy(() =>
+  import("./components/user/business-hub/pages/TargetsPage").then((m) => ({ default: m.TargetsPage })),
+);
+const RankProgressPage = lazy(() =>
+  import("./components/user/business-hub/pages/RankProgressPage").then((m) => ({ default: m.RankProgressPage })),
+);
+const AIInsightsPage = lazy(() =>
+  import("./components/user/business-hub/pages/AIInsightsPage").then((m) => ({ default: m.AIInsightsPage })),
+);
+const AlertsPage = lazy(() =>
+  import("./components/user/business-hub/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })),
+);
+const DeadMembersPage = lazy(() =>
+  import("./components/user/business-hub/pages/DeadMembersPage").then((m) => ({ default: m.DeadMembersPage })),
+);
+const MeetingsPage = lazy(() =>
+  import("./components/user/business-hub/pages/MeetingsPage").then((m) => ({ default: m.MeetingsPage })),
+);
+const TasksPage = lazy(() =>
+  import("./components/user/business-hub/pages/TasksPage").then((m) => ({ default: m.TasksPage })),
+);
+const ReportsPage = lazy(() =>
+  import("./components/user/business-hub/pages/ReportsPage").then((m) => ({ default: m.ReportsPage })),
+);
+const OpportunitiesPage = lazy(() =>
+  import("./components/user/business-hub/pages/OpportunitiesPage").then((m) => ({ default: m.OpportunitiesPage })),
+);
+const ProductsInventoryPage = lazy(() =>
+  import("./components/user/business-hub/pages/ProductsInventoryPage").then((m) => ({ default: m.ProductsInventoryPage })),
+);
+const BusinessHubSettingsPage = lazy(() =>
+  import("./components/user/business-hub/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 const CustomerProfiles = lazy(() =>
   import("./components/user/CustomerProfiles").then((m) => ({ default: m.CustomerProfiles })),
 );
@@ -260,11 +317,35 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
                   <Suspense fallback={<AppShellFallback />}>
-                    <BusinessIntelligence />
+                    <BusinessHubShell />
                   </Suspense>
                 </ProtectedRoute>
               }
-            />
+            >
+              <Route index element={<Suspense fallback={<AppShellFallback />}><BusinessHubIndexRedirect /></Suspense>} />
+              <Route path="overview" element={<Suspense fallback={<AppShellFallback />}><BusinessIntelligence /></Suspense>} />
+              <Route path="team" element={<Suspense fallback={<AppShellFallback />}><TeamManagement /></Suspense>} />
+              <Route path="customers" element={<Suspense fallback={<AppShellFallback />}><CustomerProfiles /></Suspense>} />
+              <Route path="follow-ups" element={<Suspense fallback={<AppShellFallback />}><FollowUpManager /></Suspense>} />
+              <Route path="analytics" element={<Suspense fallback={<AppShellFallback />}><BusinessAnalytics /></Suspense>} />
+              <Route path="income" element={<Suspense fallback={<AppShellFallback />}><IncomePage /></Suspense>} />
+              <Route path="commission" element={<Suspense fallback={<AppShellFallback />}><CommissionPage /></Suspense>} />
+              <Route path="sales" element={<Suspense fallback={<AppShellFallback />}><SalesPage /></Suspense>} />
+              <Route path="orders" element={<Suspense fallback={<AppShellFallback />}><OrdersPage /></Suspense>} />
+              <Route path="products" element={<Suspense fallback={<AppShellFallback />}><ProductsInventoryPage /></Suspense>} />
+              <Route path="inventory" element={<Suspense fallback={<AppShellFallback />}><ProductsInventoryPage /></Suspense>} />
+              <Route path="goals" element={<Suspense fallback={<AppShellFallback />}><GoalsPage /></Suspense>} />
+              <Route path="targets" element={<Suspense fallback={<AppShellFallback />}><TargetsPage /></Suspense>} />
+              <Route path="ai-insights" element={<Suspense fallback={<AppShellFallback />}><AIInsightsPage /></Suspense>} />
+              <Route path="opportunities" element={<Suspense fallback={<AppShellFallback />}><OpportunitiesPage /></Suspense>} />
+              <Route path="alerts" element={<Suspense fallback={<AppShellFallback />}><AlertsPage /></Suspense>} />
+              <Route path="dead-members" element={<Suspense fallback={<AppShellFallback />}><DeadMembersPage /></Suspense>} />
+              <Route path="meetings" element={<Suspense fallback={<AppShellFallback />}><MeetingsPage /></Suspense>} />
+              <Route path="tasks" element={<Suspense fallback={<AppShellFallback />}><TasksPage /></Suspense>} />
+              <Route path="reports" element={<Suspense fallback={<AppShellFallback />}><ReportsPage /></Suspense>} />
+              <Route path="rank-progress" element={<Suspense fallback={<AppShellFallback />}><RankProgressPage /></Suspense>} />
+              <Route path="settings" element={<Suspense fallback={<AppShellFallback />}><BusinessHubSettingsPage /></Suspense>} />
+            </Route>
             <Route
               path="distributor/customers"
               element={

@@ -1464,7 +1464,10 @@ export async function distributorRolePlayHistory(limit = 20): Promise<Array<Reco
 // ===========================================================================
 
 export type BiOverview = {
-  distributor: { id: string; full_name: string | null; distributor_code: string | null; state: string | null; city: string | null; kyc_status: string | null };
+  distributor: {
+    id: string; full_name: string | null; distributor_code: string | null; state: string | null; city: string | null; kyc_status: string | null;
+    sponsor_name?: string | null; profile_completion_pct?: number; joined_date?: string | null;
+  };
   today: { sales_amount: number; business_volume: number; commission: number; new_customers: number; new_distributors: number; orders: number; revenue: number };
   period: { weekly_business: number; monthly_business: number; yearly_business: number };
   rank: { current: string | null; badge_icon: string | null; next: string | null; progress_pct: number; trailing_90d_bv: number; bv_needed_for_next: number };
@@ -1531,6 +1534,67 @@ export async function biGoalsProgress(): Promise<{
   goals: Array<Record<string, unknown>>;
 }> {
   return distGet("/distributor/bi/goals-progress");
+}
+
+export async function biHealthBreakdown(): Promise<{
+  overall_score: number;
+  sales_score: number;
+  follow_up_score: number;
+  customer_score: number;
+  training_score: number;
+  ai_usage_score: number;
+}> {
+  return distGet("/distributor/bi/health-breakdown");
+}
+
+export type BiAchievements = {
+  rank_milestones: Array<{ rank_name: string | null; badge_icon: string; color: string | null; achieved_at: string | null }>;
+  recognitions: Array<Record<string, unknown>>;
+  achieved_goals: Array<Record<string, unknown>>;
+  total_achievements: number;
+};
+
+export async function biAchievements(): Promise<BiAchievements> {
+  return distGet("/distributor/bi/achievements");
+}
+
+export type BiReminder = {
+  type: "follow_up_overdue" | "follow_up_due" | "event" | "birthday" | "kyc";
+  title: string | null;
+  due: string | null;
+  priority: "urgent" | "high" | "normal" | "low";
+  action_url: string;
+};
+
+export async function biReminders(): Promise<{
+  reminders: BiReminder[];
+  overdue_count: number;
+  due_soon_count: number;
+  upcoming_events_count: number;
+  birthdays_count: number;
+}> {
+  return distGet("/distributor/bi/reminders");
+}
+
+export async function biCommissions(days = 90): Promise<{
+  commissions: Array<Record<string, unknown>>;
+  total_pending: number;
+  total_approved: number;
+  total_paid: number;
+  total_reversed: number;
+  this_month_total: number;
+  count: number;
+}> {
+  return distGet(`/distributor/bi/commissions?days=${days}`);
+}
+
+export async function biOrders(days = 90): Promise<{
+  orders: Array<Record<string, unknown>>;
+  total_amount: number;
+  total_orders: number;
+  avg_order_value: number;
+}> {
+  return distGet(`/distributor/bi/orders?days=${days}`);
 }
 
 // ===========================================================================

@@ -129,6 +129,18 @@ async def bi_overview(request: Request) -> Dict[str, Any]:
     profile_rows = await _select("profiles", "*", filters={"id": user_id}, limit=1, token=token)
     profile = profile_rows[0] if profile_rows else {}
 
+    sponsor_name = None
+    if profile.get("sponsor_id"):
+        sponsor_rows = await _select("profiles", "full_name,distributor_code", filters={"id": profile["sponsor_id"]}, limit=1, token=token)
+        if sponsor_rows:
+            sponsor_name = sponsor_rows[0].get("full_name") or sponsor_rows[0].get("distributor_code")
+
+    completion_fields = ["full_name", "distributor_code", "state", "city", "language", "region", "sponsor_id"]
+    filled = sum(1 for f in completion_fields if profile.get(f))
+    if profile.get("kyc_status") == "verified":
+        filled += 1
+    profile_completion_pct = round((filled / (len(completion_fields) + 1)) * 100, 0)
+
     today = _today()
     week_start = _iso_days_ago(7)
     month_start = _iso_days_ago(30)
@@ -207,6 +219,9 @@ async def bi_overview(request: Request) -> Dict[str, Any]:
             "state": profile.get("state"),
             "city": profile.get("city"),
             "kyc_status": profile.get("kyc_status"),
+            "sponsor_name": sponsor_name,
+            "profile_completion_pct": profile_completion_pct,
+            "joined_date": profile.get("joined_date"),
         },
         "today": {
             "sales_amount": _sum(purchases_today, "amount"),
@@ -580,3 +595,172 @@ async def bi_goals_progress(request: Request) -> Dict[str, Any]:
 
     goals = await _select("distributor_goals", "*", filters={"user_id": user_id}, limit=50, order="period_end.asc", token=token)
     return {"periods": result, "goals": goals}
+
+
+# ---------------------------------------------------------------------------
+# Business Health Score — breakdown
+# ---------------------------------------------------------------------------
+@router.get("/health-breakdown")
+async def bi_health_breakdown(request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = _token_from(request)
+    rows = await _rpc("compute_business_health_score_breakdown", {"p_user_id": user_id}, token=token)
+    row = rows[0] if isinstance(rows, list) and rows else (rows if isinstance(rows, dict) else {})
+    return {
+        "overall_score": row.get("overall_score", 0) if row else 0,
+        "sales_score": row.get("sales_score", 0) if row else 0,
+        "follow_up_score": row.get("follow_up_score", 0) if row else 0,
+        "customer_score": row.get("customer_score", 0) if row else 0,
+        "training_score": row.get("training_score", 0) if row else 0,
+        "ai_usage_score": row.get("ai_usage_score", 0) if row else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Achievements — real rank milestones + recognition received
+# ---------------------------------------------------------------------------
+@router.get("/achievements")
+async def bi_achievements(request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = _token_from(request)
+
+    rank_history = await _select(
+        "distributor_rank_history", "id,rank_id,achieved_at",
+        filters={"distributor_id": user_id}, limit=50, order="achieved_at.desc", token=token,
+    )
+    ranks = await _select("rank_definitions", "id,name,badge_icon,color,level_order", limit=20, token=token)
+    ranks_by_id = {r.get("id"): r for r in ranks}
+    rank_badges = [
+        {
+            "rank_name": (ranks_by_id.get(rh.get("rank_id")) or {}).get("name"),
+            "badge_icon": (ranks_by_id.get(rh.get("rank_id")) or {}).get("badge_icon", "🏅"),
+            "color": (ranks_by_id.get(rh.get("rank_id")) or {}).get("color"),
+            "achieved_at": rh.get("achieved_at"),
+        }
+        for rh in rank_history
+    ]
+
+    recognitions = await _select(
+        "team_recognition", "*", filters={"member_id": user_id}, limit=50, order="awarded_at.desc", token=token,
+    )
+
+    goals = await _select("distributor_goals", "*", filters={"user_id": user_id, "is_achieved": True}, limit=50, order="period_end.desc", token=token)
+
+    return {
+        "rank_milestones": rank_badges,
+        "recognitions": recognitions,
+        "achieved_goals": goals,
+        "total_achievements": len(rank_badges) + len(recognitions) + len(goals),
+    }
+
+
+# ---------------------------------------------------------------------------
+# AI Reminder Center — real, actionable items due soon
+# ---------------------------------------------------------------------------
+@router.get("/reminders")
+async def bi_reminders(request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = _token_from(request)
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    week_ahead = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).isoformat()
+
+    follow_ups = await _select("follow_ups", "*", filters={"distributor_id": user_id, "status": "pending"}, limit=100, order="due_date.asc", token=token)
+    overdue = [f for f in follow_ups if (f.get("due_date") or "") < now_iso]
+    due_soon = [f for f in follow_ups if now_iso <= (f.get("due_date") or "") <= week_ahead]
+
+    events = await _select("distributor_events", "*", limit=20, order="start_time.asc", token=token)
+    upcoming_events = [e for e in events if e.get("is_published") and now_iso <= str(e.get("start_time") or "") <= week_ahead]
+
+    customers = await _select("customer_profiles", "id,full_name,birthday", filters={"distributor_id": user_id}, limit=500, token=token)
+    today_md = time.strftime("%m-%d")
+    week_end_md = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).strftime("%m-%d")
+    birthdays = [c for c in customers if c.get("birthday") and today_md <= str(c["birthday"])[5:10] <= week_end_md]
+
+    profile_rows = await _select("profiles", "kyc_status", filters={"id": user_id}, limit=1, token=token)
+    kyc_pending = bool(profile_rows) and profile_rows[0].get("kyc_status") in ("pending", "rejected")
+
+    reminders: List[Dict[str, Any]] = []
+    for f in overdue:
+        reminders.append({"type": "follow_up_overdue", "title": f.get("title"), "due": f.get("due_date"), "priority": "urgent", "action_url": "/distributor/follow-ups"})
+    for f in due_soon:
+        reminders.append({"type": "follow_up_due", "title": f.get("title"), "due": f.get("due_date"), "priority": f.get("priority", "normal"), "action_url": "/distributor/follow-ups"})
+    for e in upcoming_events:
+        reminders.append({"type": "event", "title": e.get("title"), "due": e.get("start_time"), "priority": "normal", "action_url": "/distributor/dashboard"})
+    for c in birthdays:
+        reminders.append({"type": "birthday", "title": f"{c.get('full_name')}'s birthday", "due": c.get("birthday"), "priority": "low", "action_url": "/distributor/customers"})
+    if kyc_pending:
+        reminders.append({"type": "kyc", "title": "Complete your KYC verification", "due": None, "priority": "high", "action_url": "/profile"})
+
+    reminders.sort(key=lambda r: {"urgent": 0, "high": 1, "normal": 2, "low": 3}.get(r["priority"], 2))
+
+    return {
+        "reminders": reminders[:30],
+        "overdue_count": len(overdue),
+        "due_soon_count": len(due_soon),
+        "upcoming_events_count": len(upcoming_events),
+        "birthdays_count": len(birthdays),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Income / Commissions — real ledger from the `commissions` table
+# ---------------------------------------------------------------------------
+@router.get("/commissions")
+async def bi_commissions(request: Request, days: int = 90) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = _token_from(request)
+
+    rows = await _select_range(
+        "commissions", "id,amount,level,rate,status,period,created_at,source_distributor_id",
+        "distributor_id", user_id, "created_at", _iso_days_ago(days), token, limit=1000,
+    )
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+
+    by_status: Dict[str, float] = {}
+    for r in rows:
+        st = r.get("status") or "pending"
+        by_status[st] = by_status.get(st, 0.0) + float(r.get("amount") or 0)
+
+    month_start = _iso_days_ago(30)
+    this_month = [r for r in rows if str(r.get("created_at") or "") >= month_start]
+
+    return {
+        "commissions": rows[:200],
+        "total_pending": round(by_status.get("pending", 0.0), 2),
+        "total_approved": round(by_status.get("approved", 0.0), 2),
+        "total_paid": round(by_status.get("paid", 0.0), 2),
+        "total_reversed": round(by_status.get("reversed", 0.0), 2),
+        "this_month_total": _sum(this_month, "amount"),
+        "count": len(rows),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Orders — real purchase history from `customer_purchases`
+# ---------------------------------------------------------------------------
+@router.get("/orders")
+async def bi_orders(request: Request, days: int = 90) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = _token_from(request)
+
+    rows = await _select_range(
+        "customer_purchases", "id,customer_id,product_name,quantity,amount,currency,purchase_date,created_at",
+        "distributor_id", user_id, "purchase_date", _iso_days_ago(days), token, limit=1000,
+    )
+    rows.sort(key=lambda r: str(r.get("purchase_date") or r.get("created_at") or ""), reverse=True)
+
+    customer_ids = list({r.get("customer_id") for r in rows if r.get("customer_id")})
+    customers_by_id: Dict[str, str] = {}
+    if customer_ids and SUPABASE_URL:
+        customers = await _select("customer_profiles", "id,full_name", filters={"distributor_id": user_id}, limit=1000, token=token)
+        customers_by_id = {c.get("id"): c.get("full_name") for c in customers if c.get("id") in customer_ids}
+
+    for r in rows:
+        r["customer_name"] = customers_by_id.get(r.get("customer_id"), None)
+
+    return {
+        "orders": rows[:200],
+        "total_amount": _sum(rows, "amount"),
+        "total_orders": len(rows),
+        "avg_order_value": round(_sum(rows, "amount") / len(rows), 2) if rows else 0.0,
+    }

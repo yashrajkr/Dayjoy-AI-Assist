@@ -1,27 +1,54 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sparkles, TrendingUp, TrendingDown, Users, Award, Target, Calendar,
   Send, AlertTriangle, ShieldCheck, Gift, Activity,
-  Bot, ArrowUp, ArrowDown, Minus,
+  Bot, ArrowUp, ArrowDown, Minus, UserPlus, ClipboardList, FileText,
+  BarChart3, GraduationCap, MessageCircle, Trophy, Bell, Network, HeartHandshake, Rocket, Cake, CalendarClock, PhoneCall,
 } from "lucide-react";
 import {
   biOverview, biInsights, biAsk, biTimeline, biForecast, biTeamAnalytics,
-  biAlerts, biGoalsProgress, type BiOverview,
+  biAlerts, biGoalsProgress, biHealthBreakdown, biAchievements, biReminders,
+  type BiOverview, type BiAchievements, type BiReminder,
 } from "../../../lib/api";
 import { LoadingState, ErrorState } from "../common/AdminUI";
 import { LineChart, ProgressBar } from "../common/Charts";
 import { Button } from "../ui/button";
 
+const MOTIVATIONS = [
+  "Small consistent actions compound into big results.",
+  "Every follow-up you make today is a seed for tomorrow's income.",
+  "Your network grows one honest conversation at a time.",
+  "Consistency beats intensity — show up for your business today.",
+  "The best time to reach out to a customer is right now.",
+  "Great distributors are built one disciplined day at a time.",
+  "Teach what you know — it's how leaders multiply themselves.",
+];
+
+function todaysMotivation(): string {
+  const dayOfYear = Math.floor(
+    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
+  );
+  return MOTIVATIONS[dayOfYear % MOTIVATIONS.length];
+}
+
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good Morning";
+  if (h < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
 // ---------------------------------------------------------------------------
 // Small shared pieces
 // ---------------------------------------------------------------------------
 
-function fmtInr(n: number | null | undefined): string {
+export function fmtInr(n: number | null | undefined): string {
   const v = Number(n || 0);
   return `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
-function Section({ title, icon, action, children }: { title: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
+export function Section({ title, icon, action, children }: { title: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex items-center justify-between mb-3">
@@ -33,7 +60,7 @@ function Section({ title, icon, action, children }: { title: string; icon: React
   );
 }
 
-function KpiCard({ label, value, icon, trendPct }: { label: string; value: string | number; icon: React.ReactNode; trendPct?: number | null }) {
+export function KpiCard({ label, value, icon, trendPct }: { label: string; value: string | number; icon: React.ReactNode; trendPct?: number | null }) {
   const trendUp = typeof trendPct === "number" && trendPct > 0;
   const trendDown = typeof trendPct === "number" && trendPct < 0;
   return (
@@ -53,6 +80,34 @@ function KpiCard({ label, value, icon, trendPct }: { label: string; value: strin
   );
 }
 
+function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-background p-3 text-center hover:bg-accent/50 hover:border-primary/40 transition-colors"
+    >
+      <span className="text-primary">{icon}</span>
+      <span className="text-[11px] font-medium leading-tight">{label}</span>
+    </button>
+  );
+}
+
+const PRIORITY_STYLES: Record<string, string> = {
+  urgent: "border-destructive/40 bg-destructive/5 text-destructive",
+  high: "border-warning/40 bg-warning/5 text-warning",
+  normal: "border-primary/30 bg-primary/5 text-primary",
+  low: "border-border bg-accent/20 text-muted-foreground",
+};
+
+const REMINDER_ICONS: Record<string, React.ReactNode> = {
+  follow_up_overdue: <PhoneCall className="w-3.5 h-3.5" />,
+  follow_up_due: <ClipboardList className="w-3.5 h-3.5" />,
+  event: <CalendarClock className="w-3.5 h-3.5" />,
+  birthday: <Cake className="w-3.5 h-3.5" />,
+  kyc: <ShieldCheck className="w-3.5 h-3.5" />,
+};
+
 const SEVERITY_STYLES: Record<string, string> = {
   high: "border-destructive/40 bg-destructive/5 text-destructive",
   medium: "border-warning/40 bg-warning/5 text-warning",
@@ -64,6 +119,7 @@ const SEVERITY_STYLES: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export function BusinessIntelligence() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState<BiOverview | null>(null);
   const [insights, setInsights] = useState<string[] | null>(null);
   const [alerts, setAlerts] = useState<Array<{ type: string; severity: "low" | "medium" | "high"; message: string }>>([]);
@@ -71,6 +127,9 @@ export function BusinessIntelligence() {
   const [forecast, setForecast] = useState<Awaited<ReturnType<typeof biForecast>> | null>(null);
   const [team, setTeam] = useState<Awaited<ReturnType<typeof biTeamAnalytics>> | null>(null);
   const [goals, setGoals] = useState<Awaited<ReturnType<typeof biGoalsProgress>> | null>(null);
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof biHealthBreakdown>> | null>(null);
+  const [achievements, setAchievements] = useState<BiAchievements | null>(null);
+  const [reminders, setReminders] = useState<{ reminders: BiReminder[]; overdue_count: number; due_soon_count: number; upcoming_events_count: number; birthdays_count: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [wowChange, setWowChange] = useState<number | null>(null);
@@ -79,7 +138,7 @@ export function BusinessIntelligence() {
     setLoading(true);
     setError(null);
     try {
-      const [ov, ins, al, tl, fc, tm, gl] = await Promise.all([
+      const [ov, ins, al, tl, fc, tm, gl, hb, ach, rem] = await Promise.all([
         biOverview(),
         biInsights().catch(() => ({ insights: [], generated_by: "computed", wow_change_pct: null })),
         biAlerts().catch(() => ({ alerts: [], count: 0 })),
@@ -87,6 +146,9 @@ export function BusinessIntelligence() {
         biForecast().catch(() => ({ has_enough_data: false, next_30_day_projection: null })),
         biTeamAnalytics().catch(() => null),
         biGoalsProgress().catch(() => null),
+        biHealthBreakdown().catch(() => null),
+        biAchievements().catch(() => null),
+        biReminders().catch(() => null),
       ]);
       setOverview(ov);
       setInsights(ins.insights);
@@ -96,6 +158,9 @@ export function BusinessIntelligence() {
       setForecast(fc);
       setTeam(tm);
       setGoals(gl);
+      setHealth(hb);
+      setAchievements(ach);
+      setReminders(rem);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load business intelligence");
     } finally {
@@ -124,23 +189,55 @@ export function BusinessIntelligence() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" /> Business Intelligence
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {overview.distributor.full_name ? `Welcome back, ${overview.distributor.full_name.split(" ")[0]}. ` : ""}
-            Your AI Business Manager — {overview.distributor.distributor_code || "personalized"} overview.
-          </p>
-        </div>
-        {overview.rank.current ? (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-accent/40 text-xs font-medium">
-            <span>{overview.rank.badge_icon}</span> {overview.rank.current}
+      {/* Welcome header */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              {timeGreeting()}{overview.distributor.full_name ? `, ${overview.distributor.full_name.split(" ")[0]}` : ""}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              {overview.distributor.distributor_code ? `${overview.distributor.distributor_code} · ` : ""}
+              {overview.distributor.sponsor_name ? `Sponsor: ${overview.distributor.sponsor_name}` : "Your Business Hub — everything about your business, in one place."}
+            </p>
+            <p className="text-xs text-primary/90 mt-1.5 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 shrink-0" /> {todaysMotivation()}
+            </p>
           </div>
-        ) : null}
+          <div className="flex flex-col items-end gap-1.5">
+            {overview.rank.current ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-accent/40 text-xs font-medium">
+                <span>{overview.rank.badge_icon}</span> {overview.rank.current}
+                {overview.rank.next ? <span className="text-muted-foreground">→ {overview.rank.next}</span> : null}
+              </div>
+            ) : null}
+            {typeof overview.distributor.profile_completion_pct === "number" ? (
+              <div className="w-40">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
+                  <span>Profile</span>
+                  <span>{overview.distributor.profile_completion_pct}%</span>
+                </div>
+                <ProgressBar value={overview.distributor.profile_completion_pct} showLabel={false} />
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
+
+      {/* Quick Actions */}
+      <Section title="Quick Actions" icon={<Rocket className="w-4 h-4 text-primary" />}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+          <QuickAction icon={<UserPlus className="w-4 h-4" />} label="Add Customer" onClick={() => navigate("/distributor/customers")} />
+          <QuickAction icon={<ClipboardList className="w-4 h-4" />} label="Follow-up" onClick={() => navigate("/distributor/follow-ups")} />
+          <QuickAction icon={<FileText className="w-4 h-4" />} label="Content" onClick={() => navigate("/distributor/content")} />
+          <QuickAction icon={<Network className="w-4 h-4" />} label="Genealogy" onClick={() => navigate("/distributor/team")} />
+          <QuickAction icon={<BarChart3 className="w-4 h-4" />} label="Analytics" onClick={() => navigate("/distributor/analytics")} />
+          <QuickAction icon={<GraduationCap className="w-4 h-4" />} label="Training" onClick={() => navigate("/training")} />
+          <QuickAction icon={<HeartHandshake className="w-4 h-4" />} label="Sales Coach" onClick={() => navigate("/distributor")} />
+          <QuickAction icon={<MessageCircle className="w-4 h-4" />} label="Ask AI" onClick={() => document.getElementById("dj-ask-ai")?.scrollIntoView({ behavior: "smooth", block: "center" })} />
+        </div>
+      </Section>
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
@@ -209,7 +306,34 @@ export function BusinessIntelligence() {
       </Section>
 
       {/* Ask AI */}
-      <AskAiCard />
+      <div id="dj-ask-ai">
+        <AskAiCard />
+      </div>
+
+      {/* AI Reminder Center */}
+      <Section
+        title="AI Reminder Center"
+        icon={<Bell className="w-4 h-4 text-primary" />}
+        action={reminders ? <span className="text-[11px] text-muted-foreground">{reminders.reminders.length} active</span> : null}
+      >
+        {!reminders || reminders.reminders.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">Nothing needs your attention right now.</p>
+        ) : (
+          <ul className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+            {reminders.reminders.map((r, i) => (
+              <li
+                key={i}
+                className={`flex items-center gap-2 text-xs px-2.5 py-2 rounded-lg border cursor-pointer hover:opacity-80 ${PRIORITY_STYLES[r.priority] || PRIORITY_STYLES.normal}`}
+                onClick={() => navigate(r.action_url)}
+              >
+                <span className="shrink-0">{REMINDER_ICONS[r.type] || <Bell className="w-3.5 h-3.5" />}</span>
+                <span className="flex-1 truncate">{r.title}</span>
+                {r.due ? <span className="text-[10px] opacity-80 shrink-0">{new Date(r.due).toLocaleDateString()}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Smart Alerts */}
@@ -295,6 +419,85 @@ export function BusinessIntelligence() {
             )}
           </Section>
         </div>
+      ) : null}
+
+      {/* Business Health Score breakdown */}
+      {health ? (
+        <Section title="Business Health Score" icon={<Activity className="w-4 h-4 text-primary" />}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="text-2xl font-semibold">{Math.round(health.overall_score)}<span className="text-sm text-muted-foreground">/100</span></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {([
+              ["Sales", health.sales_score, 25],
+              ["Follow-up Discipline", health.follow_up_score, 25],
+              ["Customer Base", health.customer_score, 20],
+              ["Training", health.training_score, 15],
+              ["AI Usage", health.ai_usage_score, 15],
+            ] as const).map(([label, score, max]) => (
+              <div key={label}>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span>{label}</span>
+                  <span className="text-muted-foreground">{score.toFixed(1)}/{max}</span>
+                </div>
+                <ProgressBar value={Math.round((score / max) * 100)} showLabel={false} />
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {/* Achievements */}
+      {achievements ? (
+        <Section
+          title="Achievements"
+          icon={<Trophy className="w-4 h-4 text-primary" />}
+          action={<span className="text-[11px] text-muted-foreground">{achievements.total_achievements} total</span>}
+        >
+          {achievements.rank_milestones.length === 0 && achievements.recognitions.length === 0 && achievements.achieved_goals.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">Your achievements will appear here as you hit rank milestones, earn recognition, and complete goals.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Rank Milestones</p>
+                <ul className="space-y-1">
+                  {achievements.rank_milestones.slice(0, 5).map((m, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <span>{m.badge_icon}</span>
+                      <span className="flex-1 truncate">{m.rank_name}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{m.achieved_at ? new Date(m.achieved_at).toLocaleDateString() : ""}</span>
+                    </li>
+                  ))}
+                  {achievements.rank_milestones.length === 0 ? <li className="text-[11px] text-muted-foreground">None yet</li> : null}
+                </ul>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Recognition Received</p>
+                <ul className="space-y-1">
+                  {achievements.recognitions.slice(0, 5).map((r, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <span>{String(r.badge_icon || "🏆")}</span>
+                      <span className="flex-1 truncate">{String(r.title || "")}</span>
+                    </li>
+                  ))}
+                  {achievements.recognitions.length === 0 ? <li className="text-[11px] text-muted-foreground">None yet</li> : null}
+                </ul>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Goals Achieved</p>
+                <ul className="space-y-1">
+                  {achievements.achieved_goals.slice(0, 5).map((g, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <Target className="w-3 h-3 text-success shrink-0" />
+                      <span className="flex-1 truncate capitalize">{String(g.category || g.goal_type || "goal")}</span>
+                    </li>
+                  ))}
+                  {achievements.achieved_goals.length === 0 ? <li className="text-[11px] text-muted-foreground">None yet</li> : null}
+                </ul>
+              </div>
+            </div>
+          )}
+        </Section>
       ) : null}
 
       {/* Goal Tracker */}
