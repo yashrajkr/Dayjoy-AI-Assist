@@ -1307,15 +1307,23 @@ def _require_rag() -> None:
 
 
 def _is_staff(claims: Dict[str, Any]) -> bool:
-    """Heuristic staff check from JWT claims. Real enforcement is via RLS."""
+    """Heuristic staff check from JWT claims. Real enforcement is via RLS.
+
+    NOTE: `claims["role"]` on a Supabase-issued token is the *Postgres*
+    role ("authenticated"/"anon"), not the app's business role — checking
+    it first meant this always evaluated to "authenticated" and returned
+    False for every real signed-in user, locking every admin out of every
+    staff-gated endpoint below. The actual business role lives in
+    `user_metadata` (set at signup) or `app_metadata` (admin-managed).
+    """
     role = (
-        claims.get("role")
-        or claims.get("user_role")
-        or (claims.get("app_metadata") or {}).get("role")
+        (claims.get("app_metadata") or {}).get("role")
+        or (claims.get("user_metadata") or {}).get("role")
         or (claims.get("raw_user_meta_data") or {}).get("role")
+        or claims.get("user_role")
         or "customer"
     )
-    return role in {"admin", "super_admin", "management", "employee", "staff"}
+    return role in {"admin", "super_admin", "management", "employee", "staff", "leader", "trainer", "support"}
 
 
 async def _require_staff(request: Request) -> Dict[str, Any]:

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { UserRound, Mail, Calendar, MapPin, Save, CheckCircle2, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
+import { formatRoleLabel } from "../../lib/auth";
 import { BRAND } from "../../lib/brand";
 import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -107,8 +108,8 @@ export function UserProfile() {
                   </p>
                   <div className="flex items-center gap-3 mt-2 flex-wrap">
                     {role ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
-                        <ShieldCheck className="w-3 h-3" aria-hidden="true" /> {role}
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <ShieldCheck className="w-3 h-3" aria-hidden="true" /> {formatRoleLabel(role)}
                       </span>
                     ) : null}
                     {memberSince ? (

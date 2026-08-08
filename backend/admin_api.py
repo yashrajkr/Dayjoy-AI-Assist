@@ -1253,10 +1253,17 @@ async def admin_revoke_api_key(key_id: str, request: Request) -> Dict[str, Any]:
 # Helpers
 # ---------------------------------------------------------------------------
 def _is_staff_admin(claims: Dict[str, Any]) -> bool:
-    """Check if the user is admin or super_admin."""
+    """Check if the user is admin or super_admin.
+
+    NOTE: `claims["role"]` on a Supabase-issued token is the *Postgres*
+    role ("authenticated"/"anon"), not the app's business role — checking
+    it first meant this always evaluated to "authenticated" and returned
+    False for every real signed-in admin. See `main._is_staff` for the
+    same fix.
+    """
     role = (
-        claims.get("role")
-        or (claims.get("app_metadata") or {}).get("role")
+        (claims.get("app_metadata") or {}).get("role")
+        or (claims.get("user_metadata") or {}).get("role")
         or (claims.get("raw_user_meta_data") or {}).get("role")
         or "customer"
     )

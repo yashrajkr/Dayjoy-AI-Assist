@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-route
 import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "./lib/AuthContext";
 import { ProtectedRoute } from "./lib/ProtectedRoute";
+import { StepUpGate } from "./lib/StepUpGate";
 import { AppShellFallback } from "./components/common/AppShellFallback";
 import { InstallAppPrompt } from "./components/common/InstallAppPrompt";
 import { ThemeProvider } from "./components/common/ThemeProvider";
@@ -13,6 +14,7 @@ import { subscribeToNotificationClicks } from "./lib/pushNotifications";
 import { AppSelector } from "./components/AppSelector";
 import { LoginPage } from "./components/user/LoginPage";
 import { AuthCallback } from "./components/user/AuthCallback";
+import { WorkspaceSwitcher } from "./components/user/WorkspaceSwitcher";
 import { UserLayout } from "./components/user/UserLayout";
 import { AdminLayout } from "./components/admin/AdminLayout";
 
@@ -252,6 +254,14 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/lead-capture" element={<LeadCapturePage />} />
+          <Route
+            path="/workspace"
+            element={
+              <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                <WorkspaceSwitcher />
+              </ProtectedRoute>
+            }
+          />
 
           {/* User app */}
           <Route
@@ -316,9 +326,11 @@ export default function App() {
               path="distributor/dashboard"
               element={
                 <ProtectedRoute allowedRoles={["distributor", "leader", ...STAFF_ONLY]}>
-                  <Suspense fallback={<AppShellFallback />}>
-                    <BusinessHubShell />
-                  </Suspense>
+                  <StepUpGate view="distributor">
+                    <Suspense fallback={<AppShellFallback />}>
+                      <BusinessHubShell />
+                    </Suspense>
+                  </StepUpGate>
                 </ProtectedRoute>
               }
             >
@@ -640,7 +652,7 @@ export default function App() {
             <Route
               path="users"
               element={
-                <ProtectedRoute allowedRoles={["admin"]}>
+                <ProtectedRoute allowedRoles={["admin", "super_admin"]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <UserManagement />
                   </Suspense>
@@ -680,7 +692,7 @@ export default function App() {
             <Route
               path="audit"
               element={
-                <ProtectedRoute allowedRoles={["admin"]}>
+                <ProtectedRoute allowedRoles={["admin", "super_admin"]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <AuditLogs />
                   </Suspense>
@@ -740,7 +752,7 @@ export default function App() {
             <Route
               path="settings"
               element={
-                <ProtectedRoute allowedRoles={["admin"]}>
+                <ProtectedRoute allowedRoles={["admin", "super_admin"]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <AdminSettings />
                   </Suspense>
@@ -763,9 +775,11 @@ export default function App() {
               path="leader"
               element={
                 <ProtectedRoute allowedRoles={["leader", ...ADMIN_OR_MGMT]}>
-                  <Suspense fallback={<AppShellFallback />}>
-                    <LeaderDashboard />
-                  </Suspense>
+                  <StepUpGate view="leader">
+                    <Suspense fallback={<AppShellFallback />}>
+                      <LeaderDashboard />
+                    </Suspense>
+                  </StepUpGate>
                 </ProtectedRoute>
               }
             />

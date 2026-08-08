@@ -13,6 +13,21 @@ export type UserRole =
   | "super_admin";
 
 /**
+ * Human-readable role label. `super_admin` reads as "Founder" — that's
+ * the account tier's actual meaning in this app, not a generic staff tier.
+ * Handles the underscore in role names like "super_admin" so it never
+ * renders literally (e.g. "Super_admin") in the UI.
+ */
+export function formatRoleLabel(role: UserRole | null | undefined): string {
+  if (!role) return "Guest";
+  if (role === "super_admin") return "Founder";
+  return role
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
  * Returns the live Supabase client or throws if not configured.
  * All auth functions go through this so we get a single, loud failure
  * point instead of `supabase!` non-null assertions scattered everywhere.
