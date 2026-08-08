@@ -86,7 +86,8 @@ export function UserProfile() {
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <AppHeader title="Profile" subtitle={`Your ${BRAND.name} account details.`} icon={UserRound} showBackButton />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
         {loading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">Loading your profile…</div>
         ) : (
@@ -194,6 +195,7 @@ export function UserProfile() {
             </Card>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

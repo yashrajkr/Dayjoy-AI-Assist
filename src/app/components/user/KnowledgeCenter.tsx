@@ -87,7 +87,8 @@ export function KnowledgeCenter() {
         subtitle="Search FAQs, policies, products, training, and documents — all from verified Dayjoy sources."
         icon={Search}
       />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
       <div className="relative mb-3">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input id="dj-knowledge-search" type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
@@ -213,6 +214,7 @@ export function KnowledgeCenter() {
         <Link to="/support" className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-accent/60 transition-colors shrink-0">
           Contact support <ArrowRight className="w-3 h-3" />
         </Link>
+      </div>
       </div>
       </div>
     </div>

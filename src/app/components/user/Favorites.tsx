@@ -89,7 +89,8 @@ export function Favorites() {
           </Button>
         }
       />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full">
       {error ? <ErrorState message={error} /> : null}
 
       {/* Tabs */}
@@ -139,6 +140,7 @@ export function Favorites() {
           </div>
         </div>
       ) : null}
+      </div>
       </div>
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Collection" size="sm"
