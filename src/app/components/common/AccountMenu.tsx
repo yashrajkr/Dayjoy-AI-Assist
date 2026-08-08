@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
+import { hasMultipleViews } from "../../lib/workspace";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,7 +19,7 @@ import {
  * so the header and the chat page cannot drift apart again.
  */
 export function AccountMenu() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, role, logout } = useAuth();
   const navigate = useNavigate();
 
   const initials =
@@ -50,6 +51,9 @@ export function AccountMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
+        {hasMultipleViews(role) ? (
+          <DropdownMenuItem onClick={() => navigate("/workspace")}>Switch View</DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
       </DropdownMenuContent>

@@ -32,7 +32,7 @@ function readDemoAuth(): { id: string; role: UserRole } | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { id?: string; role?: UserRole };
     if (!parsed?.id || !parsed?.role) return null;
-    const staffRoles: UserRole[] = ["admin", "management"];
+    const staffRoles: UserRole[] = ["admin", "management", "super_admin"];
     if (staffRoles.includes(parsed.role)) {
       // Demote: never trust a staff role from localStorage.
       return { id: String(parsed.id), role: "customer" };

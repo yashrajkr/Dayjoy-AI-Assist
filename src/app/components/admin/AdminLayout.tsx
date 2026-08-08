@@ -36,6 +36,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { formatRoleLabel } from "../../lib/auth";
+import { hasMultipleViews } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { ThemeToggle } from "../common/ThemeToggle";
@@ -155,11 +157,11 @@ export function AdminLayout() {
     (currentUser?.user_metadata?.full_name as string | undefined) ||
     currentUser?.email?.split("@")[0] ||
     "Admin User";
-  const roleLabel = role ? role.charAt(0).toUpperCase() + role.slice(1) : "Admin";
+  const roleLabel = formatRoleLabel(role);
 
   const filteredSections = NAV_SECTIONS.map((s) => ({
     ...s,
-    items: s.items.filter((i) => !i.adminOnly || role === "admin"),
+    items: s.items.filter((i) => !i.adminOnly || role === "admin" || role === "super_admin"),
   })).filter((s) => s.items.length > 0);
 
   const handleLogout = async () => {
@@ -296,14 +298,14 @@ export function AdminLayout() {
           </DropdownMenu>
 
           <NavLink
-            to="/"
+            to={hasMultipleViews(role) ? "/workspace" : "/"}
             onClick={() => setDrawerOpen(false)}
-            title="View User App"
+            title={hasMultipleViews(role) ? "Switch View" : "View User App"}
             className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             {!collapsed ? (
               <>
-                <span>View User App</span>
+                <span>{hasMultipleViews(role) ? "Switch View" : "View User App"}</span>
                 <ChevronRight className="w-3 h-3 ml-auto" aria-hidden="true" />
               </>
             ) : (

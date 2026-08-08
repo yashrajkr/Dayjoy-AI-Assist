@@ -26,6 +26,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { formatRoleLabel } from "../../lib/auth";
+import { hasMultipleViews } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Onboarding } from "../onboarding/Onboarding";
@@ -121,7 +123,7 @@ export function UserLayout() {
     (currentUser?.user_metadata?.full_name as string | undefined) ||
     currentUser?.email?.split("@")[0] ||
     "Dayjoy User";
-  const roleLabel = role ? role.charAt(0).toUpperCase() + role.slice(1) : "Guest";
+  const roleLabel = formatRoleLabel(role);
 
   const handleLogout = async () => {
     await logout();
@@ -335,6 +337,9 @@ export function UserLayout() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/profile")}>Profile</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
+                {hasMultipleViews(role) ? (
+                  <DropdownMenuItem onClick={() => navigate("/workspace")}>Switch View</DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
               </DropdownMenuContent>
