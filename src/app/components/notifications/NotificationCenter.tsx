@@ -201,19 +201,34 @@ export function NotificationCenter() {
 
       <AnimatePresence>
         {open ? (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.15 }}
-            // On phones this anchors to the viewport instead of the bell: a
-            // fixed 320px popover hanging off `right-0` overflowed a 375px
-            // screen and collided with the header. Opaque background too —
-            // `glass-strong` let the page text show through the list.
-            className="fixed sm:absolute left-2 right-2 top-16 sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden"
-            role="dialog"
-            aria-label="Notifications"
-          >
+          <>
+            {/* Mobile backdrop — dims/blocks the chat behind the panel so a
+                message's own hover-action menu or "asked" bubble (also
+                z-50, but painted later in the DOM) can no longer visually
+                poke through the notification list on phones. */}
+            <div
+              className="sm:hidden fixed inset-0 z-[55] bg-black/20"
+              onClick={() => setOpen(false)}
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              transition={{ duration: 0.15 }}
+              // On phones this anchors to the viewport instead of the bell: a
+              // fixed 320px popover hanging off `right-0` overflowed a 375px
+              // screen and collided with the header. Opaque background too —
+              // `glass-strong` let the page text show through the list.
+              // z-[60], not z-50: several in-page elements (message hover
+              // toolbars, sidebar drawers) also use z-50, and since they
+              // mount later in the DOM they'd win equal-z-index paint order
+              // and render on top of this panel — exactly the overlap bug
+              // reported on mobile.
+              className="fixed sm:absolute left-2 right-2 top-16 sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 bg-card border border-border rounded-2xl shadow-2xl z-[60] overflow-hidden"
+              role="dialog"
+              aria-label="Notifications"
+            >
             <div className="flex items-center justify-between p-3 border-b border-border">
               <h3 className="text-sm font-semibold">Notifications</h3>
               <div className="flex items-center gap-1">
@@ -269,7 +284,8 @@ export function NotificationCenter() {
                 </ul>
               )}
             </div>
-          </motion.div>
+            </motion.div>
+          </>
         ) : null}
       </AnimatePresence>
     </div>

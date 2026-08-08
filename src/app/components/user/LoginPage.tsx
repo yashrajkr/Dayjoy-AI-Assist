@@ -10,6 +10,7 @@ import {
   type UserRole,
 } from "../../lib/auth";
 import { isSupabaseConfigured, getSupabaseConfigError } from "../../lib/supabaseClient";
+import { hasMultipleViews } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { AnimatedBackground } from "../common/AnimatedBackground";
@@ -72,12 +73,19 @@ export function LoginPage() {
 
   function redirectAfterAuth(resolvedRole: UserRole | null | undefined) {
     const r = resolvedRole ?? role;
-    if (r === "admin" || r === "management") {
+    if (r === "admin" || r === "management" || r === "super_admin") {
       window.location.href = "/admin/dashboard";
       return;
     }
     if (r === "employee") {
       window.location.href = "/admin/employee";
+      return;
+    }
+    // Accounts entitled to more than one workspace (e.g. distributor ->
+    // Customer + Business Hub) land on the switcher instead of jumping
+    // straight into one of them.
+    if (hasMultipleViews(r)) {
+      window.location.href = "/workspace";
       return;
     }
     window.location.href = "/";

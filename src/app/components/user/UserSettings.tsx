@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, Plus, BellRing, BellOff, Smartphone, AlertCircle, Check, UserRound } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
+import { formatRoleLabel } from "../../lib/auth";
 import { BRAND } from "../../lib/brand";
 import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -212,8 +213,8 @@ export function UserSettings() {
               <h2 className="font-semibold truncate">{displayName}</h2>
               <p className="text-sm text-muted-foreground truncate">{currentUser?.email ?? "Demo session"}</p>
               {role ? (
-                <span className="inline-flex items-center mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
-                  {role}
+                <span className="inline-flex items-center mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                  {formatRoleLabel(role)}
                 </span>
               ) : null}
             </div>
