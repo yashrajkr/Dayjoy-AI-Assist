@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
-import { hasMultipleViews } from "../../lib/workspace";
+import { hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Onboarding } from "../onboarding/Onboarding";
@@ -232,7 +232,9 @@ export function UserLayout() {
               {!collapsed ? (
                 <div className="min-w-0">
                   <h1 className="font-semibold text-sm truncate">{BRAND.name}</h1>
-                  <p className="text-xs text-muted-foreground truncate">{BRAND.tagline}</p>
+                  <p className="text-xs text-primary font-medium truncate">
+                    {isBusinessHub ? WORKSPACE_VIEWS.distributor.portalName : WORKSPACE_VIEWS.customer.portalName}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -338,7 +340,7 @@ export function UserLayout() {
                 <DropdownMenuItem onClick={() => navigate("/profile")}>Profile</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
                 {hasMultipleViews(role) ? (
-                  <DropdownMenuItem onClick={() => navigate("/workspace")}>Switch View</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>

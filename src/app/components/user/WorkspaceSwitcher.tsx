@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Briefcase, ChevronRight, Lock, MessageSquare, ShieldCheck, TrendingUp, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, ChevronRight, LogOut, Lock, MessageSquare, ShieldCheck, TrendingUp, type LucideIcon } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { signInUser } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabaseClient";
@@ -12,6 +12,7 @@ import { Button } from "../ui/button";
 import {
   getAvailableViews,
   markStepUpVerified,
+  setLastWorkspace,
   WORKSPACE_VIEWS,
   type WorkspaceView,
 } from "../../lib/workspace";
@@ -35,11 +36,17 @@ const VIEW_ICONS: Record<WorkspaceView, LucideIcon> = {
  */
 export function WorkspaceSwitcher() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { role, currentUser } = useAuth();
+  const { role, currentUser, logout } = useAuth();
   const views = getAvailableViews(role);
   const preselected = searchParams.get("target") as WorkspaceView | null;
   const returnTo = searchParams.get("return");
+  // Set only when reached via the in-app "Switch View" menu (see UserLayout /
+  // AdminLayout / AccountMenu) — distinguishes a voluntary visit, which gets
+  // a real way back, from the mandatory post-login screen, which doesn't
+  // pretend there's a "previous page" to return to.
+  const isVoluntary = Boolean((location.state as { voluntary?: boolean } | null)?.voluntary);
 
   const [pendingView, setPendingView] = useState<WorkspaceView | null>(
     preselected && views.includes(preselected) && WORKSPACE_VIEWS[preselected].requiresStepUp
@@ -48,6 +55,7 @@ export function WorkspaceSwitcher() {
   );
 
   function openView(view: WorkspaceView) {
+    setLastWorkspace(view);
     const target = WORKSPACE_VIEWS[view];
     if (target.requiresStepUp) {
       setPendingView(view);
@@ -58,14 +66,41 @@ export function WorkspaceSwitcher() {
 
   function handleVerified(view: WorkspaceView) {
     markStepUpVerified(view);
+    setLastWorkspace(view);
     navigate(returnTo || WORKSPACE_VIEWS[view].path);
+  }
+
+  async function handleSignOut() {
+    await logout();
+    navigate("/login");
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 relative theme-transition">
       <AnimatedBackground />
 
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {isVoluntary ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(-1)}
+            className="h-auto gap-1.5 rounded-lg px-3 py-1.5 glass"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleSignOut}
+            className="h-auto gap-1.5 rounded-lg px-3 py-1.5 glass"
+          >
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign out
+          </Button>
+        )}
         <ThemeToggle className="glass" />
       </div>
 

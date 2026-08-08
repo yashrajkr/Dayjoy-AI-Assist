@@ -52,7 +52,7 @@ export function AccountMenu() {
         <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
         {hasMultipleViews(role) ? (
-          <DropdownMenuItem onClick={() => navigate("/workspace")}>Switch View</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>

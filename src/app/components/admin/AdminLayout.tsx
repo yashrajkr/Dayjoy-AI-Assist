@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
-import { hasMultipleViews } from "../../lib/workspace";
+import { hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { ThemeToggle } from "../common/ThemeToggle";
@@ -228,7 +228,9 @@ export function AdminLayout() {
             {!collapsed ? (
               <div className="min-w-0">
                 <h1 className="font-semibold text-sm truncate">{BRAND.name}</h1>
-                <p className="text-xs text-muted-foreground truncate">Admin Console</p>
+                <p className="text-xs text-primary font-medium truncate">
+                  {location.pathname.startsWith("/admin/leader") ? WORKSPACE_VIEWS.leader.portalName : "Admin Console"}
+                </p>
               </div>
             ) : null}
           </div>
@@ -299,6 +301,7 @@ export function AdminLayout() {
 
           <NavLink
             to={hasMultipleViews(role) ? "/workspace" : "/"}
+            state={hasMultipleViews(role) ? { voluntary: true } : undefined}
             onClick={() => setDrawerOpen(false)}
             title={hasMultipleViews(role) ? "Switch View" : "View User App"}
             className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}

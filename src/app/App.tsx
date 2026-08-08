@@ -15,6 +15,7 @@ import { AppSelector } from "./components/AppSelector";
 import { LoginPage } from "./components/user/LoginPage";
 import { AuthCallback } from "./components/user/AuthCallback";
 import { WorkspaceSwitcher } from "./components/user/WorkspaceSwitcher";
+import { NotFound } from "./components/common/NotFound";
 import { UserLayout } from "./components/user/UserLayout";
 import { AdminLayout } from "./components/admin/AdminLayout";
 
@@ -815,8 +816,9 @@ export default function App() {
             />
           </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Fallback — a distinct 404, not a silent redirect to Home, so a
+              dead/mistyped/renamed link doesn't masquerade as a working page. */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
           </AuthProvider>
         </BrowserRouter>

@@ -10,7 +10,7 @@ import {
   type UserRole,
 } from "../../lib/auth";
 import { isSupabaseConfigured, getSupabaseConfigError } from "../../lib/supabaseClient";
-import { hasMultipleViews } from "../../lib/workspace";
+import { getAvailableViews, getLastWorkspace, hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { AnimatedBackground } from "../common/AnimatedBackground";
@@ -88,8 +88,17 @@ export function LoginPage() {
     }
     // Accounts entitled to more than one workspace (e.g. distributor ->
     // Customer + Business Hub) land on the switcher instead of jumping
-    // straight into one of them.
+    // straight into one of them — unless they've picked one before, in
+    // which case skip straight there. This is a pure UX shortcut: the
+    // remembered workspace's route still enforces its own role check
+    // (ProtectedRoute) and step-up re-confirmation (StepUpGate), so
+    // "remembering" never grants access on its own.
     if (hasMultipleViews(r)) {
+      const remembered = getLastWorkspace();
+      if (remembered && r && getAvailableViews(r).includes(remembered)) {
+        window.location.href = WORKSPACE_VIEWS[remembered].path;
+        return;
+      }
       window.location.href = "/workspace";
       return;
     }
