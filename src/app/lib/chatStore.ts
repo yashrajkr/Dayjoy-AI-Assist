@@ -45,15 +45,31 @@ export type ChatMessage = {
 const memoryConversations: Conversation[] = [];
 const memoryMessages: ChatMessage[] = [];
 
-export async function listConversations(userId: string): Promise<Conversation[]> {
+/**
+ * Lists a user's conversations, excluding archived ones by default (archive
+ * only had a client-side effect for the rest of the session — after a
+ * reload, archived conversations reappeared here since nothing filtered
+ * them out server-side). Pass `includeArchived: true` for a future
+ * "view archived" surface.
+ */
+export async function listConversations(
+  userId: string,
+  options?: { includeArchived?: boolean },
+): Promise<Conversation[]> {
   if (!supabase) {
-    return [...memoryConversations];
+    return options?.includeArchived
+      ? [...memoryConversations]
+      : memoryConversations.filter((c) => !c.archived);
   }
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("chat_conversations")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", userId);
+    if (!options?.includeArchived) {
+      query = query.eq("archived", false);
+    }
+    const { data, error } = await query
       .order("pinned", { ascending: false })
       .order("updated_at", { ascending: false })
       .limit(50);

@@ -197,7 +197,7 @@ export function UserSettings() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
-      <AppHeader title="Settings" subtitle={`Customize your ${BRAND.name} experience.`} icon={Settings} />
+      <AppHeader title="Settings" subtitle={`Customize your ${BRAND.name} experience.`} icon={Settings} showBackButton />
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
       <div className="space-y-4">
         <Card className="bg-gradient-to-br from-primary/8 to-transparent border-primary/15">

@@ -23,6 +23,9 @@ import {
   Search,
   MoreHorizontal,
   Mic,
+  Pin,
+  PinOff,
+  Archive,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -39,7 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
-import { listConversations, type Conversation } from "../../lib/chatStore";
+import { listConversations, pinConversation, archiveConversation, type Conversation } from "../../lib/chatStore";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -91,6 +94,17 @@ export function UserLayout() {
       cancelled = true;
     };
   }, [currentUser?.id, location.pathname]);
+
+  const handlePinChat = async (id: string, pinned: boolean) => {
+    setRecentChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned } : c)));
+    await pinConversation(id, pinned);
+  };
+
+  const handleArchiveChat = async (id: string) => {
+    setRecentChats((prev) => prev.filter((c) => c.id !== id));
+    await archiveConversation(id, true);
+    if (location.pathname === `/chat/${id}`) navigate("/");
+  };
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -287,14 +301,48 @@ export function UserLayout() {
                       {group.label}
                     </p>
                     {group.items.map((c) => (
-                      <NavLink
-                        key={c.id}
-                        to={`/chat/${c.id}`}
-                        onClick={() => setDrawerOpen(false)}
-                        className="block truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-                      >
-                        {c.title}
-                      </NavLink>
+                      <div key={c.id} className="group relative flex items-center">
+                        <NavLink
+                          to={`/chat/${c.id}`}
+                          onClick={() => setDrawerOpen(false)}
+                          className="flex-1 min-w-0 flex items-center gap-1.5 truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                        >
+                          {c.pinned ? (
+                            <Pin className="w-3 h-3 shrink-0 text-primary" aria-hidden="true" />
+                          ) : null}
+                          <span className="truncate">{c.title}</span>
+                        </NavLink>
+                        <div className="absolute right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity bg-card/95 rounded-md">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handlePinChat(c.id!, !c.pinned);
+                            }}
+                            className="p-1 rounded hover:bg-accent"
+                            aria-label={c.pinned ? "Unpin conversation" : "Pin conversation"}
+                            title={c.pinned ? "Unpin" : "Pin"}
+                          >
+                            {c.pinned ? (
+                              <PinOff className="w-3 h-3" aria-hidden="true" />
+                            ) : (
+                              <Pin className="w-3 h-3" aria-hidden="true" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleArchiveChat(c.id!);
+                            }}
+                            className="p-1 rounded hover:bg-accent"
+                            aria-label="Archive conversation"
+                            title="Archive"
+                          >
+                            <Archive className="w-3 h-3" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ))}
