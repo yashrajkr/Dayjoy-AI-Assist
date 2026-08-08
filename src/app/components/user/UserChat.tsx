@@ -1280,6 +1280,22 @@ export function UserChat() {
                 </span>
               ) : null}
             </Button>
+            {/* Always-visible New chat action — previously the only way to
+                start fresh was re-clicking "AI Chat" in the main sidebar
+                (a second nav layer away on mobile). Matches the one-tap
+                "new chat" pattern of ChatGPT/Claude/etc. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleNewChat}
+              disabled={!activeConv && messages.length === 0}
+              className="h-auto w-auto p-2 text-muted-foreground disabled:opacity-40"
+              aria-label="Start new chat"
+              title="New chat"
+            >
+              <MessageSquarePlus className="w-5 h-5" aria-hidden="true" />
+            </Button>
             <div className="flex flex-col min-w-0">
               <h2 className="text-sm sm:text-base font-semibold truncate leading-tight">
                 {activeConv?.title ?? "New conversation"}

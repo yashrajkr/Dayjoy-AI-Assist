@@ -35,13 +35,17 @@ export function CustomerDashboard() {
   if (loading) return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney." />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full"><LoadingState label="Loading your dashboard…" /></div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full"><LoadingState label="Loading your dashboard…" /></div>
+      </div>
     </div>
   );
   if (error) return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney." />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full"><ErrorState message={error} /></div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full"><ErrorState message={error} /></div>
+      </div>
     </div>
   );
   if (!data) return null;
@@ -58,7 +62,8 @@ export function CustomerDashboard() {
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <AppHeader title="My Dashboard" subtitle="Here's what's happening with your Dayjourney today." />
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full space-y-4">
+      <div className="flex-1 overflow-y-auto">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full space-y-4">
       {/* Welcome header */}
       <div className="rounded-2xl surface-gradient border border-border/60 p-4 sm:p-6">
         <h2 className="text-xl sm:text-2xl font-semibold">{greeting}, {userName}! 👋</h2>
@@ -198,6 +203,7 @@ export function CustomerDashboard() {
           </Button>
         </div>
       </Card>
+      </div>
       </div>
     </div>
   );

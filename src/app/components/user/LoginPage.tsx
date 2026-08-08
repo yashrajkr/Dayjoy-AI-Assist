@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   signInUser,
@@ -17,11 +17,6 @@ import { AnimatedBackground } from "../common/AnimatedBackground";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { Button } from "../ui/button";
-
-// Lazy-load the 3D orb — it's a heavy chunk (three.js + R3F)
-const AIOrb = lazy(() =>
-  import("../three/AIOrb").then((m) => ({ default: m.AIOrb })),
-);
 
 /** Time-based greeting shown above the orb. */
 function getGreeting(): string {
@@ -289,7 +284,10 @@ export function LoginPage() {
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="w-full max-w-md glass rounded-3xl shadow-overlay p-5 sm:p-7 relative my-auto"
         >
-        {/* 3D AI orb — lazy loaded */}
+        {/* Lightweight CSS mark — the full 3D orb (three.js, ~240KB gzipped)
+            is reserved for the authenticated chat page where it's
+            interactive; loading it here would mean every visitor fetches it
+            before they've even signed in. */}
         <div className="flex flex-col items-center mb-3 text-center">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -297,18 +295,12 @@ export function LoginPage() {
             transition={{ duration: 0.7, delay: 0.1, ease: [0.34, 1.56, 0.64, 1] }}
             className="relative"
           >
-            <Suspense
-              fallback={
-                <div
-                  className="w-24 h-24 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center"
-                  aria-hidden="true"
-                >
-                  <DayjoyLogo variant="mark" size={40} />
-                </div>
-              }
+            <div
+              className="w-24 h-24 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center"
+              aria-hidden="true"
             >
-              <AIOrb state="idle" size={112} />
-            </Suspense>
+              <DayjoyLogo variant="mark" size={40} />
+            </div>
           </motion.div>
 
           <motion.p
