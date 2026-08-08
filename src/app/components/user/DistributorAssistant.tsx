@@ -122,7 +122,13 @@ export function DistributorAssistant() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-background p-4 sm:p-8">
+    // No h-full/overflow-y-auto here: this component is rendered both inside
+    // BusinessHubShell (which already owns the scroll container — nesting
+    // another one here forced content to stretch to a min-h-full ancestor
+    // and left a large blank scrollable gap below short content) and
+    // standalone at /distributor (see App.tsx, which wraps it in its own
+    // scroll container there instead).
+    <div className="bg-background p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
           <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">

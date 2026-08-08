@@ -110,10 +110,9 @@ export function BusinessHubShell() {
       <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
         <motion.div
           key={section || DEFAULT_SECTION}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ duration: 0.15, ease: "easeOut" }}
-          className="min-h-full"
         >
           <Outlet />
         </motion.div>

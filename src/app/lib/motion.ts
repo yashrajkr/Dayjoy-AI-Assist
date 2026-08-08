@@ -74,10 +74,19 @@ export const staggerContainer = (stagger = 0.08, delayChildren = 0): Variants =>
   },
 });
 
+// Opacity-only (no y/x/scale): animating a transform-producing property here
+// would apply an inline `transform` to this element for the duration of the
+// transition. Per CSS, an ancestor with an active `transform` becomes the
+// containing block for any `position: fixed` descendant instead of the
+// viewport — and this wrapper sits directly above every routed page's
+// content, several of which render fixed-position drawers/headers/overlays
+// (conversation history, sources panel, mobile nav). That mismatch is what
+// let those fixed elements render at the wrong position/stacking during a
+// transition. Fade-only avoids the transform entirely.
 export const pageTransition: Variants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE_OUT_SOFT } },
-  exit: { opacity: 0, y: 8, transition: { duration: 0.2, ease: EASE_OUT_SOFT } },
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.3, ease: EASE_OUT_SOFT } },
+  exit: { opacity: 0, transition: { duration: 0.2, ease: EASE_OUT_SOFT } },
 };
 
 /** Detects prefers-reduced-motion and updates live if the user changes it. */
