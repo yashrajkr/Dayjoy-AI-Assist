@@ -307,7 +307,12 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={["distributor", ...STAFF_ONLY]}>
                   <Suspense fallback={<AppShellFallback />}>
-                    <DistributorAssistant />
+                    {/* Standalone route (outside BusinessHubShell, which
+                        provides its own scroll container) — this page needs
+                        its own here since the parent <main> is overflow-hidden. */}
+                    <div className="h-full overflow-y-auto">
+                      <DistributorAssistant />
+                    </div>
                   </Suspense>
                 </ProtectedRoute>
               }

@@ -77,7 +77,7 @@ def check_rate_limit(user_id: str) -> None:
 # ----------------------------------------------------------------------------
 app = FastAPI(
     title="Dayjoy AI Assist Backend",
-    version="2.12.0",
+    version="2.13.0",
     description="Enterprise AI assistant backend with full RAG, Phase 2 admin console API, enhanced product/training/FAQ management, streaming, and safety filters.",
 )
 
@@ -1525,11 +1525,9 @@ async def rag_list_documents(
     approval_status: Optional[str] = None,
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """List knowledge documents with filters + pagination."""
+    """List knowledge documents with filters + pagination. Staff only."""
     _require_rag()
-    user_id = await get_user_id(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_staff(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
 
     store = rag_get_store()
@@ -1577,11 +1575,9 @@ async def rag_list_documents(
 
 @app.get("/rag/documents/{document_id}")
 async def rag_get_document(document_id: str, request: Request) -> Dict[str, Any]:
-    """Get a single knowledge document with its chunk stats."""
+    """Get a single knowledge document with its chunk stats. Staff only."""
     _require_rag()
-    user_id = await get_user_id(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_staff(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
 
     store = rag_get_store()
@@ -2107,11 +2103,9 @@ async def rag_list_chunks(
     limit: int = 50,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """List chunks for a document (paginated)."""
+    """List chunks for a document (paginated). Staff only."""
     _require_rag()
-    user_id = await get_user_id(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_staff(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
 
     store = rag_get_store()
