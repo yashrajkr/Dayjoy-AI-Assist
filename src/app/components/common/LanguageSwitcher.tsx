@@ -47,7 +47,10 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
       {open ? (
         <div
           role="listbox"
-          className="absolute right-0 mt-1 w-40 glass rounded-xl shadow-xl py-1 z-50"
+          // z-[60], matching NotificationCenter: page content further down
+          // the DOM (message hover toolbars, etc.) also uses z-50 and would
+          // win equal-z-index paint order, overlapping this dropdown.
+          className="absolute right-0 mt-1 w-40 glass rounded-xl shadow-xl py-1 z-[60]"
         >
           {languages.map((l) => (
             <button
