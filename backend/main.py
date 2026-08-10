@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -409,11 +410,26 @@ def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, O
 # Retrieval (lightweight RAG: keyword + category boost)
 # ----------------------------------------------------------------------------
 SEARCH_TABLES = [
-    ("products", "product_name", "benefits,safety_note,category,ingredients,usage", "product"),
-    ("faqs", "question", "answer,category", "faq"),
-    ("policies", "topic", "content", "policy"),
-    ("distributor_training", "title", "content", "training"),
-    ("objection_handling", "objection", "answer", "general"),
+    ("products", "product_name", "benefits,safety_note,category,ingredients,usage", "product", {"approval_status": "approved"}),
+    # compensation_rules is checked early (right after products, ahead of faqs/
+    # policies/training) because retrieve_context() caps total sources at 8 and
+    # truncates merged context at 4000 chars, in SEARCH_TABLES list order — a
+    # table checked last is starved out whenever earlier tables also weakly
+    # match the same common tokens. Compensation/rank questions need this
+    # authoritative structured table to win that budget, not lose it.
+    #
+    # compensation_rules has no approval_status column — RLS ("authenticated"
+    # role, qual=true) is the access gate here, not a per-row approval flag.
+    # Filtering to verification_status="verified" excludes the single sentinel
+    # row (__GLOBAL_PLAN_PARAMETERS_CONFLICT__, verification_status=
+    # "conflict_unresolved") that carries the 3 known-disputed figures (retail
+    # profit %, mentorship bonus %, business matching structure) — those never
+    # reach the LLM as if they were verified facts.
+    ("compensation_rules", "rank_name", "requirements,rewards", "compensation", {"verification_status": "verified"}),
+    ("faqs", "question", "answer,category", "faq", {"approval_status": "approved"}),
+    ("policies", "topic", "content", "policy", {"approval_status": "approved"}),
+    ("distributor_training", "title", "content", "training", {"approval_status": "approved"}),
+    ("objection_handling", "objection", "answer", "general", {"approval_status": "approved"}),
 ]
 
 
@@ -499,12 +515,12 @@ async def retrieve_context(
     legacy_context_parts: List[str] = []
     if tokens:
         best_score = 0
-        for table, title_col, extra_cols, category in SEARCH_TABLES:
+        for table, title_col, extra_cols, category, table_filters in SEARCH_TABLES:
             rows = await supabase_select(
                 token,
                 table,
                 columns=f"id,{title_col},{extra_cols}",
-                filters={"approval_status": "approved"},
+                filters=table_filters,
                 limit=200,
             )
             scored: List[Tuple[int, Dict[str, Any]]] = []
@@ -736,13 +752,30 @@ def _system_prompt_for(mode: str) -> str:
     return SYSTEM_PROMPT + HYBRID_MODE_ADDENDUM if mode == "hybrid" else SYSTEM_PROMPT
 
 
-async def stream_groq(
-    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
+_llm_logger = logging.getLogger("dayjoy.llm")
+
+
+async def _stream_chat_completions(
+    provider_name: str,
+    url: str,
+    api_key: str,
+    model: str,
+    message: str,
+    history: List[Dict[str, str]],
+    context: str,
+    language: str,
+    mode: str,
 ) -> AsyncIterator[str]:
-    """Stream tokens from Groq's OpenAI-compatible /chat/completions endpoint."""
-    if not GROQ_API_KEY:
+    """Shared streaming implementation for OpenAI-compatible /chat/completions
+    endpoints (Groq, OpenAI). One bounded retry (max 2 attempts total) for
+    transient failures (429 respecting Retry-After, capped at 5s; 5xx;
+    network/timeout errors). 401/403/other 4xx are not retried — permanent
+    config errors. Failures are logged server-side only (truncated to 300
+    chars, no headers/API key ever logged) and never surfaced to the caller
+    — stream_response()'s existing silent-fallthrough-to-next-provider (then
+    to the rule-based fallback) behavior is unchanged."""
+    if not api_key:
         return
-    url = "https://api.groq.com/openai/v1/chat/completions"
     messages = [{"role": "system", "content": _system_prompt_for(mode)}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
@@ -753,75 +786,84 @@ async def stream_groq(
         }
     )
     payload = {
-        "model": GROQ_MODEL,
+        "model": model,
         "messages": messages,
         "temperature": 0.2,
         "stream": True,
         "max_tokens": 800,
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream(
-            "POST", url, headers={"Authorization": f"Bearer {GROQ_API_KEY}"}, json=payload
-        ) as resp:
-            if resp.status_code >= 400:
-                return
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                payload_str = line[5:].strip()
-                if payload_str == "[DONE]":
+    headers = {"Authorization": f"Bearer {api_key}"}
+    max_attempts = 2
+
+    for attempt in range(max_attempts):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    if resp.status_code >= 400:
+                        body = (await resp.aread())[:300]
+                        transient = resp.status_code == 429 or resp.status_code >= 500
+                        if transient and attempt < max_attempts - 1:
+                            delay = 2.0
+                            retry_after = resp.headers.get("Retry-After")
+                            if retry_after:
+                                try:
+                                    delay = min(5.0, float(retry_after))
+                                except ValueError:
+                                    pass
+                            _llm_logger.warning(
+                                "%s stream failed (%s), retrying in %.1fs: %s",
+                                provider_name, resp.status_code, delay, body,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        _llm_logger.warning(
+                            "%s stream failed (%s), not retrying: %s",
+                            provider_name, resp.status_code, body,
+                        )
+                        return
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload_str = line[5:].strip()
+                        if payload_str == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(payload_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                            if delta:
+                                yield delta
+                        except Exception:
+                            continue
                     return
-                try:
-                    chunk = json.loads(payload_str)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                    if delta:
-                        yield delta
-                except Exception:
-                    continue
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            if attempt < max_attempts - 1:
+                _llm_logger.warning("%s stream network error, retrying: %s", provider_name, e)
+                await asyncio.sleep(1.0)
+                continue
+            _llm_logger.warning("%s stream network error, giving up: %s", provider_name, e)
+            return
+
+
+async def stream_groq(
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
+) -> AsyncIterator[str]:
+    """Stream tokens from Groq's OpenAI-compatible /chat/completions endpoint."""
+    async for tok in _stream_chat_completions(
+        "groq", "https://api.groq.com/openai/v1/chat/completions", GROQ_API_KEY, GROQ_MODEL,
+        message, history, context, language, mode,
+    ):
+        yield tok
 
 
 async def stream_openai(
     message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
 ) -> AsyncIterator[str]:
     """Stream tokens from OpenAI Chat Completions."""
-    if not OPENAI_API_KEY:
-        return
-    url = "https://api.openai.com/v1/chat/completions"
-    messages = [{"role": "system", "content": _system_prompt_for(mode)}]
-    for h in history:
-        messages.append({"role": h["role"], "content": h["content"]})
-    messages.append(
-        {
-            "role": "user",
-            "content": f"Language: {language}\n\nContext:\n{context}\n\nQuestion: {message}",
-        }
-    )
-    payload = {
-        "model": OPENAI_MODEL,
-        "messages": messages,
-        "temperature": 0.2,
-        "stream": True,
-        "max_tokens": 800,
-    }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream(
-            "POST", url, headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}, json=payload
-        ) as resp:
-            if resp.status_code >= 400:
-                return
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                payload_str = line[5:].strip()
-                if payload_str == "[DONE]":
-                    return
-                try:
-                    chunk = json.loads(payload_str)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                    if delta:
-                        yield delta
-                except Exception:
-                    continue
+    async for tok in _stream_chat_completions(
+        "openai", "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY, OPENAI_MODEL,
+        message, history, context, language, mode,
+    ):
+        yield tok
 
 
 async def stream_response(

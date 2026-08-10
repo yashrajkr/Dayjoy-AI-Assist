@@ -372,16 +372,30 @@ class VectorStore:
         return [self._row_to_chunk(r) for r in (results or [])]
 
     def _row_to_chunk(self, row: Dict[str, Any]) -> RetrievedChunk:
-        # The score field differs between vector (similarity 0..1) and
-        # keyword (integer count) functions. Normalize both to 0..1.
-        raw_score = row.get("similarity", row.get("score", 0.0))
-        try:
-            score = float(raw_score)
-        except (TypeError, ValueError):
-            score = 0.0
-        # For keyword search, cap at 1.0 by dividing by a reasonable max
-        if score > 1.0:
-            score = min(1.0, score / 10.0)
+        # match_chunks_vector/match_chunks_json rows carry "similarity" (a
+        # real cosine similarity in [-1, 1]). keyword_search_chunks rows
+        # carry "score" (an unbounded integer token-overlap count) — these
+        # are on fundamentally different scales and must never be treated
+        # as interchangeable. Distinguish by which key is present, not by
+        # magnitude, since a raw keyword overlap of exactly 1 previously
+        # passed the old ">1.0" check unmodified and was reported as a
+        # fake-perfect 1.0 similarity.
+        if "similarity" in row:
+            try:
+                score = float(row.get("similarity", 0.0))
+            except (TypeError, ValueError):
+                score = 0.0
+        else:
+            try:
+                raw_score = float(row.get("score", 0.0))
+            except (TypeError, ValueError):
+                raw_score = 0.0
+            # Always rescale (never leave a low raw count unmodified), and
+            # hard-cap well below Retriever._compute_confidence's "verified"
+            # threshold (requires a top score >= 0.35) so a keyword-only
+            # fallback match — however many tokens overlap — can never be
+            # reported as high-confidence/verified semantic retrieval.
+            score = min(0.3, raw_score / 10.0)
 
         return RetrievedChunk(
             chunk_id=str(row.get("chunk_id", "")),
