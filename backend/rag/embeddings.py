@@ -3,24 +3,38 @@ Embedding provider abstraction for the RAG pipeline.
 
 Supports multiple providers via a single `EmbeddingProvider` interface:
 
+  - **jina**      → Jina AI jina-embeddings-v3 (default 1024 dims, matches
+                    the knowledge_embeddings.embedding_vector column).
+                    Task-specific: retrieval.passage for indexing,
+                    retrieval.query for queries. This is the production
+                    semantic embedding provider — see JinaEmbedding below.
   - **openai**    → OpenAI text-embedding-3-small (default 1536 dims)
   - **groq**      → Groq embedding models (when available)
   - **local**     → Pure-Python TF-IDF hash embedding (no API calls, fixed
-                    384 dims). Used when no provider is configured so the
-                    RAG pipeline still works end-to-end.
+                    384 dims). NOT a semantic embedding — for local
+                    development only. Never selected automatically as a
+                    fallback for a configured remote provider (jina/openai/
+                    groq); a missing/misconfigured key for those providers
+                    raises instead of silently degrading to this.
   - **custom**    → Pluggable via the EMBEDDING_PROVIDER_REGISTRY.
 
 Configuration is via environment variables:
 
-    RAG_EMBEDDING_PROVIDER   = openai | groq | local   (default: local)
+    RAG_EMBEDDING_PROVIDER   = jina | openai | groq | local   (default: local)
+    JINA_API_KEY             = jina_...   (required when provider=jina)
+    RAG_EMBEDDING_MODEL      = jina-embeddings-v3 | text-embedding-3-small | ...
+    RAG_EMBEDDING_DIMENSIONS = 1024 (jina) | 1536 (openai) | ...
+    JINA_BASE_URL            = https://api.jina.ai/v1   (optional override)
+    JINA_TIMEOUT_SECONDS     = 30    (optional)
+    JINA_MAX_RETRIES         = 3     (optional, transient failures only)
+    JINA_RETRY_BASE_DELAY    = 1.0   (optional, seconds, exponential backoff base)
     OPENAI_API_KEY           = sk-...
-    RAG_EMBEDDING_MODEL      = text-embedding-3-small
-    RAG_EMBEDDING_DIMENSIONS = 1536
 
 All providers expose:
     - name: str
     - dimensions: int
     - embed_batch(texts: List[str]) -> List[List[float]]
+    - embed(text: str) -> List[float]
 """
 
 from __future__ import annotations
@@ -29,6 +43,7 @@ import hashlib
 import math
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional, Protocol, Type, runtime_checkable
 
 
@@ -97,6 +112,180 @@ class LocalHashEmbedding(EmbeddingProvider):
                 vec = [v / norm for v in vec]
             out.append(vec)
         return out
+
+
+# ---------------------------------------------------------------------------
+# Jina AI provider — production semantic embedding provider
+# ---------------------------------------------------------------------------
+
+class JinaEmbeddingError(RuntimeError):
+    """Any unrecoverable Jina embedding failure.
+
+    Deliberately a loud exception, not a silent fallback: callers must not
+    catch this and substitute LocalHashEmbedding (or any other fake vector)
+    in production. See get_embedding_provider() — a missing JINA_API_KEY
+    when RAG_EMBEDDING_PROVIDER=jina raises this at provider-construction
+    time rather than degrading to local-hash.
+    """
+
+
+class JinaAuthError(JinaEmbeddingError):
+    """401/403 — invalid or missing API key. Never retried."""
+
+
+class JinaRateLimitError(JinaEmbeddingError):
+    """429 — rate limited, retries exhausted."""
+
+
+class JinaEmbedding(EmbeddingProvider):
+    """Jina AI embeddings (jina-embeddings-v3 by default, 1024 dims).
+
+    Uses Jina's task-specific encoding per their retrieval best practice:
+      - embed_batch() — used by the ingestion pipeline for chunks/documents
+        → task="retrieval.passage"
+      - embed()       — used by the retriever for a single user query
+        → task="retrieval.query"
+
+    Retry policy: 429 and 5xx are retried with exponential backoff (honoring
+    a `Retry-After` header when Jina sends one for 429s). 401/403 and other
+    4xx are treated as permanent (bad key / bad request) and never retried.
+    """
+
+    name = "jina"
+    dimensions = 1024
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "jina-embeddings-v3",
+        dimensions: int = 1024,
+        base_url: Optional[str] = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        retry_base_delay: float = 1.0,
+    ):
+        if not api_key:
+            raise JinaEmbeddingError(
+                "JINA_API_KEY is required when RAG_EMBEDDING_PROVIDER=jina."
+            )
+        self.api_key = api_key
+        self.model = model
+        self.dimensions = dimensions
+        self._base_url = (base_url or os.getenv("JINA_BASE_URL", "https://api.jina.ai/v1")).rstrip("/")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
+
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Embed documents/chunks for indexing — task=retrieval.passage."""
+        if not texts:
+            return []
+        out: List[List[float]] = []
+        batch_size = 32
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            out.extend(self._request(batch, task="retrieval.passage"))
+        return out
+
+    def embed(self, text: str) -> List[float]:
+        """Embed a single user query — task=retrieval.query."""
+        return self._request([text], task="retrieval.query")[0]
+
+    def _request(self, texts: List[str], task: str) -> List[List[float]]:
+        try:
+            import httpx
+        except ImportError as e:
+            raise JinaEmbeddingError("httpx is required for Jina embeddings") from e
+
+        payload = {
+            "model": self.model,
+            "task": task,
+            "dimensions": self.dimensions,
+            "input": texts,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last_error: Optional[BaseException] = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = httpx.post(
+                    f"{self._base_url}/embeddings",
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    time.sleep(self._backoff_delay(attempt))
+                    continue
+                raise JinaEmbeddingError(
+                    f"Jina embeddings request failed after {self.max_retries + 1} "
+                    f"attempts (network/timeout): {e}"
+                ) from e
+
+            if resp.status_code in (401, 403):
+                # Bad/missing key — permanent, never retry.
+                raise JinaAuthError(
+                    f"Jina embeddings authentication failed ({resp.status_code}). "
+                    "Check JINA_API_KEY. Not retrying."
+                )
+
+            if resp.status_code == 429:
+                if attempt < self.max_retries:
+                    delay = self._retry_after_seconds(resp)
+                    if delay is None:
+                        delay = self._backoff_delay(attempt)
+                    time.sleep(delay)
+                    continue
+                raise JinaRateLimitError(
+                    f"Jina embeddings rate-limited (429) after "
+                    f"{self.max_retries + 1} attempts: {resp.text[:300]}"
+                )
+
+            if resp.status_code >= 500:
+                # Transient provider-side failure — retry.
+                if attempt < self.max_retries:
+                    time.sleep(self._backoff_delay(attempt))
+                    continue
+                raise JinaEmbeddingError(
+                    f"Jina embeddings server error ({resp.status_code}) after "
+                    f"{self.max_retries + 1} attempts: {resp.text[:300]}"
+                )
+
+            if resp.status_code >= 400:
+                # Other 4xx (bad model/task/dimensions/input) — a
+                # configuration problem, not transient. Do not retry.
+                raise JinaEmbeddingError(
+                    f"Jina embeddings request rejected ({resp.status_code}): "
+                    f"{resp.text[:300]}"
+                )
+
+            data = resp.json()
+            vectors = [d["embedding"] for d in data.get("data", [])]
+            if len(vectors) != len(texts):
+                raise JinaEmbeddingError(
+                    f"Jina returned {len(vectors)} embeddings for {len(texts)} inputs"
+                )
+            return vectors
+
+        # Unreachable: the loop above always returns or raises.
+        raise JinaEmbeddingError(f"Jina embeddings failed: {last_error}")
+
+    def _backoff_delay(self, attempt: int) -> float:
+        return self.retry_base_delay * (2 ** attempt)
+
+    def _retry_after_seconds(self, resp: Any) -> Optional[float]:
+        val = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+        if not val:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +377,7 @@ class GroqEmbedding(EmbeddingProvider):
 # ---------------------------------------------------------------------------
 
 EMBEDDING_PROVIDER_REGISTRY: Dict[str, Type[EmbeddingProvider]] = {
+    "jina": JinaEmbedding,
     "openai": OpenAIEmbedding,
     "groq": GroqEmbedding,
     "local": LocalHashEmbedding,
@@ -206,7 +396,33 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
     provider_name = os.getenv("RAG_EMBEDDING_PROVIDER", "local").lower().strip()
     dimensions = int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "0"))
 
-    if provider_name in ("openai",):
+    if provider_name in ("jina",):
+        api_key = os.getenv("JINA_API_KEY", "").strip()
+        if not api_key:
+            # Do NOT fall back to local-hash here. A production RAG deployment
+            # explicitly configured for jina with no key is a misconfiguration
+            # that must fail loudly, not silently degrade to a non-semantic
+            # embedding that would poison retrieval quality invisibly.
+            raise JinaEmbeddingError(
+                "RAG_EMBEDDING_PROVIDER=jina but JINA_API_KEY is not set. "
+                "Set JINA_API_KEY, or choose a different RAG_EMBEDDING_PROVIDER "
+                "if you intend to run without real embeddings."
+            )
+        model = os.getenv("RAG_EMBEDDING_MODEL", "jina-embeddings-v3")
+        if dimensions == 0:
+            dimensions = 1024
+        timeout = float(os.getenv("JINA_TIMEOUT_SECONDS", "30"))
+        max_retries = int(os.getenv("JINA_MAX_RETRIES", "3"))
+        retry_base_delay = float(os.getenv("JINA_RETRY_BASE_DELAY", "1.0"))
+        _provider_cache = JinaEmbedding(
+            api_key=api_key,
+            model=model,
+            dimensions=dimensions,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_base_delay=retry_base_delay,
+        )
+    elif provider_name in ("openai",):
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         if not api_key:
             # Fall back to local
