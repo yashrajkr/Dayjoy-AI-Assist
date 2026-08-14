@@ -81,6 +81,7 @@ import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { Modal } from "../common/Modal";
 import { useVoice } from "../../lib/useVoice";
+import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { useTransparentLogo } from "../../lib/useTransparentLogo";
@@ -1518,14 +1519,16 @@ export function UserChat() {
                   <button
                     type="button"
                     onClick={toggleVoiceMode}
-                    disabled={!voice.sttSupported}
+                    disabled={!voice.sttSupported || !isVoiceRepliesEnabled()}
                     className="relative h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
                     aria-label={
                       voiceMode
                         ? "Voice mode active — tap to end"
-                        : voice.sttSupported
-                          ? "Tap to start voice conversation"
-                          : "Voice input is not supported in this browser"
+                        : !isVoiceRepliesEnabled()
+                          ? "Voice is disabled — enable it in Settings to talk"
+                          : voice.sttSupported
+                            ? "Tap to start voice conversation"
+                            : "Voice input is not supported in this browser"
                     }
                     aria-pressed={voiceMode}
                   >
@@ -1571,7 +1574,7 @@ export function UserChat() {
                     </div>
                   </button>
                 </div>
-                {voice.sttSupported ? (
+                {voice.sttSupported && isVoiceRepliesEnabled() ? (
                   <p className="text-xs text-muted-foreground -mt-1 mb-2" aria-live="polite">
                     {voiceMode
                       ? voice.listening
@@ -2014,15 +2017,19 @@ export function UserChat() {
                   {/* Mic sits beside Send — both always visible (Send just
                       disables when empty) rather than swapping one for the
                       other, so the send control is never simply missing.
-                      Speak/mute toggles are omitted here since normal text
-                      chat no longer auto-speaks answers. */}
-                  <VoiceControls
-                    voice={voice}
-                    onTranscript={setInput}
-                    voiceMode={voiceMode}
-                    onToggleVoiceMode={toggleVoiceMode}
-                    showSpeakToggle={false}
-                  />
+                      Mic itself is hidden when voice is turned off in
+                      Settings (isVoiceRepliesEnabled). Speak/mute toggles
+                      are omitted here since normal text chat no longer
+                      auto-speaks answers. */}
+                  {isVoiceRepliesEnabled() ? (
+                    <VoiceControls
+                      voice={voice}
+                      onTranscript={setInput}
+                      voiceMode={voiceMode}
+                      onToggleVoiceMode={toggleVoiceMode}
+                      showSpeakToggle={false}
+                    />
+                  ) : null}
                   <motion.button
                     type="button"
                     onClick={() => handleSend()}

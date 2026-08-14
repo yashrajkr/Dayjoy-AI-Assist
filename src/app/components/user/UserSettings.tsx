@@ -1,61 +1,44 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
   Settings,
   Globe,
-  Bell,
-  Shield,
-  Save,
-  CheckCircle2,
-  Brain,
-  Pin,
-  Trash2,
-  Plus,
-  BellRing,
-  BellOff,
-  Smartphone,
-  AlertCircle,
-  Check,
   Sun,
-  Moon,
-  Monitor,
-  MessageSquare,
+  Bell,
   LayoutGrid,
-  Download,
+  Mic2,
+  Brain,
+  BookMarked,
+  ShieldCheck,
+  KeyRound,
+  LifeBuoy,
+  Flag,
   Info,
+  LogOut,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
 import { BRAND } from "../../lib/brand";
-import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
-import { Button } from "../ui/button";
-import { useChatExperience } from "../../lib/ChatExperienceContext";
-import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import { UserAvatar } from "../common/UserAvatar";
-import {
-  getPushSubscriptionState,
-  subscribeToPush,
-  unsubscribeFromPush,
-  sendLocalNotification,
-  type PushSubscriptionState,
-} from "../../lib/pushNotifications";
+import { useChatExperience } from "../../lib/ChatExperienceContext";
+import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
+import { SettingsSection, SettingsRow } from "./settings/SettingsUI";
 
 type Language = "English" | "Hindi" | "Hinglish";
 const LS_LANGUAGE_KEY = "dayjoy_user_language";
 const LS_NOTIFICATIONS_KEY = "dayjoy_user_notifications";
-
-type UserPreference = {
-  id: string;
-  pref_key: string;
-  pref_value: string | null;
-  category: string;
-  pinned: boolean;
-};
+const THEME_LABEL: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
+const LANGUAGE_LABEL: Record<Language, string> = { English: "English", Hindi: "Hindi", Hinglish: "Hinglish" };
 
 export function UserSettings() {
-  const { currentUser, role } = useAuth();
+  const navigate = useNavigate();
+  const { currentUser, role, logout } = useAuth();
+  const { theme } = useTheme();
+  const { mode: chatExperienceMode } = useChatExperience();
+
   const displayName = currentUser?.user_metadata?.full_name
     ? String(currentUser.user_metadata.full_name)
     : currentUser?.email?.split("@")[0] ?? "Dayjoy User";
@@ -65,616 +48,122 @@ export function UserSettings() {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
   const [language, setLanguage] = useState<Language>("English");
   const [notifications, setNotifications] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savedMessage, setSavedMessage] = useState<string | null>(null);
-  const { theme, setTheme } = useTheme();
-  const { mode: chatExperienceMode, setMode: setChatExperienceMode } = useChatExperience();
-  const { canInstall, installed, promptInstall } = useInstallPrompt();
-  const [installMessage, setInstallMessage] = useState<string | null>(null);
-
-  // Push notifications state
-  const [pushState, setPushState] = useState<PushSubscriptionState | null>(null);
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushMessage, setPushMessage] = useState<string | null>(null);
-
-  const refreshPushState = useCallback(async () => {
-    const s = await getPushSubscriptionState();
-    setPushState(s);
-  }, []);
-
-  useEffect(() => {
-    refreshPushState();
-  }, [refreshPushState]);
-
-  const handleEnablePush = useCallback(async () => {
-    setPushBusy(true);
-    setPushMessage(null);
-    const ok = await subscribeToPush();
-    await refreshPushState();
-    setPushMessage(ok ? "Push notifications enabled." : "Permission denied. Enable notifications in your browser settings.");
-    setTimeout(() => setPushMessage(null), 3500);
-    setPushBusy(false);
-    if (ok) {
-      // Send a welcome test notification so the user sees the format.
-      setTimeout(() => {
-        sendLocalNotification({
-          title: `${BRAND.shortName} notifications are on`,
-          body: "You'll be notified about ticket updates, training reminders, and AI completions.",
-          tag: "welcome-push",
-          route: "/",
-        });
-      }, 800);
-    }
-  }, [refreshPushState]);
-
-  const handleDisablePush = useCallback(() => {
-    unsubscribeFromPush();
-    refreshPushState();
-    setPushMessage("Push notifications disabled.");
-    setTimeout(() => setPushMessage(null), 2500);
-  }, [refreshPushState]);
-
-  const handleTestPush = useCallback(() => {
-    sendLocalNotification({
-      title: "Test notification",
-      body: `This is how ${BRAND.shortName} notifications appear.`,
-      tag: "test-push",
-      route: "/settings",
-    });
-  }, []);
-
-  const handleInstall = useCallback(async () => {
-    const outcome = await promptInstall();
-    if (outcome === "accepted") {
-      setInstallMessage("Installed! Look for Dayjoy AI on your home screen or app list.");
-    } else if (outcome === "dismissed") {
-      setInstallMessage(null);
-    }
-    setTimeout(() => setInstallMessage(null), 3500);
-  }, [promptInstall]);
-
-  // AI Memory state
-  const [prefs, setPrefs] = useState<UserPreference[]>([]);
-  const [newPrefKey, setNewPrefKey] = useState("");
-  const [newPrefValue, setNewPrefValue] = useState("");
-
-  const loadPrefs = useCallback(async () => {
-    if (!supabase || !currentUser?.id) return;
-    try {
-      const { data } = await supabase
-        .from("user_preferences")
-        .select("*")
-        .eq("user_id", currentUser.id)
-        .order("pinned", { ascending: false })
-        .order("updated_at", { ascending: false });
-      setPrefs((data ?? []) as UserPreference[]);
-    } catch {
-      // table may not exist yet — silently ignore
-    }
-  }, [currentUser?.id]);
-
-  useEffect(() => {
-    loadPrefs();
-  }, [loadPrefs]);
-
-  const addPref = async () => {
-    if (!supabase || !currentUser?.id || !newPrefKey.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from("user_preferences")
-        .insert({
-          user_id: currentUser.id,
-          pref_key: newPrefKey.trim(),
-          pref_value: newPrefValue.trim() || null,
-          category: "general",
-        })
-        .select("*")
-        .single();
-      if (error) throw error;
-      if (data) {
-        setPrefs((prev) => [data as UserPreference, ...prev]);
-        setNewPrefKey("");
-        setNewPrefValue("");
-      }
-    } catch (e) {
-      console.warn("[prefs] add failed", e);
-    }
-  };
-
-  const togglePin = async (p: UserPreference) => {
-    if (!supabase) return;
-    try {
-      await supabase
-        .from("user_preferences")
-        .update({ pinned: !p.pinned })
-        .eq("id", p.id);
-      setPrefs((prev) =>
-        prev.map((x) => (x.id === p.id ? { ...x, pinned: !x.pinned } : x)),
-      );
-    } catch (e) {
-      console.warn("[prefs] pin failed", e);
-    }
-  };
-
-  const deletePref = async (p: UserPreference) => {
-    if (!supabase) return;
-    try {
-      await supabase.from("user_preferences").delete().eq("id", p.id);
-      setPrefs((prev) => prev.filter((x) => x.id !== p.id));
-    } catch (e) {
-      console.warn("[prefs] delete failed", e);
-    }
-  };
+  const [knowledgePref, setKnowledgePref] = useState<"Verified" | "All sources">("Verified");
 
   useEffect(() => {
     const rawLang = window.localStorage.getItem(LS_LANGUAGE_KEY) as Language | null;
-    if (rawLang === "English" || rawLang === "Hindi" || rawLang === "Hinglish") {
-      setLanguage(rawLang);
-    }
+    if (rawLang === "English" || rawLang === "Hindi" || rawLang === "Hinglish") setLanguage(rawLang);
     const rawNotif = window.localStorage.getItem(LS_NOTIFICATIONS_KEY);
-    if (rawNotif === "false") setNotifications(false);
+    setNotifications(rawNotif !== "false");
   }, []);
 
-  const handleSave = async () => {
-    setSaving(true);
-    setSavedMessage(null);
-    try {
-      window.localStorage.setItem(LS_LANGUAGE_KEY, language);
-      window.localStorage.setItem(LS_NOTIFICATIONS_KEY, String(notifications));
-      // Persist language to profile if signed in
-      if (supabase && currentUser?.id) {
-        await supabase.from("profiles").update({ language }).eq("id", currentUser.id);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!supabase || !currentUser?.id) return;
+      try {
+        const { data } = await supabase
+          .from("user_preferences")
+          .select("pref_value")
+          .eq("user_id", currentUser.id)
+          .eq("pref_key", "knowledge_source_preference")
+          .maybeSingle();
+        if (!cancelled && data?.pref_value === "all") setKnowledgePref("All sources");
+      } catch {
+        // no saved preference yet — default stands
       }
-      setSavedMessage("Settings saved.");
-      setTimeout(() => setSavedMessage(null), 2500);
-    } catch {
-      setSavedMessage("Could not save settings. Please try again.");
-      setTimeout(() => setSavedMessage(null), 2500);
-    } finally {
-      setSaving(false);
     }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
   };
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
-      <AppHeader title="Settings" subtitle={`Customize your ${BRAND.name} experience.`} icon={Settings} showBackButton />
+      <AppHeader title="Settings" icon={Settings} showBackButton />
       <div className="flex-1 overflow-y-auto">
-      <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full space-y-4">
-        <Card className="bg-gradient-to-br from-primary/8 to-transparent border-primary/15">
-          <div className="flex items-center gap-4">
-            <UserAvatar user={currentUser} initials={initials} size={56} className="text-lg" />
-            <div className="min-w-0">
-              <h2 className="font-semibold truncate">{displayName}</h2>
-              <p className="text-sm text-muted-foreground truncate">{currentUser?.email ?? "Demo session"}</p>
-              {role ? (
-                <span className="inline-flex items-center mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                  {formatRoleLabel(role)}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </Card>
+        <div className="p-4 sm:p-6 max-w-2xl mx-auto w-full space-y-5 pb-10">
+          <SettingsSection label="Account">
+            <SettingsRow
+              leading={<UserAvatar user={currentUser} initials={initials} size={40} className="text-sm shrink-0" />}
+              label={displayName}
+              description={role ? formatRoleLabel(role) : currentUser?.email ?? "Demo session"}
+              onClick={() => navigate("/profile")}
+            />
+          </SettingsSection>
 
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <Globe className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Language</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Choose the language for AI responses and notifications.
-              </p>
-              <label htmlFor="dj-user-lang" className="sr-only">
-                Language
-              </label>
-              <select
-                id="dj-user-lang"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as Language)}
-                className="w-full sm:w-auto px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-              >
-                <option value="English">English</option>
-                <option value="Hindi">हिन्दी (Hindi)</option>
-                <option value="Hinglish">Hinglish</option>
-              </select>
-            </div>
-          </div>
-        </Card>
+          <SettingsSection label="General">
+            <SettingsRow
+              icon={Globe}
+              label="Language"
+              value={LANGUAGE_LABEL[language]}
+              onClick={() => navigate("/settings/language")}
+            />
+            <SettingsRow
+              icon={Sun}
+              label="Appearance"
+              value={THEME_LABEL[theme ?? "system"] ?? "System"}
+              onClick={() => navigate("/settings/appearance")}
+            />
+            <SettingsRow
+              icon={Bell}
+              label="Notifications"
+              value={notifications ? "On" : "Off"}
+              onClick={() => navigate("/settings/notifications")}
+            />
+          </SettingsSection>
 
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <Sun className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Appearance</h2>
-              <p className="text-sm text-muted-foreground mb-3">Choose how {BRAND.shortName} looks on this device.</p>
-              <div className="inline-flex rounded-lg border border-border overflow-hidden">
-                {([
-                  { value: "system", label: "System", icon: Monitor },
-                  { value: "light", label: "Light", icon: Sun },
-                  { value: "dark", label: "Dark", icon: Moon },
-                ] as const).map(({ value, label, icon: Icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setTheme(value)}
-                    aria-pressed={theme === value}
-                    className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border last:border-r-0 transition-colors ${
-                      theme === value ? "bg-primary text-primary-foreground" : "bg-card hover:bg-accent/60"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
+          <SettingsSection label="AI Experience">
+            <SettingsRow
+              icon={LayoutGrid}
+              label="Chat experience"
+              value={chatExperienceMode === "explorer" ? "Explorer" : "Professional"}
+              onClick={() => navigate("/settings/chat-experience")}
+            />
+            <SettingsRow
+              icon={Mic2}
+              label="Voice"
+              value={isVoiceRepliesEnabled() ? "Enabled" : "Disabled"}
+              onClick={() => navigate("/settings/voice")}
+            />
+            <SettingsRow
+              icon={Brain}
+              label="Personalization"
+              description="What the AI remembers about you"
+              onClick={() => navigate("/settings/personalization")}
+            />
+            <SettingsRow
+              icon={BookMarked}
+              label="Knowledge sources"
+              value={knowledgePref}
+              onClick={() => navigate("/settings/knowledge-sources")}
+            />
+          </SettingsSection>
 
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <LayoutGrid className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Chat experience</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Controls the mobile chat screen only — desktop is unaffected either way.
-              </p>
-              <div className="space-y-2">
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    chatExperienceMode === "professional" ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="chat-experience"
-                    className="mt-1"
-                    checked={chatExperienceMode === "professional"}
-                    onChange={() => setChatExperienceMode("professional")}
-                  />
-                  <span>
-                    <span className="block text-sm font-medium">Professional (recommended)</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Minimal, chat-first mobile screen — no quick-prompt cards or bottom tab bar. Everything else is one tap away in the menu.
-                    </span>
-                  </span>
-                </label>
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    chatExperienceMode === "explorer" ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="chat-experience"
-                    className="mt-1"
-                    checked={chatExperienceMode === "explorer"}
-                    onChange={() => setChatExperienceMode("explorer")}
-                  />
-                  <span>
-                    <span className="block text-sm font-medium">Explorer</span>
-                    <span className="block text-xs text-muted-foreground">
-                      The fuller mobile layout with quick-prompt cards and the bottom tab bar always visible.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </Card>
+          <SettingsSection label="Privacy & Security">
+            <SettingsRow icon={ShieldCheck} label="Data controls" onClick={() => navigate("/settings/privacy")} />
+            <SettingsRow icon={KeyRound} label="Security & login" onClick={() => navigate("/settings/security")} />
+          </SettingsSection>
 
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <Bell className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Notifications</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Receive updates when your support tickets are updated or new training is assigned.
-              </p>
-              <button
-                type="button"
-                onClick={() => setNotifications((v) => !v)}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
-                  notifications
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border"
-                }`}
-                aria-pressed={notifications}
-              >
-                {notifications ? "Enabled" : "Disabled"}
-              </button>
-            </div>
-          </div>
-        </Card>
+          <SettingsSection label="Support">
+            <SettingsRow icon={LifeBuoy} label="Help & Support" onClick={() => navigate("/support")} />
+            <SettingsRow icon={Flag} label="Report a problem" onClick={() => navigate("/support")} />
+            <SettingsRow icon={Info} label={`About ${BRAND.name}`} onClick={() => navigate("/settings/about")} />
+          </SettingsSection>
 
-        {/* Push Notifications — OS-level notifications via browser */}
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <BellRing className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Push Notifications</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Get OS-level notifications on this device when tickets update, training is assigned, or AI responses finish — even when {BRAND.shortName} is in the background.
-              </p>
-
-              {/* Status row */}
-              <div className="flex items-center gap-2 mb-3 text-xs flex-wrap">
-                {pushState ? (
-                  <>
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${
-                      pushState.subscribed
-                        ? "bg-primary/10 text-primary"
-                        : pushState.permission === "denied"
-                          ? "bg-destructive/10 text-destructive"
-                          : "bg-muted text-muted-foreground"
-                    }`}>
-                      {pushState.subscribed ? (
-                        <>
-                          <Check className="w-3 h-3" aria-hidden="true" /> Subscribed
-                        </>
-                      ) : pushState.permission === "denied" ? (
-                        <>
-                          <AlertCircle className="w-3 h-3" aria-hidden="true" /> Blocked
-                        </>
-                      ) : (
-                        <>
-                          <BellOff className="w-3 h-3" aria-hidden="true" /> Not subscribed
-                        </>
-                      )}
-                    </span>
-                    <span className="text-muted-foreground">
-                      Permission: <span className="font-mono">{pushState.permission}</span>
-                    </span>
-                    {pushState.swRegistered ? (
-                      <span className="inline-flex items-center gap-1 text-muted-foreground">
-                        <Smartphone className="w-3 h-3" aria-hidden="true" /> SW ready
-                      </span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">Checking…</span>
-                )}
-              </div>
-
-              {/* Unsupported notice */}
-              {pushState && !pushState.supported ? (
-                <div className="rounded-lg border border-warning/30 bg-warning/5 p-2.5 text-xs text-warning mb-3 flex items-start gap-2">
-                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    Push notifications aren't supported in this browser. On iOS, install {BRAND.shortName} to your home screen first.
-                  </span>
-                </div>
-              ) : null}
-
-              {/* Blocked notice */}
-              {pushState && pushState.permission === "denied" ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive mb-3 flex items-start gap-2">
-                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    Notifications are blocked at the browser level. Open site settings (lock icon in URL bar) and allow notifications to re-enable.
-                  </span>
-                </div>
-              ) : null}
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {pushState && !pushState.subscribed ? (
-                  <Button
-                    type="button"
-                    onClick={handleEnablePush}
-                    disabled={pushBusy || !pushState.supported}
-                  >
-                    <BellRing className="w-4 h-4" aria-hidden="true" />
-                    {pushBusy ? "Requesting…" : "Enable push"}
-                  </Button>
-                ) : null}
-                {pushState && pushState.subscribed ? (
-                  <>
-                    <Button type="button" variant="secondary" onClick={handleTestPush}>
-                      <Bell className="w-4 h-4" aria-hidden="true" />
-                      Send test
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={handleDisablePush}>
-                      <BellOff className="w-4 h-4" aria-hidden="true" />
-                      Disable
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-
-              {/* Status message */}
-              {pushMessage ? (
-                <p className="text-xs text-primary mt-2 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  {pushMessage}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <Shield className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">Privacy & Safety</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                What you can expect from {BRAND.name}:
-              </p>
-              <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1 mb-3">
-                <li>Safety rules block unsafe medical and income claims.</li>
-                <li>Every AI response cites its sources from approved company knowledge.</li>
-                <li>Your chat history is private to your account (RLS-protected).</li>
-                <li>You can delete any conversation at any time.</li>
-              </ul>
-            </div>
-          </div>
-        </Card>
-
-        {/* AI Memory — remember user preferences */}
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <Brain className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">AI Memory</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Save preferences that {BRAND.name} will remember across conversations. Pinned items are prioritized.
-              </p>
-
-              {/* Existing preferences */}
-              <div className="space-y-2 mb-4">
-                {prefs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-3">
-                    No saved memories yet. Add one below to personalize your AI experience.
-                  </p>
-                ) : (
-                  prefs.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`flex items-start gap-2 p-2 rounded-lg ${
-                        p.pinned ? "bg-primary/5 border border-primary/20" : "bg-accent/30"
-                      }`}
-                    >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => togglePin(p)}
-                        className="h-auto w-auto p-1 shrink-0"
-                        aria-label={p.pinned ? "Unpin memory" : "Pin memory"}
-                        title={p.pinned ? "Unpin" : "Pin"}
-                      >
-                        <Pin
-                          className={`w-3.5 h-3.5 ${p.pinned ? "text-primary" : "text-muted-foreground"}`}
-                          aria-hidden="true"
-                        />
-                      </Button>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{p.pref_key}</p>
-                        {p.pref_value ? (
-                          <p className="text-xs text-muted-foreground truncate">{p.pref_value}</p>
-                        ) : null}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deletePref(p)}
-                        className="h-auto w-auto p-1 text-destructive hover:bg-destructive/10 shrink-0"
-                        aria-label={`Delete ${p.pref_key}`}
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Add new preference */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={newPrefKey}
-                  onChange={(e) => setNewPrefKey(e.target.value)}
-                  placeholder="e.g. Favorite product category"
-                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  aria-label="Memory key"
-                />
-                <input
-                  type="text"
-                  value={newPrefValue}
-                  onChange={(e) => setNewPrefValue(e.target.value)}
-                  placeholder="e.g. Health Care"
-                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  aria-label="Memory value"
-                />
-                <Button
-                  type="button"
-                  onClick={addPref}
-                  disabled={!newPrefKey.trim()}
-                  aria-label="Add memory"
-                  className="shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                  Add
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
-              <MessageSquare className="w-5 h-5 text-primary" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-semibold">App</h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                {installed
-                  ? `${BRAND.shortName} is installed on this device.`
-                  : canInstall
-                    ? `Install ${BRAND.shortName} for a full-screen, app-like experience with faster loading.`
-                    : `Use your browser's "Add to Home Screen" or "Install app" option to install ${BRAND.shortName}.`}
-              </p>
-              {canInstall ? (
-                <Button type="button" onClick={handleInstall}>
-                  <Download className="w-4 h-4" aria-hidden="true" />
-                  Install {BRAND.shortName}
-                </Button>
-              ) : null}
-              {installMessage ? (
-                <p className="text-xs text-primary mt-2 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  {installMessage}
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
-                <Info className="w-3 h-3" aria-hidden="true" />
-                {BRAND.name} · v2
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        <div>
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              <Save className="w-4 h-4" aria-hidden="true" />
-              {saving ? "Saving…" : "Save language & notifications"}
-            </Button>
-            {savedMessage ? (
-              <span className="inline-flex items-center gap-1 text-sm text-primary">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                {savedMessage}
-              </span>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Push notifications and AI Memory save instantly — this button only applies your language and in-app notification preference.
-          </p>
+          <SettingsSection>
+            <SettingsRow icon={LogOut} label="Log out" onClick={handleLogout} chevron={false} danger />
+          </SettingsSection>
         </div>
-      </div>
       </div>
     </div>
   );
