@@ -120,6 +120,18 @@ export async function signInWithGoogle() {
   if (error) throw new Error(mapSupabaseAuthErrorToMessage(error));
 }
 
+export async function resetPasswordForEmail(email: string) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Missing Supabase URL / anon key.");
+  }
+
+  const { error } = await requireClient().auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+
+  if (error) throw new Error(mapSupabaseAuthErrorToMessage(error));
+}
+
 export async function signOutUser() {
   if (!isSupabaseConfigured()) {
     throw new Error("Missing Supabase URL / anon key.");
