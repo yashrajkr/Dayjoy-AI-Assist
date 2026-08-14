@@ -1529,36 +1529,46 @@ export function UserChat() {
                     }
                     aria-pressed={voiceMode}
                   >
-                    <Suspense
-                      fallback={
-                        <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
-                          <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
-                        </div>
-                      }
-                    >
-                      <AIOrb
-                        state={
-                          sending
-                            ? "thinking"
-                            : streamingText
-                              ? "answering"
-                              : voice.listening
-                                ? "listening"
-                                : "idle"
+                    {/* AIOrb always renders at its true 140px size (the
+                        `sm:h-140` / `h-100` on the button above is a layout
+                        flow trick, so the *scaled-down* box is what reserves
+                        space in the page — not the orb's real size). The
+                        badge below must center against that real 140x140
+                        box, not the button's shorter mobile layout height,
+                        or the CSS transform ends up scaling the badge toward
+                        a different point than the orb's actual center. */}
+                    <div className="relative w-[140px] h-[140px]">
+                      <Suspense
+                        fallback={
+                          <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
+                            <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
+                          </div>
                         }
-                        size={140}
-                      />
-                    </Suspense>
-                    {/* Brand mark centered on the orb — a static badge over
-                        the shader sphere rather than a texture baked into
-                        it, so the noise/breathing animation is untouched. */}
-                    {transparentLogo ? (
-                      <img
-                        src={transparentLogo}
-                        alt=""
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 object-contain pointer-events-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
-                      />
-                    ) : null}
+                      >
+                        <AIOrb
+                          state={
+                            sending
+                              ? "thinking"
+                              : streamingText
+                                ? "answering"
+                                : voice.listening
+                                  ? "listening"
+                                  : "idle"
+                          }
+                          size={140}
+                        />
+                      </Suspense>
+                      {/* Brand mark centered on the orb — a static badge over
+                          the shader sphere rather than a texture baked into
+                          it, so the noise/breathing animation is untouched. */}
+                      {transparentLogo ? (
+                        <img
+                          src={transparentLogo}
+                          alt=""
+                          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 object-contain pointer-events-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                        />
+                      ) : null}
+                    </div>
                   </button>
                 </div>
                 {voice.sttSupported ? (
@@ -2001,41 +2011,38 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic and Send occupy the same slot — one control at a
-                      time, matching ChatGPT: mic while the composer is
-                      empty, Send once there's something to send. Speak/mute
-                      toggles are omitted here since normal text chat no
-                      longer auto-speaks answers. */}
-                  {!input.trim() ? (
-                    <VoiceControls
-                      voice={voice}
-                      onTranscript={setInput}
-                      voiceMode={voiceMode}
-                      onToggleVoiceMode={toggleVoiceMode}
-                      showSpeakToggle={false}
+                  {/* Mic sits beside Send — both always visible (Send just
+                      disables when empty) rather than swapping one for the
+                      other, so the send control is never simply missing.
+                      Speak/mute toggles are omitted here since normal text
+                      chat no longer auto-speaks answers. */}
+                  <VoiceControls
+                    voice={voice}
+                    onTranscript={setInput}
+                    voiceMode={voiceMode}
+                    onToggleVoiceMode={toggleVoiceMode}
+                    showSpeakToggle={false}
+                  />
+                  <motion.button
+                    type="button"
+                    onClick={() => handleSend()}
+                    disabled={!input.trim() || sending}
+                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
+                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
+                    aria-label="Send message"
+                  >
+                    {/* Gradient sheen on hover */}
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                      }}
                     />
-                  ) : (
-                    <motion.button
-                      type="button"
-                      onClick={() => handleSend()}
-                      disabled={sending}
-                      whileTap={{ scale: 0.95 }}
-                      whileHover={{ scale: sending ? 1 : 1.05 }}
-                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
-                      aria-label="Send message"
-                    >
-                      {/* Gradient sheen on hover */}
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
-                        }}
-                      />
-                      <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
-                    </motion.button>
-                  )}
+                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
+                  </motion.button>
                 </div>
               </div>
               {/* Attachments preview row */}
