@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { hasMultipleViews } from "../../lib/workspace";
 import { useInstallPrompt } from "../../lib/useInstallPrompt";
+import { UserAvatar } from "./UserAvatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,11 +39,11 @@ export function AccountMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="w-8 h-8 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-xs shrink-0 ml-1 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="ml-1 rounded-full transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           aria-label="Account menu"
           title={currentUser?.email ?? "Account"}
         >
-          {initials}
+          <UserAvatar user={currentUser} initials={initials} size={32} className="text-xs" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

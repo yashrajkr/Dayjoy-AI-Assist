@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { UserRound, Mail, Calendar, MapPin, Save, CheckCircle2, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
+import { UserRound, Mail, Calendar, MapPin, Save, CheckCircle2, Settings as SettingsIcon, ShieldCheck, Camera, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
@@ -8,6 +8,10 @@ import { BRAND } from "../../lib/brand";
 import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
+import { UserAvatar } from "../common/UserAvatar";
+
+const AVATAR_BUCKET = "avatars";
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 type ProfileRow = {
   full_name: string | null;
@@ -22,7 +26,7 @@ function formatMemberSince(iso: string | null) {
 }
 
 export function UserProfile() {
-  const { currentUser, role } = useAuth();
+  const { currentUser, role, refresh: refreshAuth } = useAuth();
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState("");
@@ -30,6 +34,9 @@ export function UserProfile() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     if (!supabase || !currentUser?.id) {
@@ -75,6 +82,51 @@ export function UserProfile() {
     }
   };
 
+  const handleAvatarPick = async (file: File | undefined) => {
+    if (!file || !currentUser?.id) return;
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Please choose an image file.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError("Image must be under 5 MB.");
+      return;
+    }
+    if (!supabase) {
+      setAvatarError("Photo upload needs Supabase to be configured — you're in demo mode.");
+      return;
+    }
+    setAvatarUploading(true);
+    setAvatarError(null);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${currentUser.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: true });
+      if (upErr) {
+        // Most common cause: the "avatars" bucket doesn't exist yet in this
+        // Supabase project. Surface that plainly rather than a raw SDK error.
+        if (/bucket/i.test(upErr.message) && /not found|does not exist/i.test(upErr.message)) {
+          throw new Error(
+            'Photo storage isn\'t set up yet. In Supabase → Storage, create a public bucket named "avatars", then try again.',
+          );
+        }
+        throw upErr;
+      }
+      const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+      const { error: metaErr } = await supabase.auth.updateUser({
+        data: { avatar_url: pub.publicUrl },
+      });
+      if (metaErr) throw metaErr;
+      await refreshAuth();
+    } catch (e) {
+      setAvatarError(e instanceof Error ? e.message : "Could not upload photo.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const displayName = fullName || currentUser?.email?.split("@")[0] || "Dayjoy User";
   const initials = displayName
     .split(" ")
@@ -95,11 +147,35 @@ export function UserProfile() {
           <div className="space-y-4">
             <Card className="bg-gradient-to-br from-primary/8 to-transparent border-primary/15">
               <div className="flex items-center gap-4">
-                <div
-                  className="w-16 h-16 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-semibold text-xl shrink-0"
-                  aria-hidden="true"
-                >
-                  {initials || <UserRound className="w-7 h-7" aria-hidden="true" />}
+                <div className="relative shrink-0">
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      void handleAvatarPick(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="group relative block w-16 h-16 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-wait"
+                    aria-label="Change profile photo"
+                    title="Change profile photo"
+                  >
+                    <UserAvatar user={currentUser} initials={initials} size={64} className="text-xl" />
+                    <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <Camera className="w-5 h-5 text-white" aria-hidden="true" />
+                    </span>
+                    {avatarUploading ? (
+                      <span className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                        <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                      </span>
+                    ) : null}
+                  </button>
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-semibold truncate">{displayName}</h2>
@@ -121,6 +197,12 @@ export function UserProfile() {
                   </div>
                 </div>
               </div>
+              {avatarError ? (
+                <p role="alert" className="mt-3 text-xs text-destructive flex items-start gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+                  {avatarError}
+                </p>
+              ) : null}
             </Card>
 
             {error ? (

@@ -24,6 +24,7 @@ export function VoiceControls({
   className = "",
   voiceMode = false,
   onToggleVoiceMode,
+  showSpeakToggle = true,
 }: {
   voice: VoiceState;
   onTranscript: (text: string) => void;
@@ -33,6 +34,11 @@ export function VoiceControls({
   /** When provided, the mic button toggles hands-free voice mode instead of
    *  one-shot dictate-into-input. */
   onToggleVoiceMode?: () => void;
+  /** Show the "currently speaking" / mute toggle pair. Only meaningful where
+   *  TTS can actually be playing (hands-free voice mode) — the normal text
+   *  composer no longer auto-speaks every answer, so these buttons were
+   *  permanently-visible, mostly-disabled clutter there. */
+  showSpeakToggle?: boolean;
 }) {
   // When recognition produces a final transcript, push it to the composer
   // and immediately clear it — otherwise it lingers in hook state and can
@@ -105,8 +111,9 @@ export function VoiceControls({
         </Button>
       ) : null}
 
-      {/* Speak / mute toggles — hidden if the browser has no speech synthesis */}
-      {voice.ttsSupported ? (
+      {/* Speak / mute toggles — hidden if the browser has no speech synthesis
+          or the caller opted out (e.g. the text composer, see showSpeakToggle) */}
+      {voice.ttsSupported && showSpeakToggle ? (
         <>
           <Button
             type="button"

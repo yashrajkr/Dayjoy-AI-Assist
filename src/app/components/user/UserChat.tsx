@@ -539,8 +539,11 @@ export function UserChat() {
           };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
-        // Auto-speak the response if TTS is available and not muted
-        if (voice.ttsSupported && !voice.muted && aggregated) {
+        // Auto-speak the response only inside hands-free Voice mode — a
+        // normal typed chat shouldn't read every answer aloud. Previously
+        // this fired unconditionally whenever TTS was available, so every
+        // text message got spoken too.
+        if (voiceMode && voice.ttsSupported && !voice.muted && aggregated) {
           voice.speak(aggregated);
         }
 
@@ -620,7 +623,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role],
+    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -1294,37 +1297,41 @@ export function UserChat() {
             language, sources) lives one tap away in the drawer / options menu
             / profile menu instead of being permanently on screen. */}
         {professionalMobile ? (
-          <header className="lg:hidden flex items-center justify-between gap-2 px-2 h-14 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
+          <header className="lg:hidden flex items-center justify-between gap-2 px-3 h-14 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
             <button
               type="button"
               onClick={() => outletCtx?.openDrawer()}
-              className="p-2 rounded-lg hover:bg-accent/50 text-foreground"
+              className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all"
               aria-label="Open navigation"
             >
-              <Menu className="w-5 h-5" aria-hidden="true" />
+              <Menu className="w-4.5 h-4.5" aria-hidden="true" />
             </button>
-            <h2 className="flex-1 min-w-0 text-center text-sm font-semibold truncate px-1">
-              {activeConv?.title ?? "Dayjoy AI"}
+            {/* Always the brand name, never the conversation title — a title
+                that changes (or briefly renders empty while it's still being
+                summarized) reads as broken branding. The active conversation
+                is already legible from its content and from the drawer. */}
+            <h2 className="flex-1 min-w-0 text-center text-sm font-semibold truncate px-1 text-foreground">
+              {BRAND.shortName}
             </h2>
-            <div className="flex items-center gap-0.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={handleNewChat}
                 disabled={!activeConv && messages.length === 0}
-                className="p-2 rounded-lg hover:bg-accent/50 text-foreground disabled:opacity-40"
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all disabled:opacity-40"
                 aria-label="Start new chat"
                 title="New chat"
               >
-                <MessageSquarePlus className="w-5 h-5" aria-hidden="true" />
+                <MessageSquarePlus className="w-4.5 h-4.5" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 onClick={() => setMoreMenuOpen(true)}
-                className="p-2 rounded-lg hover:bg-accent/50 text-foreground"
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all"
                 aria-label="Conversation options"
                 aria-haspopup="menu"
               >
-                <MoreVertical className="w-5 h-5" aria-hidden="true" />
+                <MoreVertical className="w-4.5 h-4.5" aria-hidden="true" />
               </button>
             </div>
           </header>
@@ -1474,7 +1481,12 @@ export function UserChat() {
         {/* Messages */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto px-4 sm:px-6 py-6"
+          // overflow-x-hidden: the orb's halo glow below uses a negative
+          // margin to bleed past its own box for a soft radial fade, which
+          // was wide enough to push this container past the viewport on
+          // narrow phones and surface a stray horizontal scrollbar that
+          // scrolled nothing.
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-6"
           aria-live="polite"
           aria-relevant="additions text"
         >
@@ -1937,12 +1949,6 @@ export function UserChat() {
                       </motion.div>
                     ) : null}
                   </div>
-                  <VoiceControls
-                    voice={voice}
-                    onTranscript={setInput}
-                    voiceMode={voiceMode}
-                    onToggleVoiceMode={toggleVoiceMode}
-                  />
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}
@@ -1961,6 +1967,16 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
+                  {/* Mic sits immediately left of Send, matching the ChatGPT
+                      composer layout — speak/mute toggles are omitted here
+                      since normal text chat no longer auto-speaks answers. */}
+                  <VoiceControls
+                    voice={voice}
+                    onTranscript={setInput}
+                    voiceMode={voiceMode}
+                    onToggleVoiceMode={toggleVoiceMode}
+                    showSpeakToggle={false}
+                  />
                   <motion.button
                     type="button"
                     onClick={() => handleSend()}

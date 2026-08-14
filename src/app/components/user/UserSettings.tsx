@@ -16,7 +16,6 @@ import {
   Smartphone,
   AlertCircle,
   Check,
-  UserRound,
   Sun,
   Moon,
   Monitor,
@@ -34,6 +33,7 @@ import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { useInstallPrompt } from "../../lib/useInstallPrompt";
+import { UserAvatar } from "../common/UserAvatar";
 import {
   getPushSubscriptionState,
   subscribeToPush,
@@ -244,12 +244,7 @@ export function UserSettings() {
       <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full space-y-4">
         <Card className="bg-gradient-to-br from-primary/8 to-transparent border-primary/15">
           <div className="flex items-center gap-4">
-            <div
-              className="w-14 h-14 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-semibold text-lg shrink-0"
-              aria-hidden="true"
-            >
-              {initials || <UserRound className="w-6 h-6" aria-hidden="true" />}
-            </div>
+            <UserAvatar user={currentUser} initials={initials} size={56} className="text-lg" />
             <div className="min-w-0">
               <h2 className="font-semibold truncate">{displayName}</h2>
               <p className="text-sm text-muted-foreground truncate">{currentUser?.email ?? "Demo session"}</p>

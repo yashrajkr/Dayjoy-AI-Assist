@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { useInstallPrompt } from "../../lib/useInstallPrompt";
+import { UserAvatar } from "../common/UserAvatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
 import {
@@ -378,12 +379,7 @@ export function UserLayout() {
                   title={userName}
                   className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/50 ${collapsed ? "justify-center" : ""}`}
                 >
-                  <div
-                    className="w-9 h-9 rounded-full bg-forest text-forest-foreground flex items-center justify-center font-medium text-sm shrink-0"
-                    aria-hidden="true"
-                  >
-                    {userInitials}
-                  </div>
+                  <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
                   {!collapsed ? (
                     <>
                       <div className="flex-1 text-left min-w-0">
