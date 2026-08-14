@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Bell, Download } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { hasMultipleViews } from "../../lib/workspace";
+import { useInstallPrompt, isStandalone } from "../../lib/useInstallPrompt";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +23,7 @@ import {
 export function AccountMenu() {
   const { currentUser, role, logout } = useAuth();
   const navigate = useNavigate();
+  const { installable, installed, promptInstall } = useInstallPrompt();
 
   const initials =
     currentUser?.email?.slice(0, 2).toUpperCase() ??
@@ -50,6 +53,14 @@ export function AccountMenu() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate("/settings")}>
+          <Bell className="w-3.5 h-3.5" aria-hidden="true" /> Notifications
+        </DropdownMenuItem>
+        {!isStandalone() && !installed ? (
+          <DropdownMenuItem onClick={() => (installable ? promptInstall() : navigate("/settings"))}>
+            <Download className="w-3.5 h-3.5" aria-hidden="true" /> Downloads / Install App
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
         {hasMultipleViews(role) ? (
           <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>

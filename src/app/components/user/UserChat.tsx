@@ -648,6 +648,19 @@ export function UserChat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceMode, voice.transcript]);
 
+  // Barge-in: the instant the AI starts speaking, open a passive mic
+  // alongside it — like ChatGPT's voice mode, the user can just start
+  // talking to interrupt instead of tapping anything first. useVoice cuts
+  // TTS the moment it hears real speech; if it hears nothing this cycle
+  // ends on its own and this effect reopens it on the next render (browser
+  // recognizers don't stay open indefinitely).
+  useEffect(() => {
+    if (!voiceMode || !voice.sttSupported) return;
+    if (!voice.speaking || voice.listening) return;
+    voice.startBargeInListening();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMode, voice.speaking, voice.listening, voice.sttSupported]);
+
   // Hands-free loop: once the spoken answer finishes and nothing else is in
   // flight, re-open the mic automatically so the conversation keeps going
   // without another tap.
