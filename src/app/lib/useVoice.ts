@@ -52,6 +52,14 @@ export type VoiceState = {
   /** Human-readable message when mic start or recognition fails; null otherwise. */
   error: string | null;
   startListening: () => void;
+  /**
+   * Opens the mic *without* cutting off any in-progress speech — used to let
+   * the user barge in (start talking while the AI is still speaking, like
+   * ChatGPT's voice mode). The moment real speech is detected, the caller
+   * should stop TTS; `startListening` still cancels TTS immediately, for
+   * the normal tap-to-talk case.
+   */
+  startBargeInListening: () => void;
   stopListening: () => void;
   /** Clears the current transcript — call after consuming it so a stale value can't leak into a later render. */
   clearTranscript: () => void;
@@ -119,6 +127,10 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  // True only while a passive (barge-in) listen is open — the recognizer is
+  // running *underneath* an active TTS playback. The first real speech it
+  // picks up should cut the AI off, same as tapping to interrupt.
+  const bargeInRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -155,6 +167,19 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
         } else {
           interim += text;
         }
+      }
+      // Barge-in: this mic was opened passively under active TTS playback.
+      // The first couple of real characters means the user started talking
+      // over the AI — cut the AI off right now instead of waiting for a
+      // full final result, the same "you can just start talking" behavior
+      // ChatGPT's voice mode has.
+      if (bargeInRef.current && (interim.trim().length > 1 || final.trim().length > 0)) {
+        bargeInRef.current = false;
+        if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
+        setSpeaking(false);
+        setAmplitude(0);
       }
       setInterimTranscript(interim);
       if (final) {
@@ -198,6 +223,7 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current || listening) return;
+    bargeInRef.current = false;
     // Starting the mic while TTS is still playing risks the mic picking up
     // the speaker's own audio and transcribing it back as user input —
     // interrupt playback first instead of letting the two run concurrently.
@@ -217,7 +243,28 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     }
   }, [listening]);
 
+  // Passive listen — deliberately does NOT cancel speechSynthesis, so it can
+  // run alongside an in-progress answer. onresult (above) watches for real
+  // speech and cuts the AI off the moment it appears.
+  const startBargeInListening = useCallback(() => {
+    if (!recognitionRef.current || listening) return;
+    bargeInRef.current = true;
+    setTranscript("");
+    setInterimTranscript("");
+    setError(null);
+    try {
+      recognitionRef.current.start();
+      setListening(true);
+    } catch (e) {
+      // Most likely "already started" — fine to drop, the next speaking
+      // cycle will retry.
+      bargeInRef.current = false;
+      console.warn("[voice] barge-in listen failed:", e);
+    }
+  }, [listening]);
+
   const stopListening = useCallback(() => {
+    bargeInRef.current = false;
     recognitionRef.current?.stop();
     setListening(false);
   }, []);
@@ -317,6 +364,7 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     interimTranscript,
     error,
     startListening,
+    startBargeInListening,
     stopListening,
     clearTranscript,
     speak,

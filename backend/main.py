@@ -82,7 +82,13 @@ app = FastAPI(
     description="Enterprise AI assistant backend with full RAG, Phase 2 admin console API, enhanced product/training/FAQ management, streaming, and safety filters.",
 )
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "https://dayjoy-ai-assist.vercel.app,"
+    "https://dayjoy-ai-assist-poemyashraj-bytes-projects.vercel.app,"
+    "https://dayjoy-ai-assist-git-main-poemyashraj-bytes-projects.vercel.app",
+)
 _origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
