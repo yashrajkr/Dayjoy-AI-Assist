@@ -15,6 +15,7 @@ import { subscribeToNotificationClicks } from "./lib/pushNotifications";
 import { AppSelector } from "./components/AppSelector";
 import { LoginPage } from "./components/user/LoginPage";
 import { AuthCallback } from "./components/user/AuthCallback";
+import { ResetPassword } from "./components/user/ResetPassword";
 import { WorkspaceSwitcher } from "./components/user/WorkspaceSwitcher";
 import { NotFound } from "./components/common/NotFound";
 import { UserLayout } from "./components/user/UserLayout";
@@ -47,6 +48,36 @@ const HumanSupport = lazy(() =>
 );
 const UserSettings = lazy(() =>
   import("./components/user/UserSettings").then((m) => ({ default: m.UserSettings })),
+);
+const LanguageSettings = lazy(() =>
+  import("./components/user/settings/LanguageSettings").then((m) => ({ default: m.LanguageSettings })),
+);
+const AppearanceSettings = lazy(() =>
+  import("./components/user/settings/AppearanceSettings").then((m) => ({ default: m.AppearanceSettings })),
+);
+const NotificationsSettings = lazy(() =>
+  import("./components/user/settings/NotificationsSettings").then((m) => ({ default: m.NotificationsSettings })),
+);
+const ChatExperienceSettings = lazy(() =>
+  import("./components/user/settings/ChatExperienceSettings").then((m) => ({ default: m.ChatExperienceSettings })),
+);
+const VoiceSettings = lazy(() =>
+  import("./components/user/settings/VoiceSettings").then((m) => ({ default: m.VoiceSettings })),
+);
+const PersonalizationSettings = lazy(() =>
+  import("./components/user/settings/PersonalizationSettings").then((m) => ({ default: m.PersonalizationSettings })),
+);
+const KnowledgeSourceSettings = lazy(() =>
+  import("./components/user/settings/KnowledgeSourceSettings").then((m) => ({ default: m.KnowledgeSourceSettings })),
+);
+const PrivacySettings = lazy(() =>
+  import("./components/user/settings/PrivacySettings").then((m) => ({ default: m.PrivacySettings })),
+);
+const SecuritySettings = lazy(() =>
+  import("./components/user/settings/SecuritySettings").then((m) => ({ default: m.SecuritySettings })),
+);
+const AboutSettings = lazy(() =>
+  import("./components/user/settings/AboutSettings").then((m) => ({ default: m.AboutSettings })),
 );
 const UserProfile = lazy(() =>
   import("./components/user/UserProfile").then((m) => ({ default: m.UserProfile })),
@@ -256,6 +287,7 @@ export default function App() {
           <Route path="/select" element={<AppSelector />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/lead-capture" element={<LeadCapturePage />} />
           <Route
             path="/workspace"
@@ -485,6 +517,106 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <UserSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/language"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <LanguageSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/appearance"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AppearanceSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/notifications"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <NotificationsSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/chat-experience"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <ChatExperienceSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/voice"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <VoiceSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/personalization"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <PersonalizationSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/knowledge-sources"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <KnowledgeSourceSettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/privacy"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <PrivacySettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/security"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <SecuritySettings />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings/about"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AboutSettings />
                   </Suspense>
                 </ProtectedRoute>
               }

@@ -81,6 +81,7 @@ import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { Modal } from "../common/Modal";
 import { useVoice } from "../../lib/useVoice";
+import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { useTransparentLogo } from "../../lib/useTransparentLogo";
@@ -1518,14 +1519,16 @@ export function UserChat() {
                   <button
                     type="button"
                     onClick={toggleVoiceMode}
-                    disabled={!voice.sttSupported}
+                    disabled={!voice.sttSupported || !isVoiceRepliesEnabled()}
                     className="relative h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
                     aria-label={
                       voiceMode
                         ? "Voice mode active — tap to end"
-                        : voice.sttSupported
-                          ? "Tap to start voice conversation"
-                          : "Voice input is not supported in this browser"
+                        : !isVoiceRepliesEnabled()
+                          ? "Voice is disabled — enable it in Settings to talk"
+                          : voice.sttSupported
+                            ? "Tap to start voice conversation"
+                            : "Voice input is not supported in this browser"
                     }
                     aria-pressed={voiceMode}
                   >
@@ -1561,7 +1564,7 @@ export function UserChat() {
                     ) : null}
                   </button>
                 </div>
-                {voice.sttSupported ? (
+                {voice.sttSupported && isVoiceRepliesEnabled() ? (
                   <p className="text-xs text-muted-foreground -mt-1 mb-2" aria-live="polite">
                     {voiceMode
                       ? voice.listening
@@ -2003,10 +2006,11 @@ export function UserChat() {
                   ) : null}
                   {/* Mic and Send occupy the same slot — one control at a
                       time, matching ChatGPT: mic while the composer is
-                      empty, Send once there's something to send. Speak/mute
-                      toggles are omitted here since normal text chat no
-                      longer auto-speaks answers. */}
-                  {!input.trim() ? (
+                      empty (and voice is enabled), Send once there's
+                      something to send or voice is disabled in Settings.
+                      Speak/mute toggles are omitted here since normal text
+                      chat no longer auto-speaks answers. */}
+                  {!input.trim() && isVoiceRepliesEnabled() ? (
                     <VoiceControls
                       voice={voice}
                       onTranscript={setInput}
@@ -2018,9 +2022,9 @@ export function UserChat() {
                     <motion.button
                       type="button"
                       onClick={() => handleSend()}
-                      disabled={sending}
+                      disabled={sending || !input.trim()}
                       whileTap={{ scale: 0.95 }}
-                      whileHover={{ scale: sending ? 1 : 1.05 }}
+                      whileHover={{ scale: sending || !input.trim() ? 1 : 1.05 }}
                       className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
                       aria-label="Send message"
                     >
