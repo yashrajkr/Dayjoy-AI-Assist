@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Download } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { hasMultipleViews } from "../../lib/workspace";
+import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,15 +14,14 @@ import {
 } from "../ui/dropdown-menu";
 
 /**
- * AccountMenu — the avatar button in the top bar.
- *
- * Previously each header rendered this as an `aria-hidden` <div>, so it was
- * invisible to assistive tech and tapping it did nothing at all. Shared here
- * so the header and the chat page cannot drift apart again.
+ * AccountMenu — the avatar button in the top bar (desktop, and mobile
+ * Explorer mode). There is no "Upgrade" entry — Dayjoy AI Assist has no
+ * subscription tier to promote.
  */
 export function AccountMenu() {
   const { currentUser, role, logout } = useAuth();
   const navigate = useNavigate();
+  const { canInstall, promptInstall } = useInstallPrompt();
 
   const initials =
     currentUser?.email?.slice(0, 2).toUpperCase() ??
@@ -49,12 +50,20 @@ export function AccountMenu() {
           {currentUser?.email ?? "Account"}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate("/settings")}>Profile</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate("/profile")}>Profile</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate("/settings")}>Notifications</DropdownMenuItem>
+        {canInstall ? (
+          <DropdownMenuItem onClick={() => void promptInstall()}>
+            <Download className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+            Install Dayjoy AI
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
         {hasMultipleViews(role) ? (
           <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate("/support")}>Help & Support</DropdownMenuItem>
         <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

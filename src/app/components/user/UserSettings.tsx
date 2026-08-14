@@ -1,5 +1,30 @@
 import { useEffect, useState, useCallback } from "react";
-import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, Plus, BellRing, BellOff, Smartphone, AlertCircle, Check, UserRound } from "lucide-react";
+import { useTheme } from "next-themes";
+import {
+  Settings,
+  Globe,
+  Bell,
+  Shield,
+  Save,
+  CheckCircle2,
+  Brain,
+  Pin,
+  Trash2,
+  Plus,
+  BellRing,
+  BellOff,
+  Smartphone,
+  AlertCircle,
+  Check,
+  UserRound,
+  Sun,
+  Moon,
+  Monitor,
+  MessageSquare,
+  LayoutGrid,
+  Download,
+  Info,
+} from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
@@ -7,6 +32,8 @@ import { BRAND } from "../../lib/brand";
 import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
+import { useChatExperience } from "../../lib/ChatExperienceContext";
+import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import {
   getPushSubscriptionState,
   subscribeToPush,
@@ -42,6 +69,10 @@ export function UserSettings() {
   const [notifications, setNotifications] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const { theme, setTheme } = useTheme();
+  const { mode: chatExperienceMode, setMode: setChatExperienceMode } = useChatExperience();
+  const { canInstall, installed, promptInstall } = useInstallPrompt();
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
 
   // Push notifications state
   const [pushState, setPushState] = useState<PushSubscriptionState | null>(null);
@@ -93,6 +124,16 @@ export function UserSettings() {
       route: "/settings",
     });
   }, []);
+
+  const handleInstall = useCallback(async () => {
+    const outcome = await promptInstall();
+    if (outcome === "accepted") {
+      setInstallMessage("Installed! Look for Dayjoy AI on your home screen or app list.");
+    } else if (outcome === "dismissed") {
+      setInstallMessage(null);
+    }
+    setTimeout(() => setInstallMessage(null), 3500);
+  }, [promptInstall]);
 
   // AI Memory state
   const [prefs, setPrefs] = useState<UserPreference[]>([]);
@@ -244,6 +285,92 @@ export function UserSettings() {
                 <option value="Hindi">हिन्दी (Hindi)</option>
                 <option value="Hinglish">Hinglish</option>
               </select>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <Sun className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">Appearance</h2>
+              <p className="text-sm text-muted-foreground mb-3">Choose how {BRAND.shortName} looks on this device.</p>
+              <div className="inline-flex rounded-lg border border-border overflow-hidden">
+                {([
+                  { value: "system", label: "System", icon: Monitor },
+                  { value: "light", label: "Light", icon: Sun },
+                  { value: "dark", label: "Dark", icon: Moon },
+                ] as const).map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTheme(value)}
+                    aria-pressed={theme === value}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border last:border-r-0 transition-colors ${
+                      theme === value ? "bg-primary text-primary-foreground" : "bg-card hover:bg-accent/60"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <LayoutGrid className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">Chat experience</h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                Controls the mobile chat screen only — desktop is unaffected either way.
+              </p>
+              <div className="space-y-2">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    chatExperienceMode === "professional" ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="chat-experience"
+                    className="mt-1"
+                    checked={chatExperienceMode === "professional"}
+                    onChange={() => setChatExperienceMode("professional")}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Professional (recommended)</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Minimal, chat-first mobile screen — no quick-prompt cards or bottom tab bar. Everything else is one tap away in the menu.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    chatExperienceMode === "explorer" ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="chat-experience"
+                    className="mt-1"
+                    checked={chatExperienceMode === "explorer"}
+                    onChange={() => setChatExperienceMode("explorer")}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Explorer</span>
+                    <span className="block text-xs text-muted-foreground">
+                      The fuller mobile layout with quick-prompt cards and the bottom tab bar always visible.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
         </Card>
@@ -493,6 +620,40 @@ export function UserSettings() {
                   Add
                 </Button>
               </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <MessageSquare className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">App</h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                {installed
+                  ? `${BRAND.shortName} is installed on this device.`
+                  : canInstall
+                    ? `Install ${BRAND.shortName} for a full-screen, app-like experience with faster loading.`
+                    : `Use your browser's "Add to Home Screen" or "Install app" option to install ${BRAND.shortName}.`}
+              </p>
+              {canInstall ? (
+                <Button type="button" onClick={handleInstall}>
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                  Install {BRAND.shortName}
+                </Button>
+              ) : null}
+              {installMessage ? (
+                <p className="text-xs text-primary mt-2 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  {installMessage}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
+                <Info className="w-3 h-3" aria-hidden="true" />
+                {BRAND.name} · v2
+              </p>
             </div>
           </div>
         </Card>

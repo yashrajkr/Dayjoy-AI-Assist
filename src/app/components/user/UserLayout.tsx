@@ -1,5 +1,8 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { useChatExperience } from "../../lib/ChatExperienceContext";
+import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
 import {
@@ -26,6 +29,7 @@ import {
   Pin,
   PinOff,
   Archive,
+  Download,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -82,8 +86,17 @@ export function UserLayout() {
   // would otherwise stack on top of it — two hamburgers, two nav layers,
   // and less vertical room for actual content on a phone screen.
   const isBusinessHub = location.pathname.startsWith("/distributor/dashboard");
+  const isChatRoute = location.pathname === "/" || location.pathname.startsWith("/chat/");
+  const isMobile = useIsMobile();
+  const { mode: chatExperienceMode } = useChatExperience();
+  // On the chat screen in Professional mode, UserChat.tsx renders its own
+  // single minimal mobile header (hamburger + title + New chat + •••) — so
+  // this layout's generic mobile top bar and bottom tab bar both step aside
+  // instead of stacking on top of it.
+  const useChatOwnHeader = isMobile && isChatRoute && chatExperienceMode === "professional";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
+  const { canInstall, promptInstall } = useInstallPrompt();
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
 
   useEffect(() => {
@@ -191,20 +204,22 @@ export function UserLayout() {
             the only escape hatch back to primary nav (Chat, Products, Sign
             out, ...) on mobile, since Business Hub's own drawer only lists
             its sections. */}
-        <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className="p-2 rounded-lg hover:bg-accent/50"
-            aria-label="Open navigation"
-            aria-expanded={drawerOpen}
-            aria-controls="dj-user-drawer"
-          >
-            <Menu className="w-5 h-5" aria-hidden="true" />
-          </button>
-          <DayjoyLogo variant="full" size={28} />
-          <div className="w-9" aria-hidden="true" />
-        </header>
+        {!useChatOwnHeader ? (
+          <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="p-2 rounded-lg hover:bg-accent/50"
+              aria-label="Open navigation"
+              aria-expanded={drawerOpen}
+              aria-controls="dj-user-drawer"
+            >
+              <Menu className="w-5 h-5" aria-hidden="true" />
+            </button>
+            <DayjoyLogo variant="full" size={28} />
+            <div className="w-9" aria-hidden="true" />
+          </header>
+        ) : null}
 
         {/* Mobile drawer overlay */}
         {drawerOpen ? (
@@ -385,12 +400,20 @@ export function UserLayout() {
                   {userName} · {roleLabel}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/profile")}>Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>Settings</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { navigate("/profile"); setDrawerOpen(false); }}>Profile</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { navigate("/settings"); setDrawerOpen(false); }}>Notifications</DropdownMenuItem>
+                {canInstall ? (
+                  <DropdownMenuItem onClick={() => void promptInstall()}>
+                    <Download className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+                    Install Dayjoy AI
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={() => { navigate("/settings"); setDrawerOpen(false); }}>Settings</DropdownMenuItem>
                 {hasMultipleViews(role) ? (
                   <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { navigate("/support"); setDrawerOpen(false); }}>Help & Support</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -430,7 +453,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 ${isBusinessHub ? "pb-0" : "pb-16 lg:pb-0"}`}
+          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden ${useChatOwnHeader ? "pt-0" : "pt-14 lg:pt-0"} ${isBusinessHub || useChatOwnHeader ? "pb-0" : "pb-16 lg:pb-0"}`}
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">
@@ -442,17 +465,16 @@ export function UserLayout() {
               variants={pageTransition}
               className="flex-1 flex flex-col min-w-0 min-h-0"
             >
-              <Outlet />
+              <Outlet context={{ openDrawer: () => setDrawerOpen(true), professionalMobile: useChatOwnHeader }} />
             </motion.div>
           </AnimatePresence>
         </main>
 
-        {/* Mobile bottom tab bar — hidden inside Business Hub. None of these
-            4 destinations (Chat/Dashboard/Products/Knowledge) are Business
-            Hub sections, and BusinessHubShell's own drawer already covers
-            in-workspace navigation; keeping this bar just ate a fixed strip
-            of vertical space for nothing. */}
-        {!isBusinessHub ? (
+        {/* Mobile bottom tab bar — hidden inside Business Hub (its own drawer
+            already covers in-workspace navigation) and hidden on the chat
+            screen in Professional mode (that screen is chat-first; the other
+            3 destinations live in the hamburger drawer instead). */}
+        {!isBusinessHub && !useChatOwnHeader ? (
         <nav
           // Below the drawer backdrop (z-40) so an open drawer covers the tab
           // bar instead of the two fighting at the same level.

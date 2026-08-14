@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   signInUser,
@@ -10,6 +11,7 @@ import {
   type UserRole,
 } from "../../lib/auth";
 import { isSupabaseConfigured, getSupabaseConfigError } from "../../lib/supabaseClient";
+import { useAuth } from "../../lib/AuthContext";
 import { getAvailableViews, getLastWorkspace, hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
@@ -59,6 +61,8 @@ function passwordStrength(pw: string): { score: 0 | 1 | 2 | 3 | 4; label: string
 }
 
 export function LoginPage() {
+  const navigate = useNavigate();
+  const { refresh: refreshAuth } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -71,14 +75,21 @@ export function LoginPage() {
   const supabaseReady = isSupabaseConfigured();
   const supabaseError = getSupabaseConfigError();
 
-  function redirectAfterAuth(resolvedRole: UserRole | null | undefined) {
+  // Client-side navigation, not a full reload — that used to be the only
+  // way the app noticed a fresh sign-in (AuthContext only reads the
+  // session/demo-auth once on mount), so login always paid for a full app
+  // re-bootstrap. `refreshAuth()` re-reads it explicitly instead, so a
+  // normal `navigate()` is enough and the rest of the app (theme, in-flight
+  // state) survives the transition.
+  async function redirectAfterAuth(resolvedRole: UserRole | null | undefined) {
+    await refreshAuth();
     const r = resolvedRole ?? role;
     if (r === "admin" || r === "management" || r === "super_admin") {
-      window.location.href = "/admin/dashboard";
+      navigate("/admin/dashboard");
       return;
     }
     if (r === "employee") {
-      window.location.href = "/admin/employee";
+      navigate("/admin/employee");
       return;
     }
     // Accounts entitled to more than one workspace (e.g. distributor ->
@@ -91,13 +102,13 @@ export function LoginPage() {
     if (hasMultipleViews(r)) {
       const remembered = getLastWorkspace();
       if (remembered && r && getAvailableViews(r).includes(remembered)) {
-        window.location.href = WORKSPACE_VIEWS[remembered].path;
+        navigate(WORKSPACE_VIEWS[remembered].path);
         return;
       }
-      window.location.href = "/workspace";
+      navigate("/workspace");
       return;
     }
-    window.location.href = "/";
+    navigate("/");
   }
 
   async function demoFallbackLogin() {
@@ -107,7 +118,7 @@ export function LoginPage() {
       key,
       JSON.stringify({ id: "demo-user", role: role as UserRole, created_at: nowIso }),
     );
-    redirectAfterAuth(role as UserRole);
+    await redirectAfterAuth(role as UserRole);
   }
 
   function normalizeAuthErrorToUi(err: unknown): string {
@@ -154,7 +165,7 @@ export function LoginPage() {
         await getCurrentSession();
         const user = await getCurrentUser();
         const resolvedRole = getUserRoleFromMetadata(user);
-        redirectAfterAuth(resolvedRole);
+        await redirectAfterAuth(resolvedRole);
       } else {
         if (!fullName.trim()) {
           setMessage({ kind: "error", text: "Full name cannot be empty." });

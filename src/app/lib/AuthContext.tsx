@@ -15,6 +15,12 @@ type AuthState = {
   role: UserRole | null;
   loading: boolean;
   logout: () => Promise<void>;
+  /** Re-reads the current session/demo-auth and updates currentUser/role.
+   * Call this after a sign-in/sign-up write (Supabase or demo localStorage)
+   * so a client-side `navigate()` sees the new identity immediately —
+   * without it, only a full `window.location` reload would have picked up
+   * the change, which is why login used to force one on every sign-in. */
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -152,8 +158,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const value = useMemo<AuthState>(
-    () => ({ currentUser, role, loading, logout }),
-    [currentUser, role, loading, logout],
+    () => ({ currentUser, role, loading, logout, refresh: () => refresh() }),
+    [currentUser, role, loading, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

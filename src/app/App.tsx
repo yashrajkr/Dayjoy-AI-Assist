@@ -7,6 +7,7 @@ import { StepUpGate } from "./lib/StepUpGate";
 import { AppShellFallback } from "./components/common/AppShellFallback";
 import { InstallAppPrompt } from "./components/common/InstallAppPrompt";
 import { ThemeProvider } from "./components/common/ThemeProvider";
+import { ChatExperienceProvider } from "./lib/ChatExperienceContext";
 import { I18nProvider } from "./lib/i18n/I18nContext";
 import { subscribeToNotificationClicks } from "./lib/pushNotifications";
 
@@ -244,6 +245,7 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
     <ThemeProvider>
+      <ChatExperienceProvider>
       <I18nProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -828,6 +830,7 @@ export default function App() {
           </AuthProvider>
         </BrowserRouter>
       </I18nProvider>
+      </ChatExperienceProvider>
     </ThemeProvider>
     </MotionConfig>
   );

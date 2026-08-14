@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -43,6 +43,9 @@ import {
   FileDown,
   Maximize2,
   GitCompare,
+  Menu,
+  MoreVertical,
+  type LucideIcon,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -78,6 +81,8 @@ import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { Modal } from "../common/Modal";
 import { useVoice } from "../../lib/useVoice";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
@@ -248,6 +253,12 @@ export function UserChat() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { currentUser, role } = useAuth();
+  const isMobile = useIsMobile();
+  const { mode: chatExperienceMode } = useChatExperience();
+  // UserLayout only supplies this context on chat routes; other embeddings
+  // (none currently) simply fall back to no-ops.
+  const outletCtx = useOutletContext<{ openDrawer: () => void; professionalMobile: boolean } | undefined>();
+  const professionalMobile = isMobile && chatExperienceMode === "professional";
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -259,6 +270,10 @@ export function UserChat() {
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [findInChatOpen, setFindInChatOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findMatchIndex, setFindMatchIndex] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -1258,8 +1273,56 @@ export function UserChat() {
 
       {/* ============================= Chat area ============================= */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Chat header — branded with logo mark + trust badge */}
-        <header className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3 border-b border-border bg-card/80 backdrop-blur-sm flex-nowrap">
+        {/* Professional-mode mobile header — the ONLY header rendered below
+            the `lg` breakpoint when Professional mode is on (UserLayout's own
+            mobile top bar steps aside for this route, see useChatOwnHeader).
+            Deliberately minimal: hamburger, title, new chat, conversation
+            options — everything else (notifications, theme, profile, export,
+            language, sources) lives one tap away in the drawer / options menu
+            / profile menu instead of being permanently on screen. */}
+        {professionalMobile ? (
+          <header className="lg:hidden flex items-center justify-between gap-2 px-2 h-14 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
+            <button
+              type="button"
+              onClick={() => outletCtx?.openDrawer()}
+              className="p-2 rounded-lg hover:bg-accent/50 text-foreground"
+              aria-label="Open navigation"
+            >
+              <Menu className="w-5 h-5" aria-hidden="true" />
+            </button>
+            <h2 className="flex-1 min-w-0 text-center text-sm font-semibold truncate px-1">
+              {activeConv?.title ?? "Dayjoy AI"}
+            </h2>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleNewChat}
+                disabled={!activeConv && messages.length === 0}
+                className="p-2 rounded-lg hover:bg-accent/50 text-foreground disabled:opacity-40"
+                aria-label="Start new chat"
+                title="New chat"
+              >
+                <MessageSquarePlus className="w-5 h-5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen(true)}
+                className="p-2 rounded-lg hover:bg-accent/50 text-foreground"
+                aria-label="Conversation options"
+                aria-haspopup="menu"
+              >
+                <MoreVertical className="w-5 h-5" aria-hidden="true" />
+              </button>
+            </div>
+          </header>
+        ) : null}
+
+        {/* Chat header — branded with logo mark + trust badge. Full controls;
+            on mobile in Professional mode this is replaced by the minimal
+            header above (still rendered for lg+ / Explorer mode). */}
+        <header
+          className={`${professionalMobile ? "hidden lg:flex" : "flex"} items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3 border-b border-border bg-card/80 backdrop-blur-sm flex-nowrap`}
+        >
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 overflow-hidden">
             {/* Conversation history toggle — opens the slide-out drawer */}
             <Button
@@ -1531,8 +1594,13 @@ export function UserChat() {
                   </span>
                 </motion.div>
 
-                {/* Curated prompt cards — category-themed */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left">
+                {/* Curated prompt cards — category-themed. Hidden on mobile in
+                    Professional mode: a chat-first empty state shouldn't
+                    front-load a grid of suggestions before the user has typed
+                    anything. Still available in Explorer mode and on desktop. */}
+                <div
+                  className={`${professionalMobile ? "hidden lg:grid" : "grid"} grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left`}
+                >
                   {SUGGESTED_PROMPTS.map((p, idx) => {
                     const theme = PROMPT_THEME[p.category];
                     const Icon = theme.icon;
@@ -2543,6 +2611,237 @@ export function UserChat() {
           ) : null}
         </div>
       </Modal>
+
+      {/* Conversation options ("•••" menu) — mobile Professional mode's
+          consolidated home for actions that used to be separate always-on
+          header icons. Only lists actions actually backed by existing
+          functionality (share, rename, export, sources, attachments in this
+          chat, pin, archive, delete, find in chat) — no placeholder buttons. */}
+      <Modal
+        open={moreMenuOpen}
+        onClose={() => setMoreMenuOpen(false)}
+        title="Conversation options"
+        size="sm"
+      >
+        <div className="-m-1 space-y-1">
+          {activeConv ? (
+            <>
+              <MoreMenuItem
+                icon={Share2}
+                label="Share"
+                onClick={() => {
+                  handleShareConversation();
+                  setMoreMenuOpen(false);
+                }}
+              />
+              <MoreMenuItem
+                icon={RefreshCw}
+                label="Rename"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  openRename(activeConv.id, activeConv.title);
+                }}
+              />
+              <MoreMenuItem
+                icon={Download}
+                label="Export as PDF"
+                onClick={() => {
+                  handleExportConversation();
+                  setMoreMenuOpen(false);
+                }}
+              />
+              <MoreMenuItem
+                icon={PanelRightOpen}
+                label={`View verified sources${lastSources.length > 0 ? ` (${lastSources.length})` : ""}`}
+                onClick={() => {
+                  setSourcesPanelOpen(true);
+                  setMoreMenuOpen(false);
+                }}
+              />
+              <MoreMenuItem
+                icon={Paperclip}
+                label={`Attachments in this chat${attachments.length > 0 ? ` (${attachments.length})` : ""}`}
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  setSourcesPanelOpen(true);
+                }}
+              />
+              <MoreMenuItem
+                icon={Search}
+                label="Find in chat"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  setFindInChatOpen(true);
+                }}
+              />
+              <div className="h-px bg-border my-1" />
+              <MoreMenuItem
+                icon={activeConv.pinned ? PinOff : Pin}
+                label={activeConv.pinned ? "Unpin" : "Pin"}
+                onClick={() => {
+                  handlePin(activeConv.id, !activeConv.pinned);
+                  setMoreMenuOpen(false);
+                }}
+              />
+              <MoreMenuItem
+                icon={Archive}
+                label="Archive"
+                onClick={() => {
+                  handleArchive(activeConv.id, true);
+                  setMoreMenuOpen(false);
+                }}
+              />
+              <MoreMenuItem
+                icon={Trash2}
+                label="Delete"
+                destructive
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  void handleDelete(activeConv.id);
+                }}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground px-2 py-1">
+              Start a conversation to see sharing, export, and organization options here.
+            </p>
+          )}
+        </div>
+      </Modal>
+
+      {/* Find in chat — simple client-side search across the current
+          conversation's messages, with jump-to-match navigation. */}
+      <Modal
+        open={findInChatOpen}
+        onClose={() => {
+          setFindInChatOpen(false);
+          setFindQuery("");
+          setFindMatchIndex(0);
+        }}
+        title="Find in chat"
+        size="sm"
+      >
+        <FindInChatPanel
+          messages={messages}
+          query={findQuery}
+          onQueryChange={(q) => {
+            setFindQuery(q);
+            setFindMatchIndex(0);
+          }}
+          matchIndex={findMatchIndex}
+          onMatchIndexChange={setFindMatchIndex}
+          onJump={(id) => {
+            setFindInChatOpen(false);
+            const el = id ? document.getElementById(`msg-${id}`) : null;
+            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        />
+      </Modal>
+    </div>
+  );
+}
+
+/** One row inside the "•••" conversation options menu. */
+function MoreMenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  destructive,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors hover:bg-accent/60 ${
+        destructive ? "text-destructive" : "text-foreground"
+      }`}
+    >
+      <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/** Search-within-conversation panel used by the "Find in chat" modal. */
+function FindInChatPanel({
+  messages,
+  query,
+  onQueryChange,
+  matchIndex,
+  onMatchIndexChange,
+  onJump,
+}: {
+  messages: ChatMessage[];
+  query: string;
+  onQueryChange: (q: string) => void;
+  matchIndex: number;
+  onMatchIndexChange: (i: number) => void;
+  onJump: (messageId?: string) => void;
+}) {
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return messages.filter((m) => m.content.toLowerCase().includes(q));
+  }, [messages, query]);
+
+  const current = matches[matchIndex];
+
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        autoFocus
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        placeholder="Search this conversation…"
+        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      {query.trim() ? (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {matches.length === 0
+              ? "No matches"
+              : `${matchIndex + 1} of ${matches.length} match${matches.length === 1 ? "" : "es"}`}
+          </span>
+          {matches.length > 1 ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onMatchIndexChange((matchIndex - 1 + matches.length) % matches.length)}
+                className="px-2 py-1 rounded hover:bg-accent/60"
+                aria-label="Previous match"
+              >
+                <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onMatchIndexChange((matchIndex + 1) % matches.length)}
+                className="px-2 py-1 rounded hover:bg-accent/60 rotate-180"
+                aria-label="Next match"
+              >
+                <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {current ? (
+        <button
+          type="button"
+          onClick={() => onJump(current.id)}
+          className="w-full text-left p-3 rounded-lg border border-border bg-accent/30 hover:bg-accent/50 transition-colors"
+        >
+          <p className="text-[11px] font-medium text-muted-foreground mb-1">
+            {current.role === "user" ? "You" : BRAND.name} · {formatTimestamp(current.created_at)}
+          </p>
+          <p className="text-sm line-clamp-3">{current.content}</p>
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -2568,6 +2867,7 @@ function MessageBubble({
   if (isUser) {
     return (
       <motion.div
+        id={`msg-${bubbleId}`}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
@@ -2598,6 +2898,7 @@ function MessageBubble({
 
   return (
     <motion.div
+      id={`msg-${bubbleId}`}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
