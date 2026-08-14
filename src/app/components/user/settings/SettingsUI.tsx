@@ -40,6 +40,7 @@ export function SettingsRow({
   chevron = true,
   danger = false,
   leading,
+  trailing,
 }: {
   icon?: LucideIcon;
   label: string;
@@ -53,18 +54,21 @@ export function SettingsRow({
   danger?: boolean;
   /** Custom element in place of the icon box (e.g. an avatar). */
   leading?: ReactNode;
+  /** Custom trailing element (e.g. a Switch) in place of value/chevron —
+   * used for plain on/off settings instead of navigating to a subpage. */
+  trailing?: ReactNode;
 }) {
   const interactive = Boolean(onClick || href);
-  const Tag = href ? "a" : "button";
+  const Tag = trailing ? "div" : href ? "a" : "button";
 
   return (
     <Tag
-      type={href ? undefined : "button"}
-      href={href}
-      onClick={onClick}
-      disabled={!interactive && Tag === "button" ? true : undefined}
+      type={!trailing && !href ? "button" : undefined}
+      href={!trailing ? href : undefined}
+      onClick={!trailing ? onClick : undefined}
+      disabled={!trailing && !interactive && Tag === "button" ? true : undefined}
       className={`w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors ${
-        interactive ? "hover:bg-accent/50 active:bg-accent/70" : ""
+        interactive && !trailing ? "hover:bg-accent/50 active:bg-accent/70" : ""
       } ${danger ? "text-destructive" : ""}`}
     >
       {leading ? (
@@ -87,12 +91,18 @@ export function SettingsRow({
           <p className="text-[13px] text-muted-foreground mt-0.5 truncate">{description}</p>
         ) : null}
       </div>
-      {value ? (
-        <span className="text-[13px] text-muted-foreground shrink-0 max-w-[40%] truncate">{value}</span>
-      ) : null}
-      {chevron && interactive && !danger ? (
-        <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" aria-hidden="true" />
-      ) : null}
+      {trailing ? (
+        trailing
+      ) : (
+        <>
+          {value ? (
+            <span className="text-[13px] text-muted-foreground shrink-0 max-w-[40%] truncate">{value}</span>
+          ) : null}
+          {chevron && interactive && !danger ? (
+            <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" aria-hidden="true" />
+          ) : null}
+        </>
+      )}
     </Tag>
   );
 }

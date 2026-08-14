@@ -18,6 +18,7 @@ import {
   type PushSubscriptionState,
 } from "../../../lib/pushNotifications";
 import { SettingsDetailShell, SettingsSection, SettingsRow, SettingsHint } from "./SettingsUI";
+import { Switch } from "../../ui/switch";
 
 const LS_NOTIFICATIONS_KEY = "dayjoy_user_notifications";
 
@@ -90,9 +91,7 @@ export function NotificationsSettings() {
           icon={Bell}
           label="In-app notifications"
           description="Ticket updates and new training assignments"
-          value={notifications ? "On" : "Off"}
-          onClick={toggleInApp}
-          chevron={false}
+          trailing={<Switch checked={notifications} onCheckedChange={toggleInApp} aria-label="In-app notifications" />}
         />
       </SettingsSection>
 

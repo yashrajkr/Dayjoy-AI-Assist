@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { useInstallPrompt } from "../../lib/useInstallPrompt";
@@ -292,27 +292,33 @@ export function UserLayout() {
 
           {/* Primary nav */}
           <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4" aria-label="Main">
-            {!collapsed ? (
-              <p className="text-xs font-medium text-muted-foreground mb-2 px-3 uppercase tracking-wide">
-                {BRAND.shortName}
-              </p>
-            ) : null}
-            <div className="space-y-1">
+            {/* Grouped into labeled sections instead of one flat list —
+                a dozen same-weight icons in a row gives every destination
+                equal visual importance, which makes the sidebar harder to
+                scan than it needs to be. Collapsed (icon-only) mode drops
+                the labels entirely, same as before. */}
+            <NavGroup label={BRAND.shortName} collapsed={collapsed}>
               <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/voice" icon={Mic} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+            </NavGroup>
+            <NavGroup label="Explore" collapsed={collapsed}>
               <NavItem to="/products" icon={Package} label="Product Discovery" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/knowledge" icon={Search} label="Knowledge Center" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+            </NavGroup>
+            <NavGroup label="Personal" collapsed={collapsed}>
+              <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
                 // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,
                 // AI Sales Coach, ...) live inside the Business Hub workspace's
                 // own secondary sidebar now — not duplicated here.
                 <NavItem to="/distributor/dashboard" icon={LayoutDashboard} label="Business Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               ) : null}
-            </div>
+            </NavGroup>
+            <NavGroup label="Support" collapsed={collapsed} last>
+              <NavItem to="/support" icon={LifeBuoy} label="Support Centre" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+            </NavGroup>
 
             {!collapsed && recentChats.length > 0 ? (
               <div className="pt-5">
@@ -392,7 +398,7 @@ export function UserLayout() {
                         <p className="text-sm font-medium truncate">{userName}</p>
                         <p className="text-xs text-muted-foreground">{roleLabel}</p>
                       </div>
-                      <Settings className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                      <ChevronRight className="w-4 h-4 text-muted-foreground/60" aria-hidden="true" />
                     </>
                   ) : null}
                 </button>
@@ -544,6 +550,33 @@ function groupChatsByDate(chats: Conversation[]): { label: string; items: Conver
   return Object.entries(buckets)
     .filter(([, items]) => items.length > 0)
     .map(([label, items]) => ({ label, items }));
+}
+
+/** One labeled section of the primary nav (e.g. "Explore", "Personal") — a
+ * small uppercase heading above its items, matching the same pattern
+ * already used for "Recent" conversation date groups below. Collapsed mode
+ * drops the label and the section just becomes extra vertical spacing. */
+function NavGroup({
+  label,
+  collapsed,
+  last = false,
+  children,
+}: {
+  label: string;
+  collapsed: boolean;
+  last?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={last ? "" : "mb-4"}>
+      {!collapsed ? (
+        <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 px-3 uppercase tracking-wide">
+          {label}
+        </p>
+      ) : null}
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
 }
 
 function NavItem({
