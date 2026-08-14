@@ -14,7 +14,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     <NextThemesProvider
       attribute="class"
       defaultTheme="light"
-      enableSystem={false}
+      enableSystem
+      themes={["light", "dark", "system"]}
       disableTransitionOnChange={false}
       storageKey="dayjoy-theme"
     >

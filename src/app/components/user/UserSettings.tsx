@@ -1,5 +1,30 @@
 import { useEffect, useState, useCallback } from "react";
-import { Settings, Globe, Bell, Shield, Save, CheckCircle2, Brain, Pin, Trash2, Plus, BellRing, BellOff, Smartphone, AlertCircle, Check, UserRound } from "lucide-react";
+import { useTheme } from "next-themes";
+import {
+  Settings,
+  Globe,
+  Bell,
+  Shield,
+  Save,
+  CheckCircle2,
+  Brain,
+  Pin,
+  Trash2,
+  Plus,
+  BellRing,
+  BellOff,
+  Smartphone,
+  AlertCircle,
+  Check,
+  UserRound,
+  Sun,
+  Moon,
+  Monitor,
+  Sparkles,
+  Compass,
+  Download,
+  Info,
+} from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
@@ -7,6 +32,8 @@ import { BRAND } from "../../lib/brand";
 import { Card } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
 import { Button } from "../ui/button";
+import { useChatExperience, type ChatExperience } from "../../lib/chatMode";
+import { useInstallPrompt, isStandalone } from "../../lib/useInstallPrompt";
 import {
   getPushSubscriptionState,
   subscribeToPush,
@@ -42,6 +69,27 @@ export function UserSettings() {
   const [notifications, setNotifications] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  // Appearance — System / Light / Dark, persisted via next-themes
+  const { theme, setTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = useState(false);
+  useEffect(() => setThemeMounted(true), []);
+
+  // Chat Experience — Professional (default, minimal mobile chat) vs Explorer
+  const [chatExperience, setChatExperienceState] = useChatExperience();
+
+  // App install
+  const { installed, installable, promptInstall } = useInstallPrompt();
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const handleInstallClick = useCallback(async () => {
+    const outcome = await promptInstall();
+    if (outcome === "unavailable") {
+      setInstallMessage(
+        "Your browser hasn't offered an install prompt yet. On iOS Safari, use Share → Add to Home Screen.",
+      );
+      setTimeout(() => setInstallMessage(null), 5000);
+    }
+  }, [promptInstall]);
 
   // Push notifications state
   const [pushState, setPushState] = useState<PushSubscriptionState | null>(null);
@@ -244,6 +292,90 @@ export function UserSettings() {
                 <option value="Hindi">हिन्दी (Hindi)</option>
                 <option value="Hinglish">Hinglish</option>
               </select>
+            </div>
+          </div>
+        </Card>
+
+        {/* Appearance — System / Light / Dark */}
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <Sun className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">Appearance</h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                Choose how {BRAND.shortName} looks. System follows your device setting.
+              </p>
+              <div className="inline-flex rounded-lg border border-border p-1 gap-1" role="radiogroup" aria-label="Theme">
+                {(
+                  [
+                    { value: "system", label: "System", icon: Monitor },
+                    { value: "light", label: "Light", icon: Sun },
+                    { value: "dark", label: "Dark", icon: Moon },
+                  ] as const
+                ).map((opt) => {
+                  const active = themeMounted && theme === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setTheme(opt.value)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                        active ? "bg-primary text-primary-foreground" : "hover:bg-accent/60 text-foreground"
+                      }`}
+                    >
+                      <opt.icon className="w-3.5 h-3.5" aria-hidden="true" />
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Chat Experience — Professional (default) vs Explorer */}
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">Chat Experience</h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                Professional keeps the mobile chat screen to just the conversation. Explorer brings back quick-start prompt cards and shortcuts.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: "professional" as ChatExperience, label: "Professional", desc: "Minimal, chat-first", icon: Shield },
+                    { value: "explorer" as ChatExperience, label: "Explorer", desc: "Discovery shortcuts", icon: Compass },
+                  ]
+                ).map((opt) => {
+                  const active = chatExperience === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setChatExperienceState(opt.value)}
+                      aria-pressed={active}
+                      className={`text-left p-3 rounded-xl border transition-colors ${
+                        active ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <opt.icon className={`w-4 h-4 ${active ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
+                        {opt.label}
+                        {active ? <Check className="w-3.5 h-3.5 text-primary ml-auto" aria-hidden="true" /> : null}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </Card>
@@ -493,6 +625,38 @@ export function UserSettings() {
                   Add
                 </Button>
               </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* App — install + version */}
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <Download className="w-5 h-5 text-primary" aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold">App</h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                {isStandalone() || installed
+                  ? `${BRAND.shortName} is installed on this device.`
+                  : `Install ${BRAND.shortName} for a faster, full-screen experience.`}
+              </p>
+              {!isStandalone() && !installed ? (
+                <Button type="button" onClick={handleInstallClick} disabled={!installable}>
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                  {installable ? "Install Dayjoy AI" : "Install not available yet"}
+                </Button>
+              ) : null}
+              {installMessage ? (
+                <p className="text-xs text-muted-foreground mt-2 flex items-start gap-1">
+                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+                  {installMessage}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground mt-3">
+                {BRAND.name} · v2.13.0
+              </p>
             </div>
           </div>
         </Card>

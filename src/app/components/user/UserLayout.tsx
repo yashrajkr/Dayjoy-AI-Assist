@@ -31,6 +31,7 @@ import {
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
 import { hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
+import { useChatExperience } from "../../lib/chatMode";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Onboarding } from "../onboarding/Onboarding";
@@ -85,6 +86,9 @@ export function UserLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
+  // Professional (default): no permanent bottom tab bar on mobile — those
+  // destinations live in the hamburger drawer instead. Explorer restores it.
+  const [chatExperience] = useChatExperience();
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -174,6 +178,11 @@ export function UserLayout() {
     { to: "/products", icon: Package, label: "Products" },
     { to: "/knowledge", icon: Search, label: "Knowledge" },
   ];
+
+  // Bottom tab bar only in Explorer mode — Professional (default) keeps the
+  // phone screen to header + content + composer, with everything else one
+  // tap away in the hamburger drawer.
+  const showBottomNav = !isBusinessHub && chatExperience === "explorer";
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -430,7 +439,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 ${isBusinessHub ? "pb-0" : "pb-16 lg:pb-0"}`}
+          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden pt-14 lg:pt-0 ${showBottomNav ? "pb-16 lg:pb-0" : "pb-0"}`}
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">
@@ -447,12 +456,13 @@ export function UserLayout() {
           </AnimatePresence>
         </main>
 
-        {/* Mobile bottom tab bar — hidden inside Business Hub. None of these
-            4 destinations (Chat/Dashboard/Products/Knowledge) are Business
-            Hub sections, and BusinessHubShell's own drawer already covers
-            in-workspace navigation; keeping this bar just ate a fixed strip
-            of vertical space for nothing. */}
-        {!isBusinessHub ? (
+        {/* Mobile bottom tab bar — Explorer mode only (see showBottomNav).
+            Hidden inside Business Hub regardless: none of these 4
+            destinations (Chat/Dashboard/Products/Knowledge) are Business Hub
+            sections, and BusinessHubShell's own drawer already covers
+            in-workspace navigation. In Professional mode (default) these
+            destinations live in the hamburger drawer only. */}
+        {showBottomNav ? (
         <nav
           // Below the drawer backdrop (z-40) so an open drawer covers the tab
           // bar instead of the two fighting at the same level.

@@ -1,22 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, X } from "lucide-react";
-
-/** Fired by Chromium browsers when the current page is installable as a PWA. */
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
-const DISMISSED_KEY = "dj-install-prompt-dismissed";
-
-function isStandalone(): boolean {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    // iOS Safari's own standalone flag (non-standard, but the only signal it exposes)
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
-}
+import { useInstallPrompt, isInstallDismissed, dismissInstallPrompt } from "../../lib/useInstallPrompt";
 
 /**
  * Floating "Download app" button — appears once the browser signals the
@@ -24,47 +9,19 @@ function isStandalone(): boolean {
  * once installed or dismissed for this browser.
  */
 export function InstallAppPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(
-    () => window.localStorage.getItem(DISMISSED_KEY) === "1",
-  );
-
-  useEffect(() => {
-    if (isStandalone()) return;
-
-    function onBeforeInstallPrompt(e: Event) {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    }
-    function onInstalled() {
-      setDeferredPrompt(null);
-      window.localStorage.setItem(DISMISSED_KEY, "1");
-    }
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
+  const { installable, promptInstall } = useInstallPrompt();
+  const [dismissed, setDismissed] = useState(() => isInstallDismissed());
 
   const handleInstall = useCallback(async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    if (outcome === "accepted") {
-      window.localStorage.setItem(DISMISSED_KEY, "1");
-    }
-  }, [deferredPrompt]);
+    await promptInstall();
+  }, [promptInstall]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
-    window.localStorage.setItem(DISMISSED_KEY, "1");
+    dismissInstallPrompt();
   }, []);
 
-  const visible = Boolean(deferredPrompt) && !dismissed;
+  const visible = installable && !dismissed;
 
   return (
     <AnimatePresence>
