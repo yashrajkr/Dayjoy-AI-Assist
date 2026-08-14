@@ -31,6 +31,7 @@ import {
   PinOff,
   Archive,
   Download,
+  MoreVertical,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -332,35 +333,40 @@ export function UserLayout() {
                           ) : null}
                           <span className="truncate">{c.title}</span>
                         </NavLink>
-                        <div className="absolute right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity bg-card/95 rounded-md">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handlePinChat(c.id!, !c.pinned);
-                            }}
-                            className="p-1 rounded hover:bg-accent"
-                            aria-label={c.pinned ? "Unpin conversation" : "Pin conversation"}
-                            title={c.pinned ? "Unpin" : "Pin"}
-                          >
-                            {c.pinned ? (
-                              <PinOff className="w-3 h-3" aria-hidden="true" />
-                            ) : (
-                              <Pin className="w-3 h-3" aria-hidden="true" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleArchiveChat(c.id!);
-                            }}
-                            className="p-1 rounded hover:bg-accent"
-                            aria-label="Archive conversation"
-                            title="Archive"
-                          >
-                            <Archive className="w-3 h-3" aria-hidden="true" />
-                          </button>
+                        {/* A single ⋮ trigger, not permanently-visible pin
+                            and archive icons on every row — those read as
+                            visual noise (and on mobile, `max-lg:opacity-100`
+                            meant they were ALWAYS on, not just hover-revealed
+                            like the desktop behavior intended). Hidden until
+                            hover/focus on desktop; on mobile it's dim but
+                            tappable, one icon instead of two. */}
+                        <div className="absolute right-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-60 transition-opacity">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => e.preventDefault()}
+                                className="p-1 rounded hover:bg-accent bg-card/95"
+                                aria-label={`Options for ${c.title}`}
+                              >
+                                <MoreVertical className="w-3.5 h-3.5" aria-hidden="true" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuItem onClick={() => handlePinChat(c.id!, !c.pinned)}>
+                                {c.pinned ? (
+                                  <PinOff className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+                                ) : (
+                                  <Pin className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+                                )}
+                                {c.pinned ? "Unpin" : "Pin"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleArchiveChat(c.id!)}>
+                                <Archive className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+                                Archive
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     ))}

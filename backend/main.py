@@ -27,7 +27,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
@@ -568,9 +568,36 @@ async def retrieve_context(
 def current_time_context() -> str:
     """Real, always-accurate current time — avoids the LLM either refusing
     date/time questions outright or hallucinating an answer from stale
-    training data."""
-    now = datetime.now(timezone.utc)
-    return f"Current date/time: {now.strftime('%A, %B %d, %Y, %H:%M')} UTC."
+    training data.
+
+    Includes IST (Dayjoy's home market) alongside UTC: a bare UTC timestamp
+    previously got read back to Indian users verbatim, off by the 5:30
+    offset from their actual local time, which looked like a wrong answer
+    even though the UTC value itself was correct.
+    """
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc + timedelta(hours=5, minutes=30)
+    return (
+        f"Current date/time: {now_ist.strftime('%A, %B %d, %Y, %H:%M')} IST "
+        f"({now_utc.strftime('%H:%M')} UTC)."
+    )
+
+
+_TIME_QUERY_RE = re.compile(
+    r"\b(what(?:'s| is) the (?:current )?(?:time|date)|current time|current date|"
+    r"today'?s date|what time is it|kya (?:time|samay) hua)\b",
+    re.IGNORECASE,
+)
+
+
+def is_pure_time_query(text: str) -> bool:
+    """True for messages that are just asking what time/date it is right
+    now — current_time_context() already answers these exactly, so routing
+    them through web search too was redundant, sometimes contradicted the
+    accurate value with a stale search result, and triggered the "this
+    came from a web search" disclosure instruction for something that
+    didn't actually need external search at all."""
+    return bool(_TIME_QUERY_RE.search(text)) and len(text.strip()) < 60
 
 
 async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSource], Optional[str]]:
@@ -666,10 +693,18 @@ async def _route_events(
             answer_source = "hybrid"
         else:
             answer_source = "dayjoy_knowledge"
+    elif is_pure_time_query(message):
+        # current_time_context() (always injected into the prompt below)
+        # already answers this exactly — routing it through web search too
+        # was redundant, occasionally surfaced a stale/conflicting result,
+        # and triggered the "this came from a web search" disclosure for a
+        # question that never left the server.
+        category = "general"
+        answer_source = "general_llm"
     elif not context:
         # No approved Dayjoy knowledge matched — fall back to a live web
-        # search for general questions (current time, world events, general
-        # facts) instead of the model refusing outright. Dayjoy-specific
+        # search for general questions (world events, general facts)
+        # instead of the model refusing outright. Dayjoy-specific
         # questions are unaffected: this only runs when `context` is empty.
         yield ("status", "searching_web")
         web_context, web_sources, web_search_provider = await web_search(message)
@@ -728,8 +763,12 @@ SYSTEM_PROMPT = (
     "The context below may contain two kinds of material, each labeled:\n"
     "- Approved Dayjoy knowledge (products, FAQs, policies, training).\n"
     "- Lines marked \"[web]\" — general/current-events web search results, NOT Dayjoy-approved. "
-    "Only relevant to general questions (current date/time, world news, general facts); say "
-    "when information comes from a web search rather than Dayjoy's own materials.\n\n"
+    "Only relevant to general questions (world news, general facts).\n"
+    "- A \"Current date/time\" line — always accurate, already converted to IST; use it directly "
+    "for any date/time question instead of searching or guessing.\n"
+    "Answer naturally and directly — do NOT add meta-commentary about where the information came "
+    "from (e.g. \"this is based on a web search\", \"according to my search results\"). The "
+    "application shows source attribution to the user separately; your job is just the answer.\n\n"
     "Language: you are fully fluent in English, Hindi (Devanagari script), and Hinglish "
     "(Hindi written in Latin letters). You can and must respond in whichever of these the user "
     "asks for — never say you are unable to reply in Hindi or Hinglish. Match the script the "
