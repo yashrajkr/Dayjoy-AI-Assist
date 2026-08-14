@@ -84,6 +84,8 @@ import { useVoice } from "../../lib/useVoice";
 import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
+import { useTransparentLogo } from "../../lib/useTransparentLogo";
+import logoSrc from "../../../assets/dayjoy-logo.png";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
@@ -260,6 +262,7 @@ export function UserChat() {
   // (none currently) simply fall back to no-ops.
   const outletCtx = useOutletContext<{ openDrawer: () => void; professionalMobile: boolean } | undefined>();
   const professionalMobile = isMobile && chatExperienceMode === "professional";
+  const transparentLogo = useTransparentLogo(logoSrc);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -1517,7 +1520,7 @@ export function UserChat() {
                     type="button"
                     onClick={toggleVoiceMode}
                     disabled={!voice.sttSupported || !isVoiceRepliesEnabled()}
-                    className="h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
+                    className="relative h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
                     aria-label={
                       voiceMode
                         ? "Voice mode active — tap to end"
@@ -1549,6 +1552,16 @@ export function UserChat() {
                         size={140}
                       />
                     </Suspense>
+                    {/* Brand mark centered on the orb — a static badge over
+                        the shader sphere rather than a texture baked into
+                        it, so the noise/breathing animation is untouched. */}
+                    {transparentLogo ? (
+                      <img
+                        src={transparentLogo}
+                        alt=""
+                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 object-contain pointer-events-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                      />
+                    ) : null}
                   </button>
                 </div>
                 {voice.sttSupported && isVoiceRepliesEnabled() ? (
@@ -1563,21 +1576,27 @@ export function UserChat() {
                   </p>
                 ) : null}
 
-                {/* Role-aware pill badge — replaces generic greeting */}
-                {(() => {
-                  const welcome = getRoleWelcome(role);
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4 }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/8 border border-primary/15 text-[11px] font-medium text-primary mb-3"
-                    >
-                      <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                      {welcome.label}
-                    </motion.div>
-                  );
-                })()}
+                {/* Role-aware pill badge — an internal-sounding label
+                    ("Customer assistant") that repeats what the header
+                    ("Dayjoy AI") already says. Kept for Explorer/desktop,
+                    dropped in Professional mobile for a cleaner welcome
+                    state — see item 10 of the UX pass this addresses. */}
+                {!professionalMobile ? (
+                  (() => {
+                    const welcome = getRoleWelcome(role);
+                    return (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4 }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/8 border border-primary/15 text-[11px] font-medium text-primary mb-3"
+                      >
+                        <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                        {welcome.label}
+                      </motion.div>
+                    );
+                  })()
+                ) : null}
 
                 <motion.h1
                   initial={{ opacity: 0, y: 8 }}
@@ -1598,29 +1617,44 @@ export function UserChat() {
                   transition={{ duration: 0.4, delay: 0.1 }}
                   className="text-sm sm:text-base text-muted-foreground mb-2 max-w-md mx-auto"
                 >
-                  {getRoleWelcome(role).cta}
+                  {professionalMobile ? "How can I help you today?" : getRoleWelcome(role).cta}
                 </motion.p>
 
-                {/* Trust signals — knowledge base size + safety + verified */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.4, delay: 0.15 }}
-                  className="flex items-center justify-center gap-4 sm:gap-5 text-[11px] text-muted-foreground mb-7 flex-wrap"
-                >
-                  <span className="inline-flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
-                    Safety-filtered
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <BadgeCheck className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
-                    57 verified records
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-gold-accent" aria-hidden="true" />
-                    Cited answers
-                  </span>
-                </motion.div>
+                {/* Trust signals — condensed to one subtle line in
+                    Professional mobile instead of three competing badges;
+                    also no longer claims a specific fabricated record count
+                    (was a hardcoded "57", never sourced from the backend). */}
+                {professionalMobile ? (
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.4, delay: 0.15 }}
+                    className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground mb-7"
+                  >
+                    <ShieldCheck className="w-3 h-3 text-primary" aria-hidden="true" />
+                    Answers grounded in verified Dayjoy knowledge
+                  </motion.p>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.4, delay: 0.15 }}
+                    className="flex items-center justify-center gap-4 sm:gap-5 text-[11px] text-muted-foreground mb-7 flex-wrap"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
+                      Safety-filtered
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <BadgeCheck className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
+                      Verified knowledge
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-gold-accent" aria-hidden="true" />
+                      Cited answers
+                    </span>
+                  </motion.div>
+                )}
 
                 {/* Curated prompt cards — category-themed. Hidden on mobile in
                     Professional mode: a chat-first empty state shouldn't
@@ -1970,10 +2004,13 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic sits immediately left of Send, matching the ChatGPT
-                      composer layout — speak/mute toggles are omitted here
-                      since normal text chat no longer auto-speaks answers. */}
-                  {isVoiceRepliesEnabled() ? (
+                  {/* Mic and Send occupy the same slot — one control at a
+                      time, matching ChatGPT: mic while the composer is
+                      empty (and voice is enabled), Send once there's
+                      something to send or voice is disabled in Settings.
+                      Speak/mute toggles are omitted here since normal text
+                      chat no longer auto-speaks answers. */}
+                  {!input.trim() && isVoiceRepliesEnabled() ? (
                     <VoiceControls
                       voice={voice}
                       onTranscript={setInput}
@@ -1981,27 +2018,28 @@ export function UserChat() {
                       onToggleVoiceMode={toggleVoiceMode}
                       showSpeakToggle={false}
                     />
-                  ) : null}
-                  <motion.button
-                    type="button"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || sending}
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
-                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
-                    aria-label="Send message"
-                  >
-                    {/* Gradient sheen on hover */}
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
-                      }}
-                    />
-                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
-                  </motion.button>
+                  ) : (
+                    <motion.button
+                      type="button"
+                      onClick={() => handleSend()}
+                      disabled={sending || !input.trim()}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: sending || !input.trim() ? 1 : 1.05 }}
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Send message"
+                    >
+                      {/* Gradient sheen on hover */}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
+                    </motion.button>
+                  )}
                 </div>
               </div>
               {/* Attachments preview row */}
@@ -2658,8 +2696,22 @@ export function UserChat() {
         size="sm"
       >
         <div className="-m-1 space-y-1">
+          {/* Search all conversations — reuses the existing conversation
+              list + search box (previously only reachable via a header icon
+              this redesign removed in favor of the hamburger drawer). Not
+              conversation-specific, so it's available even with no active
+              chat. */}
+          <MoreMenuItem
+            icon={Search}
+            label="Search chats"
+            onClick={() => {
+              setMoreMenuOpen(false);
+              setSidebarOpen(true);
+            }}
+          />
           {activeConv ? (
             <>
+              <div className="h-px bg-border my-1" />
               <MoreMenuItem
                 icon={Share2}
                 label="Share"
