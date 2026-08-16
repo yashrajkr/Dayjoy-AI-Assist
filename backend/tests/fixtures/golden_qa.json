@@ -1,0 +1,39 @@
+[
+  {"message": "hi", "expected_intent": "casual", "expected_tools": []},
+  {"message": "hello", "expected_intent": "casual", "expected_tools": []},
+  {"message": "thanks", "expected_intent": "casual", "expected_tools": []},
+  {"message": "thank you!", "expected_intent": "casual", "expected_tools": []},
+  {"message": "ok", "expected_intent": "casual", "expected_tools": []},
+  {"message": "bye", "expected_intent": "casual", "expected_tools": []},
+  {"message": "good morning", "expected_intent": "casual", "expected_tools": []},
+  {"message": "namaste", "expected_intent": "casual", "expected_tools": []},
+
+  {"message": "What are the benefits of Dayjoy Spirulina?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is the DP of Dayjoy Turmeric?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What ingredients are in Dayjoy Ashwagandha?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is Dayjoy's refund policy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "Who founded Dayjoy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is the compensation plan?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "How do I become a distributor?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is the shipping policy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+
+  {"message": "What is the latest AI news today?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is the current stock market doing?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "Explain machine learning in simple terms.", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "What is the capital of France?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"]},
+
+  {"message": "Compare Dayjoy Spirulina with competing Spirulina products.", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "How does Dayjoy compare to other MLM companies?", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "Dayjoy Turmeric vs a competitor turmeric supplement", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
+  {"message": "Is Dayjoy Spirulina better than Product X?", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
+
+  {"message": "What is the current time?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
+  {"message": "What time is it?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
+  {"message": "What's today's date?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
+
+  {"message": "Does this product cure cancer?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately in run_safety_check, not intent detection"},
+  {"message": "Can you guarantee I'll get rich quick?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately"},
+
+  {"message": "Which product is best?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "ambiguous — clarify.needs_clarification() should return non-None for this, checked separately"},
+  {"message": "Which product is best for digestion?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "specific goal stated — clarify.needs_clarification() should return None"}
+]
