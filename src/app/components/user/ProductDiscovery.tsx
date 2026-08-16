@@ -329,7 +329,11 @@ export function ProductDiscovery() {
           </div>
         ) : (
           <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20"
+            // Extra bottom clearance when the floating compare bar is showing
+            // — pb-20 alone wasn't enough room for the last grid row to
+            // clear the bar (plus its bottom-20 mobile offset for the tab
+            // bar) once both were visible at once.
+            className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ${compareSet.length > 0 ? "pb-36" : "pb-20"}`}
             initial="hidden"
             animate="visible"
             variants={{ visible: { transition: { staggerChildren: 0.06 } } }}

@@ -2,7 +2,6 @@ import { Outlet, NavLink, useNavigate, useLocation, matchPath } from "react-rout
 import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
-import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import { UserAvatar } from "../common/UserAvatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
@@ -30,13 +29,13 @@ import {
   Pin,
   PinOff,
   Archive,
-  Download,
+  Trash2,
   MoreVertical,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { formatRoleLabel } from "../../lib/auth";
-import { hasMultipleViews, WORKSPACE_VIEWS } from "../../lib/workspace";
+import { WORKSPACE_VIEWS } from "../../lib/workspace";
 import { BRAND } from "../../lib/brand";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { Onboarding } from "../onboarding/Onboarding";
@@ -45,12 +44,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
-import { listConversations, pinConversation, archiveConversation, type Conversation } from "../../lib/chatStore";
+import { listConversations, pinConversation, archiveConversation, deleteConversation, type Conversation } from "../../lib/chatStore";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -82,7 +80,7 @@ function pageTransitionKey(pathname: string): string {
 export function UserLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, currentUser, logout } = useAuth();
+  const { role, currentUser } = useAuth();
   // The Business Hub workspace has its own mobile top bar + section drawer
   // (BusinessHubShell), so the app-level mobile header and bottom tab bar
   // would otherwise stack on top of it — two hamburgers, two nav layers,
@@ -98,7 +96,6 @@ export function UserLayout() {
   const useChatOwnHeader = isMobile && isChatRoute && chatExperienceMode === "professional";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("dj-sidebar-collapsed") === "1");
-  const { canInstall, promptInstall } = useInstallPrompt();
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
 
   useEffect(() => {
@@ -120,6 +117,13 @@ export function UserLayout() {
   const handleArchiveChat = async (id: string) => {
     setRecentChats((prev) => prev.filter((c) => c.id !== id));
     await archiveConversation(id, true);
+    if (location.pathname === `/chat/${id}`) navigate("/");
+  };
+
+  const handleDeleteChat = async (id: string) => {
+    if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
+    setRecentChats((prev) => prev.filter((c) => c.id !== id));
+    await deleteConversation(id);
     if (location.pathname === `/chat/${id}`) navigate("/");
   };
 
@@ -153,11 +157,6 @@ export function UserLayout() {
     currentUser?.email?.split("@")[0] ||
     "Dayjoy User";
   const roleLabel = formatRoleLabel(role);
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login");
-  };
 
   const paletteItems: CommandPaletteItem[] = [
     { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
@@ -371,6 +370,11 @@ export function UserLayout() {
                                 <Archive className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
                                 Archive
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeleteChat(c.id!)} className="text-destructive">
+                                <Trash2 className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
+                                Delete
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -382,49 +386,27 @@ export function UserLayout() {
             ) : null}
           </nav>
 
-          {/* User card */}
+          {/* User identity — a static row, not an interactive menu. Every
+              page's header now has a persistent top-right AccountMenu
+              (Profile / Notifications / Install / Settings / Switch View /
+              Help / Sign out — see AppHeader.tsx and the chat screen's own
+              header), so duplicating that whole menu here was redundant.
+              This just answers "who am I signed in as" while the drawer is
+              open. */}
           <div className="p-3 border-t border-border space-y-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  title={userName}
-                  className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/50 ${collapsed ? "justify-center" : ""}`}
-                >
-                  <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
-                  {!collapsed ? (
-                    <>
-                      <div className="flex-1 text-left min-w-0">
-                        <p className="text-sm font-medium truncate">{userName}</p>
-                        <p className="text-xs text-muted-foreground">{roleLabel}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground/60" aria-hidden="true" />
-                    </>
-                  ) : null}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>
-                  {userName} · {roleLabel}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => { navigate("/profile"); setDrawerOpen(false); }}>Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { navigate("/settings"); setDrawerOpen(false); }}>Notifications</DropdownMenuItem>
-                {canInstall ? (
-                  <DropdownMenuItem onClick={() => void promptInstall()}>
-                    <Download className="w-3.5 h-3.5 mr-2" aria-hidden="true" />
-                    Install Dayjoy AI
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem onClick={() => { navigate("/settings"); setDrawerOpen(false); }}>Settings</DropdownMenuItem>
-                {hasMultipleViews(role) ? (
-                  <DropdownMenuItem onClick={() => navigate("/workspace", { state: { voluntary: true } })}>Switch View</DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => { navigate("/support"); setDrawerOpen(false); }}>Help & Support</DropdownMenuItem>
-                <DropdownMenuItem onClick={handleLogout}>Sign out</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {!collapsed ? (
+              <div className="w-full flex items-center gap-3 p-2">
+                <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-sm font-medium truncate">{userName}</p>
+                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-center p-2" title={userName}>
+                <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+              </div>
+            )}
 
             {(role === "admin" || role === "management" || role === "employee") ? (
               <NavLink

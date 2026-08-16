@@ -38,6 +38,7 @@ import {
   ScrollText,
   BadgeCheck,
   X,
+  Plus,
   History as HistoryIcon,
   Eye,
   FileDown,
@@ -378,6 +379,19 @@ export function UserChat() {
     return () => {
       cancelled = true;
     };
+  }, [chatId]);
+
+  // ---- Auto-focus the composer on a fresh "/" visit (no conversation
+  // loaded yet), matching ChatGPT's "ready to type immediately" feel.
+  // Scoped to a brand-new chat only — never fires when opening an existing
+  // conversation (`/chat/:id`), so returning to read past messages doesn't
+  // unexpectedly yank focus/scroll into the composer.
+  // Note: most mobile browsers only open the on-screen keyboard in response
+  // to a real user gesture (tap), not a programmatic .focus() from an
+  // effect — this sets logical focus either way, but the OS keyboard may
+  // not visibly pop until the user actually taps the field on mobile.
+  useEffect(() => {
+    if (!chatId) inputRef.current?.focus();
   }, [chatId]);
 
   // ---- Auto-scroll on new message / streaming token ----
@@ -1337,6 +1351,11 @@ export function UserChat() {
               >
                 <MoreVertical className="w-4.5 h-4.5" aria-hidden="true" />
               </button>
+              {/* Profile — every other page reaches it via AppHeader's
+                  top-right avatar; the chat screen previously only offered
+                  it from the bottom of the hamburger drawer, the one place
+                  in the app without a consistent corner avatar. */}
+              <AccountMenu />
             </div>
           </header>
         ) : null}
@@ -1891,24 +1910,27 @@ export function UserChat() {
                         e.target.value = "";
                       }}
                     />
-                    <Button
+                    {/* "+" (ChatGPT-style attachment trigger) instead of a
+                        paperclip/chevron pair — rotates into an "×" when
+                        open instead of swapping icon shape entirely. */}
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="icon"
                       onClick={() => setAttachMenuOpen((v) => !v)}
-                      className="h-auto w-auto p-2"
+                      className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all disabled:opacity-40 shrink-0"
                       disabled={sending}
-                      aria-label="Open tools menu"
+                      aria-label={attachMenuOpen ? "Close attachment menu" : "Add photo or file"}
                       aria-expanded={attachMenuOpen}
                       aria-haspopup="menu"
-                      title="Camera, QR scanner, OCR"
+                      title="Add photo or file"
                     >
-                      {attachMenuOpen ? (
-                        <ChevronUp className="w-4 h-4" aria-hidden="true" />
-                      ) : (
-                        <Paperclip className="w-4 h-4" aria-hidden="true" />
-                      )}
-                    </Button>
+                      <motion.span
+                        animate={{ rotate: attachMenuOpen ? 45 : 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex"
+                      >
+                        <Plus className="w-4.5 h-4.5" aria-hidden="true" />
+                      </motion.span>
+                    </button>
                     {attachMenuOpen ? (
                       <motion.div
                         initial={{ opacity: 0, y: 4 }}

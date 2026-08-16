@@ -24,6 +24,7 @@ import {
   FileText as FileTextIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { AppHeader } from "../common/AppHeader";
 import { useVoice, type VoiceOptions } from "../../lib/useVoice";
 import { BRAND } from "../../lib/brand";
 import {
@@ -100,7 +101,15 @@ function loadSettings(): PersistedSettings {
     rate: 1,
     pitch: 1,
     volume: 1,
-    handsFree: true,
+    // Defaulted true previously: on a brand-new session (nothing saved to
+    // localStorage yet) that silently started the mic ~500ms after the
+    // page mounted via the hands-free "auto-resume listening" effect below
+    // — no tap required, and often failed instantly with "needs an
+    // internet connection" if the device couldn't reach the STT service
+    // yet. Voice must only ever start from an explicit user action; users
+    // who want the ChatGPT-style continuous conversation loop can still
+    // opt in via the Hands-free toggle in session settings.
+    handsFree: false,
     autoSummarize: true,
   };
   if (typeof window === "undefined") return defaults;
@@ -483,27 +492,34 @@ export function VoiceAssistant() {
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
-      {/* Session header */}
-      <header className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Voice Assistant</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Low-latency speech · English, Hindi, Marathi
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={voice.supported && !voice.error ? "success" : "warning"}>
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${voice.supported && !voice.error ? "bg-success" : "bg-warning"}`}
-              aria-hidden="true"
-            />
-            {voice.supported && !voice.error ? "Connected" : "Offline"}
-          </Badge>
-          <Badge variant="outline">{currentLanguageLabel}</Badge>
-        </div>
-      </header>
+      {/* Session header — shared AppHeader (title/subtitle + notifications,
+          theme, and profile avatar) instead of a bespoke one, so this page
+          isn't the only one in the app missing a way to reach the profile
+          menu without going back to the sidebar drawer. */}
+      <AppHeader
+        title="Voice Assistant"
+        subtitle="Low-latency speech · English, Hindi, Marathi"
+        icon={Mic}
+        actions={
+          <div className="hidden sm:flex items-center gap-2">
+            <Badge variant={voice.supported && !voice.error ? "success" : "warning"}>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${voice.supported && !voice.error ? "bg-success" : "bg-warning"}`}
+                aria-hidden="true"
+              />
+              {voice.supported && !voice.error ? "Connected" : "Offline"}
+            </Badge>
+            <Badge variant="outline">{currentLanguageLabel}</Badge>
+          </div>
+        }
+      />
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6 p-4 sm:p-6 overflow-hidden">
+      {/* overflow-y-auto (not overflow-hidden) below `lg`: the two columns
+          stack into one on mobile and together exceed viewport height —
+          overflow-hidden was clipping the transcript/summary instead of
+          letting the page scroll to it. Desktop keeps overflow-hidden since
+          each column manages its own internal scroll instead. */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6 p-4 sm:p-6 overflow-y-auto lg:overflow-hidden">
         {/* Center: voice interaction */}
         <div className="flex flex-col items-center justify-center rounded-3xl border border-border bg-card p-6 sm:p-10 relative overflow-hidden min-h-[420px]">
           <div
@@ -749,10 +765,12 @@ export function VoiceAssistant() {
         >
           <Settings2 className="w-5 h-5" aria-hidden="true" />
         </Button>
+        {/* Desktop only — Space/Esc/Tab shortcuts don't apply on a touch
+            keyboard, so this button was dead weight on mobile. */}
         <Button
           variant="outline"
           size="icon"
-          className="h-11 w-11 rounded-full"
+          className="hidden sm:inline-flex h-11 w-11 rounded-full"
           onClick={() => setShortcutsOpen(true)}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts"
