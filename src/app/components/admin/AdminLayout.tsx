@@ -386,7 +386,12 @@ export function AdminLayout() {
               <span className="hidden sm:inline-flex px-3 py-1 bg-accent text-accent-foreground text-xs font-medium rounded-full">
                 Internal Staff Only
               </span>
-              <AccountMenu />
+              {/* Desktop only — the lg:hidden mobile top bar above already
+                  shows this same avatar, so rendering it again here (this
+                  header isn't hidden below `lg`) duplicated it on mobile. */}
+              <div className="hidden lg:inline-flex">
+                <AccountMenu />
+              </div>
             </div>
           </div>
         </header>

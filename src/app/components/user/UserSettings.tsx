@@ -107,6 +107,10 @@ export function UserSettings() {
                     label={displayName}
                     description={role ? formatRoleLabel(role) : currentUser?.email ?? "Demo session"}
                     onClick={() => {}}
+                    // No chevron here — the arrow convention means "this
+                    // navigates forward to another page," but this row now
+                    // opens a menu in place instead.
+                    chevron={false}
                   />
                 </div>
               </DropdownMenuTrigger>
