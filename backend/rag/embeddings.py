@@ -3,7 +3,8 @@ Embedding provider abstraction for the RAG pipeline.
 
 Supports multiple providers via a single `EmbeddingProvider` interface:
 
-  - **gemini**    → Google Gemini text-embedding-004 (default 768 dims).
+  - **gemini**    → Google Gemini gemini-embedding-001 (default 768 dims via
+                    outputDimensionality; also supports 1536/3072).
                     THE PRODUCTION DEFAULT PRIMARY PROVIDER. Automatic,
                     health-checked fallback to Jina on failure — see
                     get_embedding_provider()'s "gemini" branch. Never falls
@@ -32,7 +33,13 @@ Configuration is via environment variables:
                                    silently to local-hash)
     JINA_API_KEY                = jina_...  (required when provider=jina, or
                                    as the gemini fallback)
-    RAG_EMBEDDING_MODEL         = text-embedding-004 | jina-embeddings-v3 | ...
+    RAG_EMBEDDING_MODEL         = jina-embeddings-v3 | text-embedding-3-small | ...
+                                   (jina/openai/groq branches only)
+    GEMINI_EMBEDDING_MODEL      = gemini-embedding-001  (default; separate
+                                   from RAG_EMBEDDING_MODEL so a value left
+                                   over from a jina/openai config never leaks
+                                   into the gemini branch)
+    GEMINI_EMBEDDING_DIMENSIONS = 768  (optional; also supports 1536/3072)
     RAG_EMBEDDING_DIMENSIONS    = 768 (gemini) | 1024 (jina) | 1536 (openai) | ...
     RAG_EMBEDDING_HEALTH_TTL    = 300  (seconds a provider health check is cached)
     JINA_BASE_URL                = https://api.jina.ai/v1   (optional override)
@@ -173,7 +180,7 @@ class GeminiRateLimitError(GeminiEmbeddingError):
 
 
 class GeminiEmbedding(EmbeddingProvider):
-    """Google Gemini embeddings (text-embedding-004 by default, 768 dims).
+    """Google Gemini embeddings (gemini-embedding-001 by default, 768 dims).
 
     Uses Gemini's batchEmbedContents endpoint for embed_batch() and
     embedContent for a single embed() call — the Generative Language API's
@@ -189,7 +196,7 @@ class GeminiEmbedding(EmbeddingProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
         dimensions: int = 768,
         base_url: Optional[str] = None,
         timeout: float = 30.0,
@@ -669,8 +676,16 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
         # silently degrading to LocalHashEmbedding — see
         # EmbeddingProviderUnavailableError.
         gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        gemini_model = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-004")
-        gemini_dims = dimensions if dimensions else 768
+        # Dedicated env var, NOT the shared RAG_EMBEDDING_MODEL — that var is
+        # also used by the jina/openai/groq branches below, so a deployment
+        # that previously ran RAG_EMBEDDING_PROVIDER=jina with
+        # RAG_EMBEDDING_MODEL=jina-embeddings-v3 left that value in the
+        # environment; reusing it here silently sent Gemini a Jina model
+        # name and always 404'd (confirmed in production logs — every
+        # request fell back to Jina without Gemini ever getting a real
+        # chance to serve).
+        gemini_model = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+        gemini_dims = int(os.getenv("GEMINI_EMBEDDING_DIMENSIONS", "0")) or 768
         gemini_error: Optional[BaseException] = None
 
         if gemini_key:

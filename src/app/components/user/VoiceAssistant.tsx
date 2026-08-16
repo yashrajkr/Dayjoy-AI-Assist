@@ -180,6 +180,18 @@ export function VoiceAssistant() {
 
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Bumped on every handleUserUtterance call; a request only applies its
+  // results (streaming chunks, final turn, TTS) while this still matches
+  // the sequence it was issued with. Without this, a second utterance
+  // starting before the first's fetch resolved let both run concurrently
+  // — both mutated `turns`/streamingText independently, whichever network
+  // response resolved last always "won" regardless of which question was
+  // actually asked most recently, and the second call's TTS silently
+  // cancelled the first's mid-utterance (speak()/startListening() both
+  // unconditionally call speechSynthesis.cancel()) — together these read
+  // as "duplicate answer that vanishes" and "answered a different
+  // question than I asked."
+  const requestSeqRef = useRef(0);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   // Guards the hands-free auto-resume effect below: it must never be the
   // thing that opens the mic for the very first time on this page visit —
@@ -225,6 +237,12 @@ export function VoiceAssistant() {
       const trimmed = text.trim();
       if (!trimmed) return;
 
+      // Supersede any still-in-flight previous turn rather than letting
+      // both run concurrently — see requestSeqRef's declaration for why.
+      abortRef.current?.abort();
+      const mySeq = ++requestSeqRef.current;
+      const isStale = () => requestSeqRef.current !== mySeq;
+
       const convId = await ensureConversation();
       const now = new Date().toISOString();
       const userTurn: Turn = {
@@ -251,11 +269,13 @@ export function VoiceAssistant() {
             conversation_id: convId ?? undefined,
           },
           (chunk) => {
+            if (isStale()) return;
             aggregated += chunk;
             setStreamingText(aggregated);
           },
           controller.signal,
         );
+        if (isStale()) return; // superseded while this request was in flight
         aggregated = res.answer || aggregated;
 
         const assistantTurn: Turn = {
@@ -305,6 +325,10 @@ export function VoiceAssistant() {
           voice.speak(aggregated);
         }
       } catch (e) {
+        // Superseded requests are deliberately aborted (see above) — that
+        // throws too, but it's not a real failure, so it must not show an
+        // error turn for a question the user has already moved past.
+        if (isStale()) return;
         console.warn("[voice-assistant] send failed:", e);
         setTurns((prev) => [
           ...prev,
@@ -317,6 +341,10 @@ export function VoiceAssistant() {
           },
         ]);
       } finally {
+        // A stale request's finally must not clear `thinking` out from
+        // under the newer request that superseded it (which already set
+        // thinking=true for itself).
+        if (isStale()) return;
         setThinking(false);
       }
     },

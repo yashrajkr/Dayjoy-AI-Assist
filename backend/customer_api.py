@@ -654,13 +654,19 @@ async def knowledge_search(req: KnowledgeSearchRequest, request: Request) -> Dic
     if not q or len(q) < 2:
         return {"results": [], "total": 0}
 
+    # Was only assigned inside the "faq" branch below — any request whose
+    # entity_types excluded "faq" (e.g. just ["product"], as the product
+    # search UI sends) hit product/policy/training/document's use of
+    # q_lower before it was ever set, crashing every such search with a
+    # 500 UnboundLocalError. Defined once up front so every branch can use it.
+    q_lower = q.lower()
+
     results: List[Dict[str, Any]] = []
     types = req.entity_types or ["faq", "policy", "product", "training", "document"]
 
     # Search FAQs
     if "faq" in types:
         faqs = await _select("faqs", "id,question,answer,category", filters={"approval_status": "approved"}, limit=200, token=token)
-        q_lower = q.lower()
         for f in faqs:
             if q_lower in (f.get("question") or "").lower() or q_lower in (f.get("answer") or "").lower():
                 results.append({"entity_type": "faq", "entity_id": str(f.get("id", "")), "title": f.get("question"), "snippet": (f.get("answer") or "")[:200], "category": f.get("category")})

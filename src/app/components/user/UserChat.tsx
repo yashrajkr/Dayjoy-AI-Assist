@@ -77,6 +77,7 @@ import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
 import { notifyAIResponseReady } from "../../lib/pushNotifications";
+import { AccountMenu } from "../common/AccountMenu";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "../common/ThemeToggle";
@@ -1493,9 +1494,16 @@ export function UserChat() {
             <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
             <NotificationCenter />
             <ThemeToggle />
-            {/* No profile avatar on the chat page's header (mobile or
-                desktop) — see the mobile header above for why. Reachable
-                from every other page's header as before. */}
+            {/* Profile avatar shows on laptop/desktop (lg+) only — mobile
+                never gets one on the chat page, matching AppHeader.tsx's
+                own `hidden lg:inline-flex` avatar everywhere else. This
+                header block can also render on mobile when Explorer mode
+                is on, so the breakpoint guard (not just the mobile-
+                Professional header's simple omission above) is what
+                actually keeps mobile avatar-free in every mode. */}
+            <div className="hidden lg:inline-flex">
+              <AccountMenu />
+            </div>
           </div>
         </header>
 
