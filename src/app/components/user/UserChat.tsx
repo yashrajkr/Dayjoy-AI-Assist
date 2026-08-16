@@ -90,7 +90,6 @@ import logoSrc from "../../../assets/dayjoy-logo.png";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
-import { AccountMenu } from "../common/AccountMenu";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -1324,13 +1323,15 @@ export function UserChat() {
             >
               <Menu className="w-4.5 h-4.5" aria-hidden="true" />
             </button>
-            {/* Always the brand name, never the conversation title — a title
-                that changes (or briefly renders empty while it's still being
-                summarized) reads as broken branding. The active conversation
-                is already legible from its content and from the drawer. */}
-            <h2 className="flex-1 min-w-0 text-center text-sm font-semibold truncate px-1 text-foreground">
-              {BRAND.name}
-            </h2>
+            {/* Logo + "Dayjoy AI Assist" wordmark, centered — the chat
+                screen's own brand moment. No profile avatar here: this is
+                the one page in the app that's deliberately chat-first with
+                no account chrome in its header; profile is still reachable
+                from the hamburger drawer, and from every other page's
+                header/mobile top bar as before. */}
+            <div className="flex-1 min-w-0 flex items-center justify-center px-1">
+              <DayjoyLogo variant="full" size={22} />
+            </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
@@ -1351,11 +1352,6 @@ export function UserChat() {
               >
                 <MoreVertical className="w-4.5 h-4.5" aria-hidden="true" />
               </button>
-              {/* Profile — every other page reaches it via AppHeader's
-                  top-right avatar; the chat screen previously only offered
-                  it from the bottom of the hamburger drawer, the one place
-                  in the app without a consistent corner avatar. */}
-              <AccountMenu />
             </div>
           </header>
         ) : null}
@@ -1497,7 +1493,9 @@ export function UserChat() {
             <div className="w-px h-6 bg-border mx-0.5 hidden sm:block" aria-hidden="true" />
             <NotificationCenter />
             <ThemeToggle />
-            <AccountMenu />
+            {/* No profile avatar on the chat page's header (mobile or
+                desktop) — see the mobile header above for why. Reachable
+                from every other page's header as before. */}
           </div>
         </header>
 
