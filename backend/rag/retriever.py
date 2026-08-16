@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .embeddings import get_embedding_provider
+from .evidence import DEFAULT_SUFFICIENCY_THRESHOLD, EvidenceVerdict, verify_evidence
+from .rerank import rerank_chunks
 from .vector_store import RetrievedChunk, VectorStore, get_vector_store
 
 
@@ -40,6 +42,17 @@ class RetrievalResult:
     model_used: str = ""
     language: str = "en"
     cache_hit: bool = False
+    # True when the active embedding provider is LocalHashEmbedding (lexical
+    # hashing, not real semantic search) — either because no real provider
+    # key is configured or RAG_EMBEDDING_PROVIDER is unset. Callers should
+    # surface this rather than silently trusting vector-search results as
+    # semantic. See rag/embeddings.py: EmbeddingProvider.is_semantic.
+    embedding_degraded: bool = False
+    # Set from rag/evidence.py's verify_evidence() over the reranked chunks
+    # — a discrete "is this evidence actually strong enough to answer from"
+    # check, distinct from (and feeding into) verification_status/confidence.
+    evidence_sufficient: bool = False
+    evidence_reason: str = "no_evidence_retrieved"
     # Related items (filled in by `fetch_related`)
     related_documents: List[Dict[str, Any]] = field(default_factory=list)
     related_products: List[Dict[str, Any]] = field(default_factory=list)
@@ -61,6 +74,9 @@ class RetrievalResult:
             "related_products": self.related_products,
             "related_faqs": self.related_faqs,
             "related_policies": self.related_policies,
+            "embedding_degraded": self.embedding_degraded,
+            "evidence_sufficient": self.evidence_sufficient,
+            "evidence_reason": self.evidence_reason,
         }
 
     def to_context_string(self, max_chars: int = 4000) -> str:
@@ -147,9 +163,17 @@ class Retriever:
                     c.document_tags = doc.get("tags") or []
                     c.document_language = doc.get("language")
 
+        # 3b) Rerank by relevance + authority + recency (not just raw text
+        # similarity) — reorders `chunks` in place; `.score` (raw retrieval
+        # similarity) is untouched so confidence calibration below is
+        # unaffected by rerank weighting.
+        if chunks:
+            chunks = rerank_chunks(chunks)
+
         # 4) Compute confidence & verification status
         confidence = self._compute_confidence(chunks)
         verification = self._classify_verification(confidence, chunks, confidence_floor, handoff_threshold)
+        evidence_verdict = verify_evidence(chunks, sufficiency_threshold=handoff_threshold)
 
         # 5) Matched documents (deduped, sorted by max chunk score)
         matched_docs = self._build_matched_documents(chunks)
@@ -183,6 +207,9 @@ class Retriever:
             retrieval_time_ms=elapsed_ms,
             model_used=model_used,
             language=language,
+            embedding_degraded=not bool(getattr(self.provider, "is_semantic", True)),
+            evidence_sufficient=evidence_verdict.sufficient,
+            evidence_reason=evidence_verdict.reason,
         )
 
     async def fetch_related(

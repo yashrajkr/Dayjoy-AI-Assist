@@ -40,17 +40,21 @@ All providers expose:
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Protocol, Type, runtime_checkable
 
+_logger = logging.getLogger("dayjoy.rag")
+
 
 @runtime_checkable
 class EmbeddingProviderProtocol(Protocol):
     name: str
     dimensions: int
+    is_semantic: bool
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]: ...
 
@@ -62,6 +66,11 @@ class EmbeddingProvider:
 
     name: str = "base"
     dimensions: int = 1536
+    # True for real semantic embedding models (Jina/OpenAI/Groq); False only
+    # for LocalHashEmbedding, which is lexical-overlap hashing, not semantic
+    # similarity. Callers (Retriever, orchestrator observability) use this to
+    # surface degraded-search state instead of silently trusting the vectors.
+    is_semantic: bool = True
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         raise NotImplementedError
@@ -86,6 +95,7 @@ class LocalHashEmbedding(EmbeddingProvider):
 
     name = "local-hash"
     dimensions = 384
+    is_semantic = False
 
     def __init__(self, dimensions: int = 384):
         self.dimensions = dimensions
@@ -425,7 +435,17 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
     elif provider_name in ("openai",):
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         if not api_key:
-            # Fall back to local
+            # Fall back to local — but unlike jina above, this must not be a
+            # *silent* degrade: an operator who set RAG_EMBEDDING_PROVIDER=
+            # openai believes real semantic search is running. Log it loudly
+            # so it shows up in server logs / error tracking, even though we
+            # still keep the pipeline functional rather than hard-failing.
+            _logger.warning(
+                "RAG_EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is not set — "
+                "falling back to LocalHashEmbedding (NOT a semantic embedding; "
+                "lexical-overlap only). Set OPENAI_API_KEY to restore real "
+                "semantic search."
+            )
             _provider_cache = LocalHashEmbedding()
             return _provider_cache
         model = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small")
@@ -435,6 +455,12 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
     elif provider_name in ("groq",):
         api_key = os.getenv("GROQ_API_KEY", "").strip()
         if not api_key:
+            _logger.warning(
+                "RAG_EMBEDDING_PROVIDER=groq but GROQ_API_KEY is not set — "
+                "falling back to LocalHashEmbedding (NOT a semantic embedding; "
+                "lexical-overlap only). Set GROQ_API_KEY to restore real "
+                "semantic search."
+            )
             _provider_cache = LocalHashEmbedding()
             return _provider_cache
         model = os.getenv("RAG_EMBEDDING_MODEL", "llama3-embed-8b")
@@ -442,9 +468,34 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
             dimensions = 768
         _provider_cache = GroqEmbedding(api_key=api_key, model=model, dimensions=dimensions)
     else:
-        # Local fallback — always works
+        # Local fallback — always works. This is the documented dev default
+        # (RAG_EMBEDDING_PROVIDER unset), not a degrade of a configured
+        # provider, but production deployments should still know they're
+        # running without semantic search.
         if dimensions == 0:
             dimensions = 384
+        _logger.warning(
+            "RAG_EMBEDDING_PROVIDER=%s — using LocalHashEmbedding (NOT a "
+            "semantic embedding; lexical-overlap only). Set "
+            "RAG_EMBEDDING_PROVIDER=jina|openai|groq with the matching API "
+            "key for real semantic search.",
+            provider_name,
+        )
         _provider_cache = LocalHashEmbedding(dimensions=dimensions)
 
     return _provider_cache
+
+
+def embedding_provider_status(provider: Optional[EmbeddingProvider] = None) -> Dict[str, Any]:
+    """Small, explicit status dict for callers that need to know — without
+    string-matching `provider.name` — whether the active embedding provider
+    is real semantic search or the local-hash lexical fallback. Used by the
+    RAG retriever (embedding_degraded on RetrievalResult) and the
+    orchestrator's observability layer."""
+    p = provider or get_embedding_provider()
+    return {
+        "provider": getattr(p, "name", "unknown"),
+        "dimensions": getattr(p, "dimensions", None),
+        "is_semantic": bool(getattr(p, "is_semantic", True)),
+        "degraded": not bool(getattr(p, "is_semantic", True)),
+    }

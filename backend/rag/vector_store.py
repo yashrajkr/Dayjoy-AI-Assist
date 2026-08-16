@@ -20,6 +20,7 @@ All access uses Supabase's PostgREST API (no direct DB connection).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -49,12 +50,18 @@ class RetrievedChunk:
     document_updated_at: Optional[str] = None
     document_tags: List[str] = field(default_factory=list)
     document_language: Optional[str] = None
+    # Set by backend.rag.rerank.rerank_chunks() — blended relevance +
+    # authority + recency score used for ordering/selection. None until
+    # reranking runs; `.score` (raw retrieval similarity) is never
+    # overwritten by it.
+    rerank_score: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chunk_id": self.chunk_id,
             "document_id": self.document_id,
             "score": self.score,
+            "rerank_score": self.rerank_score,
             "chunk_text": self.chunk_text,
             "section_title": self.section_title,
             "page_number": self.page_number,
@@ -315,8 +322,20 @@ class VectorStore:
         min_similarity: float = 0.20,
         token: Optional[str] = None,
     ) -> List[RetrievedChunk]:
-        """Vector search. Falls back to keyword search if no embeddings."""
-        # First, check if any embeddings exist at all
+        """Hybrid search: when any chunk has an active embedding, runs vector/
+        JSONB similarity AND keyword search CONCURRENTLY and fuses the two —
+        a chunk surfaced by both signals is stronger evidence than either
+        alone (small confirmation boost, still capped so a keyword-only
+        match can never masquerade as a verified semantic hit — see
+        `_row_to_chunk`). This replaces the previous keyword-fallback
+        cascade (vector, then keyword ONLY if vector returned nothing),
+        which meant a keyword-relevant chunk that the embedding didn't
+        surface was silently dropped whenever the vector search returned
+        anything at all.
+
+        Falls back to keyword-only when no chunk has an active embedding
+        (index not yet built), matching the previous behavior for that case.
+        """
         any_embeddings = await self._select(
             "knowledge_embeddings",
             columns="id",
@@ -324,15 +343,26 @@ class VectorStore:
             limit=1,
             token=token,
         )
-        results: List[Dict[str, Any]] = []
 
-        if any_embeddings:
-            use_vector = await self.detect_pgvector(token=token)
+        if not any_embeddings:
+            try:
+                results = await self._rpc(
+                    "keyword_search_chunks",
+                    {"p_query": query_text, "p_match_count": top_k, "p_min_score": 1},
+                    token=token,
+                )
+            except Exception:
+                results = []
+            return [self._row_to_chunk(r) for r in (results or [])]
+
+        use_vector = await self.detect_pgvector(token=token)
+
+        async def _run_semantic() -> List[Dict[str, Any]]:
             try:
                 if use_vector:
                     # PostgREST expects the vector as a string "[1.0,2.0,...]"
                     vec_str = "[" + ",".join(str(float(v)) for v in query_embedding) + "]"
-                    results = await self._rpc(
+                    return await self._rpc(
                         "match_chunks_vector",
                         {
                             "p_query_embedding": vec_str,
@@ -340,36 +370,49 @@ class VectorStore:
                             "p_min_similarity": min_similarity,
                         },
                         token=token,
-                    )
-                else:
-                    results = await self._rpc(
-                        "match_chunks_json",
-                        {
-                            "p_query_embedding": query_embedding,
-                            "p_match_count": top_k,
-                            "p_min_similarity": min_similarity,
-                        },
-                        token=token,
-                    )
-            except Exception:
-                results = []
-
-        if not results:
-            # Keyword fallback
-            try:
-                results = await self._rpc(
-                    "keyword_search_chunks",
+                    ) or []
+                return await self._rpc(
+                    "match_chunks_json",
                     {
-                        "p_query": query_text,
+                        "p_query_embedding": query_embedding,
                         "p_match_count": top_k,
-                        "p_min_score": 1,
+                        "p_min_similarity": min_similarity,
                     },
                     token=token,
-                )
+                ) or []
             except Exception:
-                results = []
+                return []
 
-        return [self._row_to_chunk(r) for r in (results or [])]
+        async def _run_keyword() -> List[Dict[str, Any]]:
+            try:
+                return await self._rpc(
+                    "keyword_search_chunks",
+                    {"p_query": query_text, "p_match_count": top_k, "p_min_score": 1},
+                    token=token,
+                ) or []
+            except Exception:
+                return []
+
+        semantic_rows, keyword_rows = await asyncio.gather(_run_semantic(), _run_keyword())
+
+        merged: Dict[str, RetrievedChunk] = {}
+        for row in semantic_rows:
+            chunk_id = str(row.get("chunk_id") or "")
+            if chunk_id:
+                merged[chunk_id] = self._row_to_chunk(row)
+        for row in keyword_rows:
+            chunk_id = str(row.get("chunk_id") or "")
+            if not chunk_id:
+                continue
+            kw_chunk = self._row_to_chunk(row)
+            if chunk_id in merged:
+                # Confirmed by both signals — small boost, capped at 1.0.
+                merged[chunk_id].score = min(1.0, merged[chunk_id].score + kw_chunk.score * 0.15)
+            else:
+                merged[chunk_id] = kw_chunk
+
+        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
+        return ranked[:top_k]
 
     def _row_to_chunk(self, row: Dict[str, Any]) -> RetrievedChunk:
         # match_chunks_vector/match_chunks_json rows carry "similarity" (a

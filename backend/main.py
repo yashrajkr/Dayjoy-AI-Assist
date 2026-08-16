@@ -118,6 +118,16 @@ ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
 
+# AI Orchestrator (backend/orchestrator/) — Phase 1: intent classification +
+# query planning run alongside the existing `_route_events` router purely for
+# observability (logged, not surfaced in the response) so the new layer can
+# be proven out before a later phase lets it actually drive tool selection.
+# Off by default: zero behavior change unless explicitly enabled.
+ORCHESTRATOR_ENABLED = os.getenv("ORCHESTRATOR_ENABLED", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+_orchestrator_logger = logging.getLogger("dayjoy.orchestrator")
+
 
 # ----------------------------------------------------------------------------
 # JWT verification (Supabase)
@@ -265,6 +275,53 @@ async def supabase_insert(
         return data[0] if isinstance(data, list) and data else None
 
 
+async def supabase_update(
+    token: str,
+    table: str,
+    filters: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Generic UPDATE via PostgREST. Returns the updated rows (RLS-scoped by
+    the caller's own JWT, same as supabase_select/supabase_insert above)."""
+    if not SUPABASE_URL:
+        return []
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select=*"
+    for col, val in filters.items():
+        url += f"&{col}=eq.{val}"
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.patch(url, headers=headers, json=payload)
+        if resp.status_code >= 400:
+            return []
+        return resp.json()
+
+
+async def supabase_delete(
+    token: str,
+    table: str,
+    filters: Dict[str, Any],
+) -> bool:
+    """Generic DELETE via PostgREST (RLS-scoped by the caller's own JWT).
+    Returns True on a non-error response."""
+    if not SUPABASE_URL:
+        return False
+    url = f"{SUPABASE_URL}/rest/v1/{table}?"
+    for col, val in filters.items():
+        url += f"&{col}=eq.{val}"
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {token}",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.delete(url, headers=headers)
+        return resp.status_code < 400
+
+
 # ----------------------------------------------------------------------------
 # Models
 # ----------------------------------------------------------------------------
@@ -357,42 +414,18 @@ async def load_safety_rules() -> List[Dict[str, str]]:
     return _safety_cache
 
 
-_CASUAL_MESSAGE_RE = re.compile(
-    r"^\s*("
-    r"hi|hii+|hey+|hello+|namaste|namaskar|yo|sup"
-    r"|good\s?(morning|afternoon|evening|night)"
-    r"|how\s?are\s?(you|u)|kaise\s?ho|kya\s?hal\s?hai"
-    r"|thanks?(\s?you)?|thank\s?you|shukriya|dhanyavaad"
-    r"|ok(ay)?|bye|goodbye|see\s?you|alright|cool|nice|great"
-    r")\s*[!.?]*\s*$",
-    re.IGNORECASE,
+# Regex classifiers (is_casual_message / wants_hybrid_comparison /
+# is_pure_time_query) now live in backend/message_classifiers.py so the
+# orchestrator's intent layer (backend/orchestrator/intent.py) can reuse the
+# exact same logic without importing backend.main (which would be circular,
+# since main.py imports the orchestrator). Re-exported here unchanged so
+# every existing caller/monkeypatch of backend.main.is_casual_message etc.
+# keeps working.
+from backend.message_classifiers import (  # noqa: E402
+    is_casual_message,
+    is_pure_time_query,
+    wants_hybrid_comparison,
 )
-
-
-def is_casual_message(text: str) -> bool:
-    """
-    True for greetings/small-talk with no Dayjoy business content — "hii",
-    "how are you", "thanks", "ok" and similar. These don't need a document
-    search or a "verify with human support" disclaimer; the model can just
-    answer directly, the way any normal chat assistant would.
-    """
-    return bool(_CASUAL_MESSAGE_RE.match(text.strip()))
-
-
-_HYBRID_CUES_RE = re.compile(
-    r"\b(compare|comparison|vs\.?|versus|difference between|better than|alternative to)\b",
-    re.IGNORECASE,
-)
-
-
-def wants_hybrid_comparison(text: str) -> bool:
-    """True when the message asks to compare/relate something against an
-    external reference point (e.g. "compare Dayjoy Spirulina with other
-    Spirulina products"). Only meaningful when Dayjoy context was actually
-    found — see the hybrid branch in /chat and /chat/stream — so this alone
-    never changes behavior for questions with no Dayjoy match.
-    """
-    return bool(_HYBRID_CUES_RE.search(text))
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -502,6 +535,16 @@ async def retrieve_context(
                     "retrieval_time_ms": rag_result.retrieval_time_ms,
                     "model_used": rag_result.model_used,
                     "chunks": [c.to_dict() for c in rag_result.chunks],
+                    # True when semantic search is running on the LocalHashEmbedding
+                    # fallback (lexical overlap only, not real semantic similarity) —
+                    # see rag/embeddings.py get_embedding_provider(). Surfaced here so
+                    # admin/observability can see it; never blocks or scares the user.
+                    "embedding_degraded": rag_result.embedding_degraded,
+                    # Discrete evidence-sufficiency check (rag/evidence.py) over the
+                    # reranked chunks (rag/rerank.py) — feeds handoff_required below
+                    # alongside the existing confidence/verification_status checks.
+                    "evidence_sufficient": rag_result.evidence_sufficient,
+                    "evidence_reason": rag_result.evidence_reason,
                 }
                 # Best-effort fetch related items
                 try:
@@ -589,23 +632,6 @@ def current_time_context() -> str:
         f"Current date/time: {now_ist.strftime('%A, %B %d, %Y, %H:%M')} IST "
         f"({now_utc.strftime('%H:%M')} UTC)."
     )
-
-
-_TIME_QUERY_RE = re.compile(
-    r"\b(what(?:'s| is) the (?:current )?(?:time|date)|current time|current date|"
-    r"today'?s date|what time is it|kya (?:time|samay) hua)\b",
-    re.IGNORECASE,
-)
-
-
-def is_pure_time_query(text: str) -> bool:
-    """True for messages that are just asking what time/date it is right
-    now — current_time_context() already answers these exactly, so routing
-    them through web search too was redundant, sometimes contradicted the
-    accurate value with a stale search result, and triggered the "this
-    came from a web search" disclosure instruction for something that
-    didn't actually need external search at all."""
-    return bool(_TIME_QUERY_RE.search(text)) and len(text.strip()) < 60
 
 
 async def web_search(query: str, max_results: int = 4) -> Tuple[str, List[ChatSource], Optional[str]]:
@@ -740,6 +766,36 @@ async def _route_events(
             used_web_search=used_web_search,
         ),
     )
+
+
+def _run_orchestrator_observability(message: str) -> None:
+    """Phase 1: when ORCHESTRATOR_ENABLED, compute the orchestrator's intent
+    classification + proposed tool plan and log it — purely for
+    observability, alongside `_route_events`, which remains the sole owner
+    of the actual routing decision. Best-effort: any failure here must never
+    affect the chat response, matching this codebase's existing pattern for
+    non-critical logging (see `_log_analytics`, `rag/retriever.py`
+    `_log_query`).
+    """
+    if not ORCHESTRATOR_ENABLED:
+        return
+    try:
+        from backend.orchestrator.observability import TraceEvent, emit_trace
+        from backend.orchestrator.planner import build_plan
+
+        plan = build_plan(message)
+        emit_trace(
+            TraceEvent(
+                intent=plan.intent.intent,
+                entities={
+                    "wants_comparison": plan.intent.wants_comparison,
+                    "is_time_query": plan.intent.is_time_query,
+                },
+                selected_tools=plan.proposed_tools,
+            )
+        )
+    except Exception:
+        _orchestrator_logger.exception("orchestrator observability pass failed")
 
 
 async def determine_route(token: Optional[str], message: str, casual: bool) -> RouteResult:
@@ -1058,6 +1114,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
     casual = is_casual_message(req.message)
+    _run_orchestrator_observability(req.message)
     route = await determine_route(token, req.message, casual)
 
     full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
@@ -1081,10 +1138,17 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     else:
         confidence = 0.85 if route.context else 0.4
         verification_status = "verified" if route.context else "unverified"
+    # Evidence-verification signal (rag/evidence.py, via rag_metadata) is
+    # additive to the existing checks below — it only ever pushes toward
+    # handoff, never suppresses one of the pre-existing conditions.
+    evidence_insufficient = bool(
+        route.rag_metadata and route.rag_metadata.get("evidence_sufficient") is False
+    )
     handoff_required = not casual and not route.used_web_search and (
         verification_status == "unverified"
         or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
         or not bool(route.context)
+        or evidence_insufficient
     )
     category = route.category
     sources = route.sources + route.web_sources
@@ -1213,6 +1277,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
         casual = is_casual_message(req.message)
+        _run_orchestrator_observability(req.message)
         route: Optional[RouteResult] = None
         async for kind, payload in _route_events(token, req.message, casual):
             if kind == "status":
@@ -1286,6 +1351,66 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class RememberRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100)
+    value: str = Field(..., min_length=1, max_length=2000)
+    pinned: bool = False
+
+
+@app.get("/memory")
+async def list_user_memory(request: Request, user_id: str = Depends(require_user_id)) -> Dict[str, Any]:
+    """List this user's own remembered facts/preferences — user-controlled
+    memory per the orchestrator personalization requirements. RLS-scoped to
+    the caller (`auth.uid() = user_id`); the tool also filters by user_id as
+    defense in depth, not as the actual security boundary."""
+    from backend.orchestrator.tools.memory import list_memory
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    items = await list_memory(token, user_id)
+    return {
+        "items": [
+            {
+                "id": i.id,
+                "source": i.source,
+                "key": i.key,
+                "value": i.value,
+                "pinned": i.pinned,
+                "updated_at": i.updated_at,
+                "relevance": i.relevance,
+            }
+            for i in items
+        ]
+    }
+
+
+@app.post("/memory")
+async def remember_fact(req: RememberRequest, request: Request, user_id: str = Depends(require_user_id)) -> Dict[str, Any]:
+    """Save/update a remembered fact (writes to `user_preferences` — the
+    only memory table ordinary users can write under current RLS; see
+    orchestrator/tools/memory.py's module docstring)."""
+    from backend.orchestrator.tools.memory import remember
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    row = await remember(token, user_id, req.key, req.value, req.pinned)
+    if row is None:
+        raise HTTPException(status_code=502, detail="Could not save memory")
+    return {"status": "saved", "item": row}
+
+
+@app.delete("/memory/{pref_key}")
+async def forget_fact(pref_key: str, request: Request, user_id: str = Depends(require_user_id)) -> Dict[str, str]:
+    """User-controlled deletion of a single remembered fact."""
+    from backend.orchestrator.tools.memory import forget
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    ok = await forget(token, user_id, pref_key)
+    return {"status": "deleted" if ok else "not_found"}
 
 
 @app.post("/feedback")
