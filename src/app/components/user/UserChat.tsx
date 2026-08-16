@@ -1315,7 +1315,7 @@ export function UserChat() {
                 summarized) reads as broken branding. The active conversation
                 is already legible from its content and from the drawer. */}
             <h2 className="flex-1 min-w-0 text-center text-sm font-semibold truncate px-1 text-foreground">
-              {BRAND.shortName}
+              {BRAND.name}
             </h2>
             <div className="flex items-center gap-1.5 shrink-0">
               <button

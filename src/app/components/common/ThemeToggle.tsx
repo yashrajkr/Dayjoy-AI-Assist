@@ -10,7 +10,13 @@ import { motion, AnimatePresence } from "framer-motion";
  * which is only available client-side) to prevent hydration mismatch.
  */
 export function ThemeToggle({ className = "" }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
+  // resolvedTheme, not theme — `theme` is "system" until the user has
+  // explicitly picked light/dark (see ThemeProvider.tsx: defaultTheme is
+  // "system"), so checking `theme === "dark"` showed the wrong icon (and
+  // toggled the wrong direction) on any device whose OS is in dark mode,
+  // until the first click overwrote it with an explicit value. That read
+  // as the toggle being broken/laggy rather than simply reading stale state.
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -28,7 +34,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     );
   }
 
-  const isDark = theme === "dark";
+  const isDark = resolvedTheme === "dark";
 
   return (
     <button

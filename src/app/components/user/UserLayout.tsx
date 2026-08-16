@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
@@ -592,32 +592,38 @@ function NavItem({
   collapsed?: boolean;
   onClick?: () => void;
 }) {
+  // isActive is computed here (not via NavLink's `className`/`children`
+  // render-prop functions) because collapsed items get wrapped in
+  // `<TooltipTrigger asChild>` below — Radix's Slot clones NavLink's raw
+  // element and merges its props, which stringifies a function-prop
+  // instead of ever calling it. That silently turned the whole className
+  // into literal function source text, so every collapsed nav icon
+  // rendered with no real classes at all (near-invisible in dark mode:
+  // no text-foreground token applied, just inherited near-black text).
+  const location = useLocation();
+  const end = to === "/";
+  const isActive = end ? location.pathname === to : matchPath({ path: to, end: false }, location.pathname) !== null;
+
   const link = (
     <NavLink
       to={to}
-      end={to === "/"}
+      end={end}
       onClick={onClick}
-      className={({ isActive }) =>
-        `relative w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-sm ${collapsed ? "justify-center" : ""} ${
-          isActive
-            ? "bg-primary text-primary-foreground shadow-raised"
-            : "hover:bg-accent/60 hover:translate-x-0.5 text-foreground"
-        }`
-      }
+      className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-sm ${collapsed ? "justify-center" : ""} ${
+        isActive
+          ? "bg-primary text-primary-foreground shadow-raised"
+          : "hover:bg-accent/60 hover:translate-x-0.5 text-foreground"
+      }`}
     >
-      {({ isActive }) => (
-        <>
-          {isActive ? (
-            <motion.span
-              layoutId="user-nav-active"
-              className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-foreground rounded-r-full"
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            />
-          ) : null}
-          <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          {!collapsed ? <span className="flex-1 text-left truncate">{label}</span> : null}
-        </>
-      )}
+      {isActive ? (
+        <motion.span
+          layoutId="user-nav-active"
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-foreground rounded-r-full"
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        />
+      ) : null}
+      <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+      {!collapsed ? <span className="flex-1 text-left truncate">{label}</span> : null}
     </NavLink>
   );
 

@@ -36,7 +36,25 @@ export type Product = {
   faqs_json?: Record<string, unknown> | null;
   created_at?: string | null;
   tags?: string[] | null; // kept for existing UI usage
+  /** Primary product photo, flattened from the product_images table (see
+   * getProducts()) — the Product type never carried an image field before,
+   * so no product card anywhere could show a real photo. */
+  image_url?: string | null;
 };
+
+type ProductImageRow = { image_url: string | null; is_primary: boolean | null; display_order: number | null };
+
+/** Picks the primary (or first, by display_order) image from a product's
+ * embedded product_images rows. */
+function pickPrimaryImage(images: ProductImageRow[] | null | undefined): string | null {
+  if (!images || images.length === 0) return null;
+  const sorted = [...images].sort((a, b) => {
+    if (a.is_primary && !b.is_primary) return -1;
+    if (!a.is_primary && b.is_primary) return 1;
+    return (a.display_order ?? 0) - (b.display_order ?? 0);
+  });
+  return sorted[0]?.image_url ?? null;
+}
 
 export type FAQ = {
   id?: string;
@@ -205,17 +223,22 @@ function mapDemoLeads(): Lead[] {
 export async function getProducts(): Promise<Product[]> {
   if (isMissingSupabase()) return mapDemoProducts();
 
-  const rows = await safeSelect<Product>(async () => {
+  const rows = await safeSelect<Product & { product_images?: ProductImageRow[] }>(async () => {
     const { data, error } = await client()
       .from("products")
-      .select("*")
+      .select("*, product_images(image_url, is_primary, display_order)")
       .eq("approval_status", "approved")
       .order("created_at", { ascending: false });
 
-    return { data: (data as unknown as Product[] | null) ?? null, error };
+    return { data: (data as unknown as (Product & { product_images?: ProductImageRow[] })[] | null) ?? null, error };
   }, "getProducts");
 
-  return rows.length ? rows : mapDemoProducts();
+  const withImages = rows.map(({ product_images, ...product }) => ({
+    ...product,
+    image_url: pickPrimaryImage(product_images),
+  }));
+
+  return withImages.length ? withImages : mapDemoProducts();
 }
 
 export async function getAllProductsForAdmin(): Promise<Product[]> {

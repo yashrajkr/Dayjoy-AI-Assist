@@ -346,11 +346,7 @@ export function ProductDiscovery() {
                   transition={{ duration: 0.2 }}
                   className="bg-card border border-border rounded-2xl overflow-hidden shadow-flat hover-raise flex flex-col"
                 >
-                  <div className="h-28 bg-gradient-to-br from-accent to-card-beige flex items-center justify-center px-4">
-                    <span className="text-xl font-semibold text-primary text-center leading-tight" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
-                      {p.product_name}
-                    </span>
-                  </div>
+                  <ProductCardImage src={p.image_url} name={p.product_name} />
 
                   <div className="p-4 flex flex-col flex-1">
                     <div className="flex items-center justify-between mb-2">
@@ -392,9 +388,12 @@ export function ProductDiscovery() {
         )}
       </div>
 
-      {/* Floating compare bar — appears once at least one product is selected */}
+      {/* Floating compare bar — appears once at least one product is selected.
+          bottom-20 (not bottom-4) on mobile: UserLayout's bottom tab bar
+          occupies that space up to lg, so a flat bottom-4 offset put this
+          bar underneath/overlapping it instead of stacked above it. */}
       {compareSet.length > 0 ? (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-2xl shadow-overlay px-4 py-3 flex items-center gap-3">
+        <div className="fixed bottom-20 lg:bottom-4 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-2xl shadow-overlay px-4 py-3 flex items-center gap-3">
           <div className="flex -space-x-2">
             {compareSet.map((p) => (
               <div
@@ -438,6 +437,14 @@ export function ProductDiscovery() {
       >
         {detail ? (
           <div className="space-y-3 text-sm">
+            {detail.image_url ? (
+              <img
+                src={detail.image_url}
+                alt={detail.product_name}
+                className="w-full h-40 object-cover rounded-xl border border-border"
+                loading="lazy"
+              />
+            ) : null}
             {detail.brand ? (
               <DetailRow label="Brand" value={detail.brand} />
             ) : null}
@@ -547,6 +554,38 @@ export function ProductDiscovery() {
         onClose={() => setOcrOpen(false)}
         onExtracted={handleOcrExtracted}
         title="Extract text from product label"
+      />
+    </div>
+  );
+}
+
+/** Product card photo — falls back to the branded placeholder (name on a
+ * gradient) when there's no image_url, or the image fails to load, instead
+ * of ever leaving a collapsed/broken layout. */
+function ProductCardImage({ src, name }: { src?: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <div className="h-28 bg-gradient-to-br from-accent to-card-beige flex items-center justify-center px-4">
+        <span
+          className="text-xl font-semibold text-primary text-center leading-tight"
+          style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+        >
+          {name}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-28 bg-accent/30 flex items-center justify-center overflow-hidden">
+      <img
+        src={src}
+        alt={name}
+        className="w-full h-full object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
       />
     </div>
   );

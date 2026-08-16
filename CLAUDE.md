@@ -77,6 +77,26 @@ numeric/version order (`scripts/run_migrations.sh`).
   column writable via a "users can update own row" RLS policy, add the same kind of guard —
   don't assume RLS `USING (auth.uid() = id)` alone is safe for tables with a role/permission
   column.
+- Customer mobile chat is chat-first ("Professional" mode, default) vs. the older
+  feature-dense "Explorer" mode — toggle lives in `ChatExperienceContext.tsx` /
+  Settings → Chat experience. Professional mode gates out the bottom tab bar and
+  quick-prompt cards on mobile only; desktop is unaffected either way. When adding
+  chat-screen UI, check `useChatExperience()` + `useIsMobile()` before assuming it
+  should always render.
+- Settings (`src/app/components/user/settings/`) is an index page (`UserSettings.tsx`,
+  compact grouped rows) that drills into full-screen subpages via `SettingsDetailShell`.
+  Add new settings there, not as inline cards on the index — see `SettingsRow`'s
+  `trailing` prop for on/off `Switch` rows vs. `value`+chevron rows that navigate.
+- `NavLink`'s function-form `className`/`children` props break silently when wrapped in
+  Radix's `asChild` (e.g. `<TooltipTrigger asChild>{link}</TooltipTrigger>` for a
+  collapsed sidebar with tooltips) — Slot clones props before NavLink gets to resolve
+  the function, so the literal function source ends up as the className string. Compute
+  `isActive` yourself (`useLocation()` + `matchPath`) and pass a plain string instead.
+- The Dayjoy logo/orb mark is a flat PNG on solid black (no alpha) at `src/assets/dayjoy-logo.png`
+  — `useTransparentLogo.ts` chroma-keys it to transparent at runtime via canvas (no
+  image-processing package in this project). `public/favicon.png` is a pre-baked static
+  copy of the same processed image for the browser-tab icon / PWA manifest, since those
+  load before any app JS runs and can't use the runtime hook.
 
 ## Where to look for existing docs
 

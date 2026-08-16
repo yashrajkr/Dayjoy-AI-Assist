@@ -522,12 +522,20 @@ async def retrieve_context(
     if tokens:
         best_score = 0
         for table, title_col, extra_cols, category, table_filters in SEARCH_TABLES:
+            # limit=1000: this fetches the full approved-row candidate pool
+            # for client-side token-overlap scoring below, not the number of
+            # results actually used (limit_per_table caps that at 3). 200
+            # silently truncated it below the real row count for `faqs`
+            # (536 approved) and `policies` (209 approved) with no ordering
+            # to make the cut deterministic, so whichever specific FAQ/policy
+            # a user asked about could simply never enter the candidate pool
+            # — a real, intermittent "the AI can't answer this FAQ" bug.
             rows = await supabase_select(
                 token,
                 table,
                 columns=f"id,{title_col},{extra_cols}",
                 filters=table_filters,
-                limit=200,
+                limit=1000,
             )
             scored: List[Tuple[int, Dict[str, Any]]] = []
             for row in rows:
