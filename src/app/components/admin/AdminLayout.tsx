@@ -172,7 +172,15 @@ export function AdminLayout() {
 
   return (
     <TooltipProvider delayDuration={200}>
-    <div className="min-h-screen bg-background flex">
+    {/* h-screen + overflow-hidden (not min-h-screen) — the shell must be
+        CLAMPED to the viewport, not just at-least that tall. With
+        min-h-screen, the container grows to fit whichever is taller (the
+        sidebar's full nav list or the page content), so neither the
+        sidebar's `nav` (flex-1 overflow-y-auto, below) nor `<main>`'s own
+        overflow-auto ever actually got constrained enough to activate —
+        the browser scrolled the whole page (sidebar included) as one
+        unit instead of each scrolling independently. */}
+    <div className="h-screen overflow-hidden bg-background flex">
       <a
         href="#dj-admin-main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"

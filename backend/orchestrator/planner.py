@@ -22,6 +22,7 @@ from backend.orchestrator.types import (
     INTENT_CASUAL,
     INTENT_COMPARISON,
     INTENT_GENERAL,
+    INTENT_RECOMMENDATION,
     IntentResult,
 )
 
@@ -38,7 +39,18 @@ def build_plan(message: str) -> QueryPlan:
     available = set(registry.names())
 
     tools: List[str] = []
-    if intent.intent != INTENT_CASUAL:
+    if intent.intent == INTENT_RECOMMENDATION:
+        # Structured recommendation engine first (exact chart-driven match,
+        # never guessed), dayjoy_kb second for supporting explanation text
+        # only — never web_search: a product recommendation is never a
+        # "current information" need, and letting general web content
+        # override the official Dayjoy chart is exactly what the brief
+        # prohibits.
+        if "product_recommendation" in available:
+            tools.append("product_recommendation")
+        if "dayjoy_kb" in available:
+            tools.append("dayjoy_kb")
+    elif intent.intent != INTENT_CASUAL:
         if "dayjoy_kb" in available:
             tools.append("dayjoy_kb")
         # Mirrors `_route_events`: web search is proposed whenever the

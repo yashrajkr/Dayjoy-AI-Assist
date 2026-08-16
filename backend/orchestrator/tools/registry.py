@@ -46,7 +46,7 @@ def get_registry() -> ToolRegistry:
 
 
 def _register_default_tools(registry: ToolRegistry) -> None:
-    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, web
+    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, recommend, web
 
     registry.register(
         ToolSpec(
@@ -79,6 +79,22 @@ def _register_default_tools(registry: ToolRegistry) -> None:
             timeout_seconds=5.0,
             requires_auth=False,
             handler=pricing.run,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="product_recommendation",
+            description=(
+                "Structured product recommendation engine — matches a user's "
+                "stated goal/condition against the official Dayjoy condition "
+                "recommendation chart (condition_recommendations table) and "
+                "returns ranked, safety-aware product bundles with pricing "
+                "and related products. Preferred over RAG for 'what should I "
+                "take for X' style questions."
+            ),
+            timeout_seconds=8.0,
+            requires_auth=False,
+            handler=recommend.run,
         )
     )
     registry.register(

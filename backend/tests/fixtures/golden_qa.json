@@ -34,6 +34,10 @@
   {"message": "Does this product cure cancer?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately in run_safety_check, not intent detection"},
   {"message": "Can you guarantee I'll get rich quick?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately"},
 
-  {"message": "Which product is best?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "ambiguous — clarify.needs_clarification() should return non-None for this, checked separately"},
-  {"message": "Which product is best for digestion?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "specific goal stated — clarify.needs_clarification() should return None"}
+  {"message": "Which product is best?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "note": "ambiguous — clarify.needs_clarification() should return non-None for this, checked separately"},
+  {"message": "Which product is best for digestion?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "note": "specific goal stated — clarify.needs_clarification() should return None; recommend.run()'s own condition-matching is the real ambiguity check for this one, not clarify.py"},
+
+  {"message": "What do you recommend for high blood pressure?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"]},
+  {"message": "What should I take for joint pain?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"]},
+  {"message": "Suggest something good for anxiety.", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"]}
 ]

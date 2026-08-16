@@ -9,7 +9,7 @@ low-latency, no-new-network-dependency approach.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List
 
 
 def generate_followups(
@@ -40,5 +40,38 @@ def generate_followups(
         suggestions.append("Is there a Dayjoy product related to this?")
     elif answer_source == "general_llm":
         suggestions.append("Would you like Dayjoy-specific information on this instead?")
+
+    return suggestions[:max_suggestions]
+
+
+def generate_recommendation_followups(
+    recommendation_result: Dict[str, Any],
+    message: str,
+    max_suggestions: int = 4,
+) -> List[str]:
+    """Follow-ups tailored to what a product_recommendation tool result
+    actually contains — only offers what's genuinely available (e.g. never
+    suggests "want alternatives?" when none were found)."""
+    if recommendation_result.get("status") != "ok":
+        return []
+
+    products = recommendation_result.get("products") or []
+    if not products:
+        return []
+
+    lowered = message.lower()
+    suggestions: List[str] = []
+    top = products[0]
+
+    if top.get("price") and not any(k in lowered for k in ("price", "dp", "mrp", "bv", "pv")):
+        suggestions.append("Do you want the current price and BV/PV?")
+    if len(products) > 1 and not any(k in lowered for k in ("compare", " vs", "versus")):
+        suggestions.append("Would you like me to compare these options?")
+    if top.get("alternative_product_ids") and "alternative" not in lowered:
+        suggestions.append("Would you like alternatives?")
+    if top.get("complementary_product_ids"):
+        suggestions.append("Would you like to know what pairs well with this?")
+    if not suggestions:
+        suggestions.append("Do you want the official product details?")
 
     return suggestions[:max_suggestions]
