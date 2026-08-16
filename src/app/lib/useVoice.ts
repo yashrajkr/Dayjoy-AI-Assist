@@ -51,6 +51,8 @@ export type VoiceState = {
   interimTranscript: string;
   /** Human-readable message when mic start or recognition fails; null otherwise. */
   error: string | null;
+  /** Dismisses the current error message without touching listening state. */
+  clearError: () => void;
   startListening: () => void;
   /**
    * Opens the mic *without* cutting off any in-progress speech — used to let
@@ -273,6 +275,10 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     setTranscript("");
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   const speak = useCallback(
     (text: string) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window) || muted) return;
@@ -363,6 +369,7 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     transcript,
     interimTranscript,
     error,
+    clearError,
     startListening,
     startBargeInListening,
     stopListening,

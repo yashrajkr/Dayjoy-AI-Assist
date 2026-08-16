@@ -84,8 +84,8 @@ export function Favorites() {
         subtitle="Your saved products, FAQs, and conversations."
         icon={Heart}
         actions={
-          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-            <FolderPlus className="w-4 h-4" /> New Collection
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)} aria-label="New Collection" title="New Collection">
+            <FolderPlus className="w-4 h-4" /> <span className="hidden sm:inline">New Collection</span>
           </Button>
         }
       />

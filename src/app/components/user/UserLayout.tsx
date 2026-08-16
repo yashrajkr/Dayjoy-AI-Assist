@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { UserAvatar } from "../common/UserAvatar";
+import { AccountMenu } from "../common/AccountMenu";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
 import {
@@ -87,6 +88,12 @@ export function UserLayout() {
   // and less vertical room for actual content on a phone screen.
   const isBusinessHub = location.pathname.startsWith("/distributor/dashboard");
   const isChatRoute = location.pathname === "/" || location.pathname.startsWith("/chat/");
+  // Voice Assistant has its own full-width bottom control bar (mic / mute /
+  // settings / end-session) built into VoiceAssistant.tsx — stacking the
+  // generic 5-tab mobile nav underneath it doubled up on bottom chrome and
+  // left an unaccounted gap the page never padded for.
+  const isVoiceRoute = location.pathname.startsWith("/voice");
+  const hideMobileChrome = isBusinessHub || isVoiceRoute;
   const isMobile = useIsMobile();
   const { mode: chatExperienceMode } = useChatExperience();
   // On the chat screen in Professional mode, UserChat.tsx renders its own
@@ -217,8 +224,11 @@ export function UserLayout() {
             >
               <Menu className="w-5 h-5" aria-hidden="true" />
             </button>
-            <DayjoyLogo variant="full" size={28} />
-            <div className="w-9" aria-hidden="true" />
+            {/* Absolutely centered on the bar itself, not flexbox space-between
+                between the menu button and the avatar — those two are different
+                widths, so `justify-between` visibly drifted the logo off-center. */}
+            <DayjoyLogo variant="full" size={28} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <AccountMenu />
           </header>
         ) : null}
 
@@ -443,7 +453,7 @@ export function UserLayout() {
         {/* Main content */}
         <main
           id="dj-main-content"
-          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden ${useChatOwnHeader ? "pt-0" : "pt-14 lg:pt-0"} ${isBusinessHub || useChatOwnHeader ? "pb-0" : "pb-16 lg:pb-0"}`}
+          className={`flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden ${useChatOwnHeader ? "pt-0" : "pt-14 lg:pt-0"} ${hideMobileChrome || useChatOwnHeader ? "pb-0" : "pb-16 lg:pb-0"}`}
           tabIndex={-1}
         >
           <AnimatePresence mode="wait">
@@ -464,7 +474,7 @@ export function UserLayout() {
             already covers in-workspace navigation) and hidden on the chat
             screen in Professional mode (that screen is chat-first; the other
             3 destinations live in the hamburger drawer instead). */}
-        {!isBusinessHub && !useChatOwnHeader ? (
+        {!hideMobileChrome && !useChatOwnHeader ? (
         <nav
           // Below the drawer backdrop (z-40) so an open drawer covers the tab
           // bar instead of the two fighting at the same level.

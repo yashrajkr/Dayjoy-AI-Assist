@@ -181,6 +181,14 @@ export function VoiceAssistant() {
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  // Guards the hands-free auto-resume effect below: it must never be the
+  // thing that opens the mic for the very first time on this page visit —
+  // only a real tap on the mic button (toggleMic) may do that. Without this,
+  // an account with `handsFree: true` already saved from a previous session
+  // got the mic requested ~500ms after mount with zero user gesture, which
+  // browsers often silently deny (no permission prompt shown at all,
+  // straight to a "Microphone access was denied" error).
+  const hasUserStartedMicRef = useRef(false);
   const currentLanguageLabel =
     LANGUAGES.find((l) => l.code === settings.languageCode)?.label ?? "English (India)";
 
@@ -325,9 +333,12 @@ export function VoiceAssistant() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.transcript]);
 
-  // Hands-free mode: automatically resume listening once the AI stops speaking.
+  // Hands-free mode: automatically resume listening once the AI stops
+  // speaking — but only after the user has explicitly started the mic once
+  // via toggleMic. Never on cold mount, even if handsFree was saved as
+  // true from a previous session.
   useEffect(() => {
-    if (!settings.handsFree || !voice.sttSupported) return;
+    if (!settings.handsFree || !voice.sttSupported || !hasUserStartedMicRef.current) return;
     if (!voice.speaking && !voice.listening && !thinking && !ended) {
       const t = window.setTimeout(() => voice.startListening(), 500);
       return () => window.clearTimeout(t);
@@ -335,6 +346,7 @@ export function VoiceAssistant() {
   }, [settings.handsFree, voice.sttSupported, voice.speaking, voice.listening, thinking, ended, voice]);
 
   const toggleMic = useCallback(() => {
+    hasUserStartedMicRef.current = true;
     if (voice.listening) {
       voice.stopListening();
     } else {
@@ -542,7 +554,10 @@ export function VoiceAssistant() {
             >
               <Suspense
                 fallback={
-                  <div className="w-40 h-40 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
+                  // Matches AIOrb's actual 200px size below — a mismatched
+                  // fallback (previously 160px) caused a visible layout
+                  // jump the instant the lazy three.js orb finished loading.
+                  <div className="w-[200px] h-[200px] rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
                     <Sparkles className="w-8 h-8 text-primary" aria-hidden="true" />
                   </div>
                 }
@@ -949,14 +964,20 @@ export function VoiceAssistant() {
       <AnimatePresence>
         {voice.error ? (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            exit={{ opacity: 0, y: -8 }}
             role="alert"
-            className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-3 py-2 rounded-lg shadow-overlay flex items-center gap-2 z-50"
+            // Anchored just under the header, not over the bottom control
+            // bar — "bottom-20" used to land it directly on top of the
+            // "Switch to chat" button/controls row on short mobile
+            // viewports, and its dismiss button was wired to close the
+            // settings modal instead of the error itself, so it had no way
+            // to go away on its own.
+            className="fixed top-16 left-1/2 -translate-x-1/2 max-w-[calc(100vw-2rem)] bg-destructive text-destructive-foreground text-xs px-3 py-2 rounded-lg shadow-overlay flex items-center gap-2 z-50"
           >
-            {voice.error}
-            <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Dismiss">
+            <span className="min-w-0">{voice.error}</span>
+            <button type="button" onClick={voice.clearError} aria-label="Dismiss" className="shrink-0">
               <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </motion.div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Briefcase, ChevronRight, LogOut, Lock, MessageSquare, ShieldCheck, TrendingUp, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, ChevronRight, Lock, MessageSquare, ShieldCheck, TrendingUp, type LucideIcon } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { signInUser } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabaseClient";
@@ -65,7 +65,7 @@ export function WorkspaceSwitcher() {
   }
 
   function handleVerified(view: WorkspaceView) {
-    markStepUpVerified(view);
+    markStepUpVerified(view, currentUser?.id);
     setLastWorkspace(view);
     navigate(returnTo || WORKSPACE_VIEWS[view].path);
   }
@@ -79,28 +79,24 @@ export function WorkspaceSwitcher() {
     <div className="min-h-screen flex items-center justify-center p-6 relative theme-transition">
       <AnimatedBackground />
 
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-        {isVoluntary ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate(-1)}
-            className="h-auto gap-1.5 rounded-lg px-3 py-1.5 glass"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={handleSignOut}
-            className="h-auto gap-1.5 rounded-lg px-3 py-1.5 glass"
-          >
-            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> Sign out
-          </Button>
-        )}
+      {/* Back on the left, theme toggle on the right — a "Sign out" button
+          up here read as a dead end (why would opening the wrong workspace
+          card require signing out?). Back always has somewhere real to go:
+          the previous screen for a voluntary visit, or the login screen
+          (which also clears the session) for the mandatory post-login
+          picker, since there's no in-app "previous page" to return to there. */}
+      <div className="absolute top-4 left-4 z-20">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => (isVoluntary ? navigate(-1) : handleSignOut())}
+          className="h-auto gap-1.5 rounded-lg px-3 py-1.5 glass"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back
+        </Button>
+      </div>
+      <div className="absolute top-4 right-4 z-20">
         <ThemeToggle className="glass" />
       </div>
 

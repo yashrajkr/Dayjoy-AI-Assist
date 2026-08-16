@@ -42,7 +42,7 @@ export function AppHeader({
 
   return (
     <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
-      <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex items-center gap-2.5 min-w-0 flex-1">
         {backHandler ? (
           <button
             type="button"

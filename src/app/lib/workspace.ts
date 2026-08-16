@@ -60,24 +60,31 @@ export function hasMultipleViews(role: UserRole | null): boolean {
 const STEP_UP_PREFIX = "dayjoy_stepup_";
 
 /**
- * Step-up verification is session-scoped on purpose: it should survive
- * in-app navigation but not a closed tab/browser, so re-entering the
- * Business Hub or Leader Dashboard on a new session always re-confirms
- * the account's password.
+ * Step-up verification is remembered per account (keyed by user id), not
+ * per browser session. Once an account has confirmed its Dayjoy ID +
+ * password for a given workspace, re-opening that workspace on a later
+ * login (same email, same device) skips straight in — no re-typing the
+ * password every single time. It's still gated on `userId` so a different
+ * account signing in on a shared device always gets its own fresh check,
+ * and the underlying route is still protected by `StepUpGate` + the normal
+ * role check — this only ever short-circuits a *re-prompt*, never access
+ * itself.
  */
-export function isStepUpVerified(view: WorkspaceView): boolean {
+export function isStepUpVerified(view: WorkspaceView, userId: string | null | undefined): boolean {
+  if (!userId) return false;
   try {
-    return window.sessionStorage.getItem(STEP_UP_PREFIX + view) === "1";
+    return window.localStorage.getItem(STEP_UP_PREFIX + userId + "_" + view) === "1";
   } catch {
     return false;
   }
 }
 
-export function markStepUpVerified(view: WorkspaceView): void {
+export function markStepUpVerified(view: WorkspaceView, userId: string | null | undefined): void {
+  if (!userId) return;
   try {
-    window.sessionStorage.setItem(STEP_UP_PREFIX + view, "1");
+    window.localStorage.setItem(STEP_UP_PREFIX + userId + "_" + view, "1");
   } catch {
-    // sessionStorage unavailable (e.g. private browsing) — re-auth will just be asked again next time.
+    // localStorage unavailable (e.g. private browsing) — re-auth will just be asked again next time.
   }
 }
 

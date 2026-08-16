@@ -43,6 +43,7 @@ import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { LanguageSwitcher } from "../common/LanguageSwitcher";
 import { NotificationCenter } from "../notifications/NotificationCenter";
+import { AccountMenu } from "../common/AccountMenu";
 import { Input } from "../ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -191,8 +192,14 @@ export function AdminLayout() {
         >
           <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
-        <DayjoyLogo variant="full" size={28} />
-        <ThemeToggle />
+        {/* Absolutely centered on the bar itself — `justify-between` between
+            the menu button and the controls on the right (different widths)
+            visibly drifted the logo off-center. */}
+        <DayjoyLogo variant="full" size={28} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <AccountMenu />
+        </div>
       </header>
 
       {drawerOpen ? (
@@ -379,6 +386,7 @@ export function AdminLayout() {
               <span className="hidden sm:inline-flex px-3 py-1 bg-accent text-accent-foreground text-xs font-medium rounded-full">
                 Internal Staff Only
               </span>
+              <AccountMenu />
             </div>
           </div>
         </header>
