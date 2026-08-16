@@ -139,13 +139,16 @@ class Retriever:
             query_embedding = []
         model_used = getattr(self.provider, "name", "unknown")
 
-        # 2) Vector search
+        # 2) Vector search — model_name scopes the search to embeddings from
+        # THIS provider only (namespace safety across provider switches, see
+        # VectorStore.search()'s docstring).
         chunks = await self.store.search(
             query_embedding=query_embedding,
             query_text=query,
             top_k=cfg_top_k,
             min_similarity=cfg_min_sim,
             token=token,
+            model_name=model_used,
         )
 
         # 3) Enrich chunks with document metadata

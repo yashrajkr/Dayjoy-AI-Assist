@@ -26,9 +26,10 @@ OPTIONAL_VARS: Dict[str, List[Tuple[str, str]]] = {
         ("SUPABASE_SERVICE_ROLE_KEY", "Service role key for admin operations"),
     ],
     "AI/LLM (optional)": [
-        ("JINA_API_KEY", "Jina AI API key (production RAG embeddings: jina-embeddings-v3)"),
+        ("GEMINI_API_KEY", "Gemini API key (PRIMARY production RAG embeddings: text-embedding-004)"),
+        ("JINA_API_KEY", "Jina AI API key (fallback RAG embeddings when Gemini is unavailable, or standalone)"),
         ("OPENAI_API_KEY", "OpenAI API key (fallback LLM + embeddings)"),
-        ("RAG_EMBEDDING_PROVIDER", "Embedding provider: jina | openai | groq | local"),
+        ("RAG_EMBEDDING_PROVIDER", "Embedding provider: gemini | jina | openai | groq | local (local is dev-only, never a production semantic-search substitute)"),
         ("RAG_EMBEDDING_MODEL", "Embedding model name"),
     ],
     "Web search (optional)": [

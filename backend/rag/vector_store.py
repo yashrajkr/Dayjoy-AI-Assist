@@ -321,6 +321,7 @@ class VectorStore:
         top_k: int = 5,
         min_similarity: float = 0.20,
         token: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> List[RetrievedChunk]:
         """Hybrid search: when any chunk has an active embedding, runs vector/
         JSONB similarity AND keyword search CONCURRENTLY and fuses the two —
@@ -335,11 +336,25 @@ class VectorStore:
 
         Falls back to keyword-only when no chunk has an active embedding
         (index not yet built), matching the previous behavior for that case.
+
+        `model_name` (namespace safety): when given, the "does an active
+        embedding exist" check is scoped to embeddings from THIS provider
+        only (`knowledge_embeddings.model_name`, set at ingest time to
+        `provider.name` — see rag/pipeline.py). Without this, switching
+        embedding providers (e.g. jina -> gemini) while old-provider vectors
+        are still `is_active=true` would let `match_chunks_vector` compare a
+        new-provider query vector against a different embedding space's
+        stored vectors — a dimension/model mismatch that produces
+        meaningless similarity scores, not just stale results. Omitting
+        `model_name` keeps the previous (provider-agnostic) behavior.
         """
+        embedding_filters: Dict[str, Any] = {"is_active": True}
+        if model_name:
+            embedding_filters["model_name"] = model_name
         any_embeddings = await self._select(
             "knowledge_embeddings",
             columns="id",
-            filters={"is_active": True},
+            filters=embedding_filters,
             limit=1,
             token=token,
         )

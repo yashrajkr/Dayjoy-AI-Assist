@@ -3,38 +3,62 @@ Embedding provider abstraction for the RAG pipeline.
 
 Supports multiple providers via a single `EmbeddingProvider` interface:
 
-  - **jina**      → Jina AI jina-embeddings-v3 (default 1024 dims, matches
-                    the knowledge_embeddings.embedding_vector column).
-                    Task-specific: retrieval.passage for indexing,
-                    retrieval.query for queries. This is the production
-                    semantic embedding provider — see JinaEmbedding below.
+  - **gemini**    → Google Gemini text-embedding-004 (default 768 dims).
+                    THE PRODUCTION DEFAULT PRIMARY PROVIDER. Automatic,
+                    health-checked fallback to Jina on failure — see
+                    get_embedding_provider()'s "gemini" branch. Never falls
+                    back to LocalHashEmbedding.
+  - **jina**      → Jina AI jina-embeddings-v3 (default 1024 dims). The
+                    FALLBACK provider when RAG_EMBEDDING_PROVIDER=gemini and
+                    Gemini is unavailable; also directly selectable on its
+                    own via RAG_EMBEDDING_PROVIDER=jina.
   - **openai**    → OpenAI text-embedding-3-small (default 1536 dims)
   - **groq**      → Groq embedding models (when available)
   - **local**     → Pure-Python TF-IDF hash embedding (no API calls, fixed
                     384 dims). NOT a semantic embedding — for local
-                    development only. Never selected automatically as a
-                    fallback for a configured remote provider (jina/openai/
+                    development only, never a production semantic-search
+                    substitute. Never selected automatically as a fallback
+                    for a configured remote provider (gemini/jina/openai/
                     groq); a missing/misconfigured key for those providers
-                    raises instead of silently degrading to this.
+                    raises (gemini/jina: after exhausting the gemini->jina
+                    fallback chain) instead of silently degrading to this.
   - **custom**    → Pluggable via the EMBEDDING_PROVIDER_REGISTRY.
 
 Configuration is via environment variables:
 
-    RAG_EMBEDDING_PROVIDER   = jina | openai | groq | local   (default: local)
-    JINA_API_KEY             = jina_...   (required when provider=jina)
-    RAG_EMBEDDING_MODEL      = jina-embeddings-v3 | text-embedding-3-small | ...
-    RAG_EMBEDDING_DIMENSIONS = 1024 (jina) | 1536 (openai) | ...
-    JINA_BASE_URL            = https://api.jina.ai/v1   (optional override)
-    JINA_TIMEOUT_SECONDS     = 30    (optional)
-    JINA_MAX_RETRIES         = 3     (optional, transient failures only)
-    JINA_RETRY_BASE_DELAY    = 1.0   (optional, seconds, exponential backoff base)
-    OPENAI_API_KEY           = sk-...
+    RAG_EMBEDDING_PROVIDER      = gemini | jina | openai | groq | local  (default: local)
+    GEMINI_API_KEY              = AIza...  (required for gemini; falls back to
+                                   jina — health-checked — on failure, never
+                                   silently to local-hash)
+    JINA_API_KEY                = jina_...  (required when provider=jina, or
+                                   as the gemini fallback)
+    RAG_EMBEDDING_MODEL         = text-embedding-004 | jina-embeddings-v3 | ...
+    RAG_EMBEDDING_DIMENSIONS    = 768 (gemini) | 1024 (jina) | 1536 (openai) | ...
+    RAG_EMBEDDING_HEALTH_TTL    = 300  (seconds a provider health check is cached)
+    JINA_BASE_URL                = https://api.jina.ai/v1   (optional override)
+    JINA_TIMEOUT_SECONDS         = 30    (optional)
+    JINA_MAX_RETRIES             = 3     (optional, transient failures only)
+    JINA_RETRY_BASE_DELAY        = 1.0   (optional, seconds, exponential backoff base)
+    GEMINI_BASE_URL               = https://generativelanguage.googleapis.com/v1beta (optional override)
+    GEMINI_TIMEOUT_SECONDS        = 30    (optional)
+    GEMINI_MAX_RETRIES            = 3     (optional, transient failures only)
+    GEMINI_RETRY_BASE_DELAY       = 1.0   (optional, seconds, exponential backoff base)
+    OPENAI_API_KEY                = sk-...
 
 All providers expose:
     - name: str
     - dimensions: int
+    - is_semantic: bool
     - embed_batch(texts: List[str]) -> List[List[float]]
     - embed(text: str) -> List[float]
+
+Namespace/dimension safety: `knowledge_embeddings` rows carry `model_name`
+and `dimensions`; `VectorStore.search()`'s "does an active embedding exist"
+check now filters on the CURRENT provider's model_name (not just is_active),
+so switching providers never causes a cross-model similarity comparison
+against stale vectors from a different embedding space — it correctly falls
+back to keyword search until `reembed_active_chunks()` (rag/reembed.py) has
+backfilled the new provider's vectors.
 """
 
 from __future__ import annotations
@@ -125,7 +149,189 @@ class LocalHashEmbedding(EmbeddingProvider):
 
 
 # ---------------------------------------------------------------------------
-# Jina AI provider — production semantic embedding provider
+# Gemini provider — production PRIMARY semantic embedding provider
+# ---------------------------------------------------------------------------
+
+class GeminiEmbeddingError(RuntimeError):
+    """Any unrecoverable Gemini embedding failure.
+
+    Deliberately a loud exception, not a silent fallback: callers must not
+    catch this and substitute LocalHashEmbedding in production. See
+    get_embedding_provider()'s "gemini" branch — a Gemini failure triggers a
+    health-checked fallback to Jina, and if that also fails, an
+    EmbeddingProviderUnavailableError is raised rather than degrading to
+    local-hash.
+    """
+
+
+class GeminiAuthError(GeminiEmbeddingError):
+    """401/403 — invalid or missing API key. Never retried."""
+
+
+class GeminiRateLimitError(GeminiEmbeddingError):
+    """429 — rate limited, retries exhausted."""
+
+
+class GeminiEmbedding(EmbeddingProvider):
+    """Google Gemini embeddings (text-embedding-004 by default, 768 dims).
+
+    Uses Gemini's batchEmbedContents endpoint for embed_batch() and
+    embedContent for a single embed() call — the Generative Language API's
+    REST shape (https://ai.google.dev/api/embeddings), same retry policy as
+    JinaEmbedding: 429/5xx retried with exponential backoff (honoring
+    Retry-After when present), 401/403/other 4xx are permanent and never
+    retried.
+    """
+
+    name = "gemini"
+    dimensions = 768
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-004",
+        dimensions: int = 768,
+        base_url: Optional[str] = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        retry_base_delay: float = 1.0,
+    ):
+        if not api_key:
+            raise GeminiEmbeddingError(
+                "GEMINI_API_KEY is required when RAG_EMBEDDING_PROVIDER=gemini."
+            )
+        self.api_key = api_key
+        self.model = model if model.startswith("models/") else f"models/{model}"
+        self.dimensions = dimensions
+        self._base_url = (
+            base_url or os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+        ).rstrip("/")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
+
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        out: List[List[float]] = []
+        batch_size = 100  # Gemini batchEmbedContents limit
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            out.extend(self._batch_request(batch))
+        return out
+
+    def embed(self, text: str) -> List[float]:
+        return self._single_request(text)
+
+    def _single_request(self, text: str) -> List[float]:
+        try:
+            import httpx
+        except ImportError as e:
+            raise GeminiEmbeddingError("httpx is required for Gemini embeddings") from e
+
+        url = f"{self._base_url}/{self.model}:embedContent?key={self.api_key}"
+        payload = {
+            "model": self.model,
+            "content": {"parts": [{"text": text}]},
+            "outputDimensionality": self.dimensions,
+        }
+        data = self._post_with_retry(httpx, url, payload)
+        vec = data.get("embedding", {}).get("values")
+        if not vec:
+            raise GeminiEmbeddingError("Gemini embedContent response had no embedding values")
+        return vec
+
+    def _batch_request(self, texts: List[str]) -> List[List[float]]:
+        try:
+            import httpx
+        except ImportError as e:
+            raise GeminiEmbeddingError("httpx is required for Gemini embeddings") from e
+
+        url = f"{self._base_url}/{self.model}:batchEmbedContents?key={self.api_key}"
+        payload = {
+            "requests": [
+                {
+                    "model": self.model,
+                    "content": {"parts": [{"text": t}]},
+                    "outputDimensionality": self.dimensions,
+                }
+                for t in texts
+            ]
+        }
+        data = self._post_with_retry(httpx, url, payload)
+        embeddings = data.get("embeddings", [])
+        vectors = [e.get("values") for e in embeddings]
+        if len(vectors) != len(texts) or not all(vectors):
+            raise GeminiEmbeddingError(
+                f"Gemini batchEmbedContents returned {len(vectors)} embeddings for {len(texts)} inputs"
+            )
+        return vectors
+
+    def _post_with_retry(self, httpx_module: Any, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        last_error: Optional[BaseException] = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = httpx_module.post(url, json=payload, timeout=self.timeout)
+            except (httpx_module.TimeoutException, httpx_module.TransportError) as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    time.sleep(self._backoff_delay(attempt))
+                    continue
+                raise GeminiEmbeddingError(
+                    f"Gemini embeddings request failed after {self.max_retries + 1} "
+                    f"attempts (network/timeout): {e}"
+                ) from e
+
+            if resp.status_code in (401, 403):
+                raise GeminiAuthError(
+                    f"Gemini embeddings authentication failed ({resp.status_code}). "
+                    "Check GEMINI_API_KEY. Not retrying."
+                )
+
+            if resp.status_code == 429:
+                if attempt < self.max_retries:
+                    delay = self._retry_after_seconds(resp) or self._backoff_delay(attempt)
+                    time.sleep(delay)
+                    continue
+                raise GeminiRateLimitError(
+                    f"Gemini embeddings rate-limited (429) after "
+                    f"{self.max_retries + 1} attempts: {resp.text[:300]}"
+                )
+
+            if resp.status_code >= 500:
+                if attempt < self.max_retries:
+                    time.sleep(self._backoff_delay(attempt))
+                    continue
+                raise GeminiEmbeddingError(
+                    f"Gemini embeddings server error ({resp.status_code}) after "
+                    f"{self.max_retries + 1} attempts: {resp.text[:300]}"
+                )
+
+            if resp.status_code >= 400:
+                raise GeminiEmbeddingError(
+                    f"Gemini embeddings request rejected ({resp.status_code}): {resp.text[:300]}"
+                )
+
+            return resp.json()
+
+        raise GeminiEmbeddingError(f"Gemini embeddings failed: {last_error}")
+
+    def _backoff_delay(self, attempt: int) -> float:
+        return self.retry_base_delay * (2 ** attempt)
+
+    def _retry_after_seconds(self, resp: Any) -> Optional[float]:
+        val = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+        if not val:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Jina AI provider — fallback semantic embedding provider (also directly
+# selectable on its own via RAG_EMBEDDING_PROVIDER=jina)
 # ---------------------------------------------------------------------------
 
 class JinaEmbeddingError(RuntimeError):
@@ -387,6 +593,7 @@ class GroqEmbedding(EmbeddingProvider):
 # ---------------------------------------------------------------------------
 
 EMBEDDING_PROVIDER_REGISTRY: Dict[str, Type[EmbeddingProvider]] = {
+    "gemini": GeminiEmbedding,
     "jina": JinaEmbedding,
     "openai": OpenAIEmbedding,
     "groq": GroqEmbedding,
@@ -397,6 +604,56 @@ EMBEDDING_PROVIDER_REGISTRY: Dict[str, Type[EmbeddingProvider]] = {
 _provider_cache: Optional[EmbeddingProvider] = None
 
 
+# ---------------------------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------------------------
+
+class EmbeddingProviderUnavailableError(RuntimeError):
+    """Raised when RAG_EMBEDDING_PROVIDER=gemini and BOTH Gemini and its
+    Jina fallback are unconfigured/unhealthy. Deliberately loud: the caller
+    must fix configuration or explicitly opt into local-hash for dev, not
+    silently receive a non-semantic embedding provider in production."""
+
+
+# provider name -> (healthy: bool, checked_at: float)
+_health_cache: Dict[str, tuple] = {}
+
+
+def _health_check_ttl() -> float:
+    return float(os.getenv("RAG_EMBEDDING_HEALTH_TTL", "300"))
+
+
+def check_provider_health(provider: EmbeddingProvider, force: bool = False) -> bool:
+    """Real (network) health check: embeds a short probe string and confirms
+    a vector of the expected dimensionality comes back. Cached for
+    RAG_EMBEDDING_HEALTH_TTL seconds (default 300) per provider name so this
+    isn't a network round-trip on every request — only on cache expiry."""
+    now = time.time()
+    cached = _health_cache.get(provider.name)
+    if cached and not force and (now - cached[1]) < _health_check_ttl():
+        return cached[0]
+    try:
+        vec = provider.embed("health check probe")
+        healthy = bool(vec) and len(vec) == provider.dimensions
+        if not healthy:
+            _logger.warning(
+                "Embedding provider %s health check returned an unexpected vector "
+                "(len=%s, expected=%s)",
+                provider.name, len(vec) if vec else 0, provider.dimensions,
+            )
+    except Exception as e:
+        _logger.warning("Embedding provider %s health check failed: %s", provider.name, e)
+        healthy = False
+    _health_cache[provider.name] = (healthy, now)
+    return healthy
+
+
+def reset_health_cache() -> None:
+    """Test/ops helper — clears cached health-check results so the next
+    check_provider_health() call always hits the network."""
+    _health_cache.clear()
+
+
 def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
     """Return the configured embedding provider (cached)."""
     global _provider_cache
@@ -405,6 +662,68 @@ def get_embedding_provider(force_refresh: bool = False) -> EmbeddingProvider:
 
     provider_name = os.getenv("RAG_EMBEDDING_PROVIDER", "local").lower().strip()
     dimensions = int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "0"))
+
+    if provider_name in ("gemini",):
+        # PRIMARY production provider. Health-checked automatic fallback to
+        # Jina on failure; if both are unavailable, raise loudly rather than
+        # silently degrading to LocalHashEmbedding — see
+        # EmbeddingProviderUnavailableError.
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        gemini_model = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-004")
+        gemini_dims = dimensions if dimensions else 768
+        gemini_error: Optional[BaseException] = None
+
+        if gemini_key:
+            try:
+                candidate = GeminiEmbedding(
+                    api_key=gemini_key,
+                    model=gemini_model,
+                    dimensions=gemini_dims,
+                    timeout=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30")),
+                    max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "3")),
+                    retry_base_delay=float(os.getenv("GEMINI_RETRY_BASE_DELAY", "1.0")),
+                )
+                if check_provider_health(candidate):
+                    _provider_cache = candidate
+                    return _provider_cache
+                gemini_error = GeminiEmbeddingError("health check failed")
+            except Exception as e:
+                gemini_error = e
+        else:
+            gemini_error = GeminiEmbeddingError("GEMINI_API_KEY is not set")
+
+        _logger.warning(
+            "Gemini embedding provider unavailable (%s) — falling back to Jina.",
+            gemini_error,
+        )
+
+        jina_key = os.getenv("JINA_API_KEY", "").strip()
+        if jina_key:
+            try:
+                jina_candidate = JinaEmbedding(
+                    api_key=jina_key,
+                    model=os.getenv("JINA_FALLBACK_MODEL", "jina-embeddings-v3"),
+                    dimensions=int(os.getenv("JINA_FALLBACK_DIMENSIONS", "1024")),
+                    timeout=float(os.getenv("JINA_TIMEOUT_SECONDS", "30")),
+                    max_retries=int(os.getenv("JINA_MAX_RETRIES", "3")),
+                    retry_base_delay=float(os.getenv("JINA_RETRY_BASE_DELAY", "1.0")),
+                )
+                if check_provider_health(jina_candidate):
+                    _provider_cache = jina_candidate
+                    return _provider_cache
+                _logger.error("Jina fallback embedding provider also failed its health check.")
+            except Exception as e:
+                _logger.error("Jina fallback embedding provider construction failed: %s", e)
+        else:
+            _logger.error("No JINA_API_KEY configured — no fallback available for Gemini failure.")
+
+        raise EmbeddingProviderUnavailableError(
+            "RAG_EMBEDDING_PROVIDER=gemini but both Gemini and its Jina fallback "
+            "are unavailable/unconfigured/unhealthy. Refusing to silently degrade "
+            "to LocalHashEmbedding in production mode — set GEMINI_API_KEY and/or "
+            "JINA_API_KEY, or explicitly set RAG_EMBEDDING_PROVIDER=local for "
+            "local development only."
+        )
 
     if provider_name in ("jina",):
         api_key = os.getenv("JINA_API_KEY", "").strip()

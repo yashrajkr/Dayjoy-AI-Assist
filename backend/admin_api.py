@@ -1296,3 +1296,87 @@ async def _log_audit(
             await client.post(url, headers=headers, json=payload)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# RAG embedding provider health + re-embedding (admin-only, mutations gated)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/rag/embedding-status")
+async def admin_embedding_status(request: Request) -> Dict[str, Any]:
+    """Current embedding provider + a live health check — surfaces exactly
+    what production is actually running on (gemini/jina/local-hash/etc.),
+    since RAG_EMBEDDING_PROVIDER + fallback state isn't otherwise visible
+    without reading server logs."""
+    await _require_staff(request)
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG subsystem unavailable")
+
+    from backend.rag.embeddings import check_provider_health, embedding_provider_status, get_embedding_provider
+
+    try:
+        provider = get_embedding_provider()
+    except Exception as e:
+        return {"configured": False, "error": str(e)[:500]}
+
+    status = embedding_provider_status(provider)
+    status["healthy"] = check_provider_health(provider)
+    return status
+
+
+class ReembedRequest(BaseModel):
+    dry_run: bool = True
+    max_chunks: Optional[int] = None
+    deactivate_stale: bool = True
+
+
+@router.post("/rag/reembed")
+async def admin_reembed(req: ReembedRequest, request: Request) -> Dict[str, Any]:
+    """Backfill knowledge_embeddings for the currently configured provider
+    and (optionally) deactivate stale embeddings from a previous provider.
+    Admin-only (not just staff) — this can rewrite/invalidate the live
+    retrieval index. `dry_run=true` by default: reports counts without
+    writing anything."""
+    claims = await _require_staff(request)
+    if not _is_staff_admin(claims):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG subsystem unavailable")
+
+    from backend.rag.embeddings import get_embedding_provider
+    from backend.rag.reembed import reembed_active_chunks
+    from backend.rag.vector_store import get_vector_store
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    user_id = await get_user_id(request)
+
+    try:
+        provider = get_embedding_provider()
+        store = get_vector_store()
+        report = await reembed_active_chunks(
+            store,
+            provider,
+            token=token,
+            max_chunks=req.max_chunks,
+            dry_run=req.dry_run,
+            deactivate_stale=req.deactivate_stale,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Re-embed failed: {str(e)[:300]}")
+
+    if not req.dry_run:
+        await _log_audit(
+            token, user_id, "rag_reembed", "knowledge_embeddings", None,
+            {"provider": report.provider, "chunks_embedded": report.chunks_embedded, "stale_deactivated": report.stale_deactivated},
+        )
+
+    return {
+        "provider": report.provider,
+        "chunks_seen": report.chunks_seen,
+        "already_embedded": report.already_embedded,
+        "chunks_embedded": report.chunks_embedded,
+        "chunks_failed": report.chunks_failed,
+        "stale_deactivated": report.stale_deactivated,
+        "dry_run": report.dry_run,
+    }
