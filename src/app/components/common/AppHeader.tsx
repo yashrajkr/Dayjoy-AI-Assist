@@ -72,7 +72,13 @@ export function AppHeader({
         <LanguageSwitcher className="hidden sm:inline-flex" />
         <NotificationCenter />
         <ThemeToggle />
-        <AccountMenu />
+        {/* Desktop only (lg+). Below `lg`, UserLayout's own persistent mobile
+            top bar already shows this exact avatar next to "Dayjoy AI
+            Assist" — rendering it again here duplicated the profile avatar
+            on every page below the chat screen. */}
+        <div className="hidden lg:inline-flex">
+          <AccountMenu />
+        </div>
       </div>
     </header>
   );
