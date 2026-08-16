@@ -316,7 +316,13 @@ function OrbScene({ state, mobile }: { state: AIOrbState; mobile: boolean }) {
       <directionalLight position={[-3, -2, 1]} intensity={0.4} color="#FFC98B" />
       <directionalLight position={[0, 1, -4]} intensity={0.6} color="#4F6F46" />
 
-      <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0.2}>
+      {/* floatIntensity 0: Float's vertical bob moved the mesh's on-screen
+          center over time, which drifted out from under the static
+          absolutely-centered mic icon / logo mark overlaid on top of this
+          canvas (UserChat's orb badge, VoiceAssistant's mic icon) — looked
+          like a centering bug that came and went with the animation cycle.
+          Keeping rotationIntensity so the orb still tilts/breathes in place. */}
+      <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0}>
         <group onPointerOver={onOver} onPointerOut={onOut}>
           <OrbMesh state={state} hovered={hovered} />
         </group>

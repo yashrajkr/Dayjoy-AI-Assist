@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { UserAvatar } from "../common/UserAvatar";
-import { AccountMenu } from "../common/AccountMenu";
+import { AccountMenu, AccountMenuItems } from "../common/AccountMenu";
 import { motion, AnimatePresence } from "framer-motion";
 import { pageTransition } from "../../lib/motion";
 import {
@@ -396,27 +396,35 @@ export function UserLayout() {
             ) : null}
           </nav>
 
-          {/* User identity — a static row, not an interactive menu. Every
-              page's header now has a persistent top-right AccountMenu
-              (Profile / Notifications / Install / Settings / Switch View /
-              Help / Sign out — see AppHeader.tsx and the chat screen's own
-              header), so duplicating that whole menu here was redundant.
-              This just answers "who am I signed in as" while the drawer is
-              open. */}
+          {/* User identity — now the same interactive menu every other
+              profile entry point in the app opens (Profile / Notifications /
+              Settings / Switch View / Help / Sign out), instead of a plain
+              static row that just answered "who am I" and went nowhere when
+              tapped. showLabel=false: the row itself already shows the name
+              and role right there, so the menu doesn't repeat them. */}
           <div className="p-3 border-t border-border space-y-2">
-            {!collapsed ? (
-              <div className="w-full flex items-center gap-3 p-2">
-                <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-sm font-medium truncate">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-center p-2" title={userName}>
-                <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
-              </div>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                {!collapsed ? (
+                  <button
+                    type="button"
+                    title={userName}
+                    className="w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/60"
+                  >
+                    <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="text-sm font-medium truncate">{userName}</p>
+                      <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                    </div>
+                  </button>
+                ) : (
+                  <button type="button" title={userName} className="w-full flex justify-center p-2 rounded-lg transition-colors hover:bg-accent/60">
+                    <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+                  </button>
+                )}
+              </DropdownMenuTrigger>
+              <AccountMenuItems showLabel={false} />
+            </DropdownMenu>
 
             {(role === "admin" || role === "management" || role === "employee") ? (
               <NavLink
