@@ -1,19 +1,31 @@
 """
-Structured pricing lookup — Phase 5.
+Structured pricing lookup.
 
-Wraps the new `product_pricing` table (database/supabase_schema_v23_
-product_pricing.sql) so exact figures (DP/MRP/BV/PV) come from a structured
-lookup rather than RAG text search, per the brief's "prefer structured
-database lookup over RAG for exact facts" requirement. `products` itself has
-no price columns (confirmed during the architecture audit) — this table is
-the new, minimal, separate catalog price list; `business_volume_ledger`
-(v14) stays transactional/ledger-only and is untouched.
+IMPORTANT: `product_prices` already exists in the live Supabase project
+(migration `v23_dayjoy_kb_pricing`, applied 2026-08-09 — not present in this
+repo's `database/*.sql` files, i.e. the checked-in migrations are missing
+one that's actually live in production) with 170 real rows: product_id
+(text — matches `products.product_id`, NOT `products.id`), mrp, dp, bv, pv,
+currency, effective_from, effective_to, source_document, verification_status.
+
+An earlier pass of this work assumed no structured pricing table existed
+and added a NEW `product_pricing` table — that migration has been discarded
+(never applied) once this was discovered, per this project's explicit
+"don't create duplicate Supabase tables" rule. This module was rewritten to
+use the real, already-populated `product_prices` table instead.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any, Dict, Optional
+
+# Rows whose verification_status doesn't start with "verified" are treated
+# as untrustworthy for a structured lookup — mirrors the same defensive
+# pattern main.py's SEARCH_TABLES uses for compensation_rules (excluding
+# the disputed sentinel row from ever surfacing as a verified fact).
+_TRUSTED_STATUS_PREFIX = "verified"
 
 
 def _tokenize(text: str) -> set:
@@ -29,7 +41,7 @@ async def _best_matching_product(token: Optional[str], message: str) -> Optional
     rows = await backend_main.supabase_select(
         token,
         "products",
-        columns="id,product_name,category",
+        columns="product_id,product_name,category",
         filters={"approval_status": "approved"},
         limit=1000,
     )
@@ -44,33 +56,52 @@ async def _best_matching_product(token: Optional[str], message: str) -> Optional
     return best_row if best_score > 0 else None
 
 
+def _is_currently_effective(row: Dict[str, Any], today: date) -> bool:
+    effective_to = row.get("effective_to")
+    if not effective_to:
+        return True
+    try:
+        return date.fromisoformat(str(effective_to)) >= today
+    except (ValueError, TypeError):
+        return True  # malformed date — don't silently exclude, let it surface
+
+
 async def run(token: Optional[str], message: str) -> Dict[str, Any]:
     import backend.main as backend_main
 
     product = await _best_matching_product(token, message)
-    if not product:
+    product_id = product.get("product_id") if product else None
+    if not product or not product_id:
         return {"found": False}
 
     rows = await backend_main.supabase_select(
         token,
-        "product_pricing",
-        columns="sku,mrp,dp,bv,pv,currency,effective_date",
-        filters={"product_id": product["id"], "is_active": True},
-        limit=5,
+        "product_prices",
+        columns="product_id,mrp,dp,bv,pv,currency,effective_from,effective_to,verification_status",
+        filters={"product_id": product_id},
+        limit=20,
     )
-    if not rows:
+
+    today = date.today()
+    trusted = [
+        r
+        for r in rows
+        if str(r.get("verification_status") or "").startswith(_TRUSTED_STATUS_PREFIX)
+        and _is_currently_effective(r, today)
+    ]
+    if not trusted:
         return {"found": False, "product_name": product.get("product_name")}
 
-    rows.sort(key=lambda r: str(r.get("effective_date") or ""), reverse=True)
-    top = rows[0]
+    trusted.sort(key=lambda r: str(r.get("effective_from") or ""), reverse=True)
+    top = trusted[0]
     return {
         "found": True,
         "product_name": product.get("product_name"),
-        "sku": top.get("sku"),
+        "product_id": product_id,
         "mrp": top.get("mrp"),
         "dp": top.get("dp"),
         "bv": top.get("bv"),
         "pv": top.get("pv"),
         "currency": top.get("currency"),
-        "effective_date": top.get("effective_date"),
+        "effective_from": top.get("effective_from"),
     }

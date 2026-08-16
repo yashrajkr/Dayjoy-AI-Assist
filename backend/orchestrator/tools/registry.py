@@ -73,7 +73,7 @@ def _register_default_tools(registry: ToolRegistry) -> None:
         ToolSpec(
             name="pricing_lookup",
             description=(
-                "Structured MRP/DP/BV/PV lookup from the product_pricing "
+                "Structured MRP/DP/BV/PV lookup from the product_prices "
                 "table — preferred over RAG for exact pricing figures."
             ),
             timeout_seconds=5.0,
