@@ -23,6 +23,8 @@ import { formatRoleLabel } from "../../lib/auth";
 import { BRAND } from "../../lib/brand";
 import { AppHeader } from "../common/AppHeader";
 import { UserAvatar } from "../common/UserAvatar";
+import { AccountMenuItems } from "../common/AccountMenu";
+import { DropdownMenu, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { SettingsSection, SettingsRow } from "./settings/SettingsUI";
@@ -93,12 +95,23 @@ export function UserSettings() {
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 sm:p-6 max-w-2xl mx-auto w-full space-y-5 pb-10">
           <SettingsSection label="Account">
-            <SettingsRow
-              leading={<UserAvatar user={currentUser} initials={initials} size={40} className="text-sm shrink-0" />}
-              label={displayName}
-              description={role ? formatRoleLabel(role) : currentUser?.email ?? "Demo session"}
-              onClick={() => navigate("/profile")}
-            />
+            {/* Opens the same Profile / Notifications / Settings / Switch
+                View / Help / Sign out menu as the top-bar avatar, instead of
+                jumping straight to /profile and hiding the rest one tap
+                behind that. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <div>
+                  <SettingsRow
+                    leading={<UserAvatar user={currentUser} initials={initials} size={40} className="text-sm shrink-0" />}
+                    label={displayName}
+                    description={role ? formatRoleLabel(role) : currentUser?.email ?? "Demo session"}
+                    onClick={() => {}}
+                  />
+                </div>
+              </DropdownMenuTrigger>
+              <AccountMenuItems showLabel={false} />
+            </DropdownMenu>
           </SettingsSection>
 
           <SettingsSection label="General">
