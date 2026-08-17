@@ -112,6 +112,68 @@ def test_weather_query_with_no_resolvable_place_falls_through_to_normal_routing(
     assert calls, "should have fallen through to normal RAG routing"
 
 
+def test_weak_evidence_context_falls_back_to_web_search_not_dayjoy_knowledge(
+    authed_client, monkeypatch
+):
+    """Reproduces a real production finding: "Who won the last cricket world
+    cup?" retrieved unrelated Dayjoy FAQ chunks at score ~0.2
+    (evidence_sufficient=False) — `context` was still non-empty, so routing
+    fell through to `answer_source="dayjoy_knowledge"` instead of the
+    web-search fallback, mislabeling an answer the model actually generated
+    from its own general knowledge. Weak evidence must be treated like no
+    context for routing purposes."""
+
+    async def _stub_retrieve_context(token, message, limit_per_table=3):
+        return (
+            "Q: Who should use Asthprash? A: It is suitable for all age groups...",
+            [],
+            "general",
+            {"confidence": 0.4, "verification_status": "partial", "evidence_sufficient": False},
+        )
+
+    async def _stub_web_search(query: str, max_results: int = 4):
+        return "England won the 2019 Cricket World Cup.", [], "tavily"
+
+    monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)
+    monkeypatch.setattr(backend_main, "web_search", _stub_web_search)
+
+    resp = authed_client.post(
+        "/chat", json={"message": "Who won the last cricket world cup?", "language": "English"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["answer_source"] == "web_search"
+
+
+def test_strong_evidence_still_routes_to_dayjoy_knowledge(authed_client, monkeypatch):
+    """Sanity check the fix above doesn't over-correct: a real, sufficient
+    match must still route as dayjoy_knowledge without touching web search."""
+    calls = []
+
+    async def _stub_retrieve_context(token, message, limit_per_table=3):
+        return (
+            "[products] Dayjoy Spirulina\nRich in protein.",
+            [],
+            "product",
+            {"confidence": 0.85, "verification_status": "verified", "evidence_sufficient": True},
+        )
+
+    async def _stub_web_search(query: str, max_results: int = 4):
+        calls.append(query)
+        return "", [], None
+
+    monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)
+    monkeypatch.setattr(backend_main, "web_search", _stub_web_search)
+
+    resp = authed_client.post(
+        "/chat", json={"message": "What are the benefits of Dayjoy Spirulina?", "language": "English"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["answer_source"] == "dayjoy_knowledge"
+    assert calls == []
+
+
 def test_followup_reference_is_resolved_before_retrieval(authed_client, monkeypatch):
     """The canonical example from the pipeline audit: ask about a product,
     then ask a bare follow-up ("what about its price?") — the *retrieval*

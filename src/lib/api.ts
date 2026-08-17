@@ -217,17 +217,44 @@ function withIdleTimeout(signal: AbortSignal | undefined, ms: number) {
     else signal.addEventListener("abort", onAbort, { once: true });
   }
 
+  const clear = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  // Background tabs throttle (Chrome can delay by minutes) or freeze
+  // `setTimeout` — a slow-but-healthy answer that took a while because the
+  // user switched away got silently aborted here, either while backgrounded
+  // or right as the tab regained focus, which read as "the answer never
+  // arrives" even though the backend was still working. Pausing the
+  // countdown while hidden means backgrounding never eats into the idle
+  // budget; a genuinely dead connection still times out once the tab is
+  // visible again, since `arm()` restarts the full window at that point.
   const arm = () => {
-    if (timer) clearTimeout(timer);
+    clear();
+    if (typeof document !== "undefined" && document.hidden) return;
     timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, ms);
   };
 
+  const onVisibilityChange = () => {
+    if (document.hidden) clear();
+    else arm();
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+
   const dispose = () => {
-    if (timer) clearTimeout(timer);
+    clear();
     signal?.removeEventListener("abort", onAbort);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
   };
 
   arm();

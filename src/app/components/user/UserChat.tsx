@@ -53,7 +53,6 @@ import {
   GitCompare,
   Menu,
   MoreVertical,
-  type LucideIcon,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -89,6 +88,13 @@ import { DayjoyLogo } from "../brand/DayjoyLogo";
 import { NotificationCenter } from "../notifications/NotificationCenter";
 import { ThemeToggle } from "../common/ThemeToggle";
 import { Modal } from "../common/Modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { useVoice } from "../../lib/useVoice";
 import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { useIsMobile } from "../../lib/useIsMobile";
@@ -1113,22 +1119,38 @@ export function UserChat() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [activeConv, messages]);
 
-  // ---- Share conversation (copy link to clipboard) ----
-  const handleShareConversation = useCallback(() => {
-    if (!activeConv?.id) return;
+  // ---- Share conversation ----
+  // Tries the native Web Share API first — the actual OS/browser share
+  // sheet (WhatsApp, Mail, etc.), supported on essentially all mobile
+  // browsers and increasingly on desktop (Chrome/Edge on Windows, Safari on
+  // macOS). Only falls back to a plain clipboard copy where `navigator.share`
+  // isn't available at all. Previously this only ever copied a link, which
+  // read as "no real share, just copy" on every platform.
+  const handleShareConversation = useCallback(async () => {
+    if (!activeConv?.id) return false;
     const shareUrl = `${window.location.origin}/chat/${activeConv.id}`;
-    navigator.clipboard
-      .writeText(shareUrl)
-      .then(() => {
-        setError(null);
-        // Brief visual feedback — reuse the error state with a success message
-        // (simplest approach without adding new state)
-        setCopiedId("share-" + activeConv.id);
-        setTimeout(() => setCopiedId(null), 2000);
-      })
-      .catch(() => {
-        setError("Could not copy link to clipboard.");
-      });
+    const shareTitle = activeConv.title || `${BRAND.shortName} conversation`;
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: shareTitle, url: shareUrl });
+        return true;
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return true; // user cancelled the share sheet — not a failure
+        // Any other failure (e.g. permission denied) falls through to the clipboard copy below.
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setError(null);
+      setCopiedId("share-" + activeConv.id);
+      setTimeout(() => setCopiedId(null), 2000);
+      return true;
+    } catch {
+      setError("Could not copy link to clipboard.");
+      return false;
+    }
   }, [activeConv]);
 
   const filteredConversations = useMemo(() => {
@@ -1423,15 +1445,31 @@ export function UserChat() {
               >
                 <MessageSquarePlus className="w-4.5 h-4.5" aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                onClick={() => setMoreMenuOpen(true)}
-                className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all"
-                aria-label="Conversation options"
-                aria-haspopup="menu"
-              >
-                <MoreVertical className="w-4.5 h-4.5" aria-hidden="true" />
-              </button>
+              <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all"
+                    aria-label="Chat actions"
+                  >
+                    <MoreVertical className="w-4.5 h-4.5" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <MoreMenuContent
+                  activeConv={activeConv}
+                  lastSources={lastSources}
+                  attachments={attachments}
+                  onSearchChats={() => setSidebarOpen(true)}
+                  onShare={handleShareConversation}
+                  onRename={() => activeConv && openRename(activeConv.id, activeConv.title)}
+                  onExport={handleExportConversation}
+                  onViewSources={() => setSourcesPanelOpen(true)}
+                  onFindInChat={() => setFindInChatOpen(true)}
+                  onPin={() => activeConv && handlePin(activeConv.id, !activeConv.pinned)}
+                  onArchive={() => activeConv && handleArchive(activeConv.id, true)}
+                  onDelete={() => activeConv && void handleDelete(activeConv.id)}
+                />
+              </DropdownMenu>
             </div>
           </header>
         ) : null}
@@ -1707,28 +1745,6 @@ export function UserChat() {
                       </p>
                     ) : null}
                   </>
-                ) : null}
-
-                {/* Role-aware pill badge — an internal-sounding label
-                    ("Customer assistant") that repeats what the header
-                    ("Dayjoy AI") already says. Kept for Explorer/desktop,
-                    dropped in Professional mobile for a cleaner welcome
-                    state — see item 10 of the UX pass this addresses. */}
-                {!professionalMobile ? (
-                  (() => {
-                    const welcome = getRoleWelcome(role);
-                    return (
-                      <motion.div
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/8 border border-primary/15 text-[11px] font-medium text-primary mb-3"
-                      >
-                        <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                        {welcome.label}
-                      </motion.div>
-                    );
-                  })()
                 ) : null}
 
                 <motion.h1
@@ -2824,117 +2840,6 @@ export function UserChat() {
         </div>
       </Modal>
 
-      {/* Conversation options ("•••" menu) — mobile Professional mode's
-          consolidated home for actions that used to be separate always-on
-          header icons. Only lists actions actually backed by existing
-          functionality (share, rename, export, sources, attachments in this
-          chat, pin, archive, delete, find in chat) — no placeholder buttons. */}
-      <Modal
-        open={moreMenuOpen}
-        onClose={() => setMoreMenuOpen(false)}
-        title="Conversation options"
-        size="sm"
-      >
-        <div className="-m-1 space-y-1">
-          {/* Search all conversations — reuses the existing conversation
-              list + search box (previously only reachable via a header icon
-              this redesign removed in favor of the hamburger drawer). Not
-              conversation-specific, so it's available even with no active
-              chat. */}
-          <MoreMenuItem
-            icon={Search}
-            label="Search chats"
-            onClick={() => {
-              setMoreMenuOpen(false);
-              setSidebarOpen(true);
-            }}
-          />
-          {activeConv ? (
-            <>
-              <div className="h-px bg-border my-1" />
-              <MoreMenuItem
-                icon={Share2}
-                label="Share"
-                onClick={() => {
-                  handleShareConversation();
-                  setMoreMenuOpen(false);
-                }}
-              />
-              <MoreMenuItem
-                icon={RefreshCw}
-                label="Rename"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  openRename(activeConv.id, activeConv.title);
-                }}
-              />
-              <MoreMenuItem
-                icon={Download}
-                label="Export as PDF"
-                onClick={() => {
-                  handleExportConversation();
-                  setMoreMenuOpen(false);
-                }}
-              />
-              <MoreMenuItem
-                icon={PanelRightOpen}
-                label={`View verified sources${lastSources.length > 0 ? ` (${lastSources.length})` : ""}`}
-                onClick={() => {
-                  setSourcesPanelOpen(true);
-                  setMoreMenuOpen(false);
-                }}
-              />
-              <MoreMenuItem
-                icon={Paperclip}
-                label={`Attachments in this chat${attachments.length > 0 ? ` (${attachments.length})` : ""}`}
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  setSourcesPanelOpen(true);
-                }}
-              />
-              <MoreMenuItem
-                icon={Search}
-                label="Find in chat"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  setFindInChatOpen(true);
-                }}
-              />
-              <div className="h-px bg-border my-1" />
-              <MoreMenuItem
-                icon={activeConv.pinned ? PinOff : Pin}
-                label={activeConv.pinned ? "Unpin" : "Pin"}
-                onClick={() => {
-                  handlePin(activeConv.id, !activeConv.pinned);
-                  setMoreMenuOpen(false);
-                }}
-              />
-              <MoreMenuItem
-                icon={Archive}
-                label="Archive"
-                onClick={() => {
-                  handleArchive(activeConv.id, true);
-                  setMoreMenuOpen(false);
-                }}
-              />
-              <MoreMenuItem
-                icon={Trash2}
-                label="Delete"
-                destructive
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  void handleDelete(activeConv.id);
-                }}
-              />
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground px-2 py-1">
-              Start a conversation to see sharing, export, and organization options here.
-            </p>
-          )}
-        </div>
-      </Modal>
-
       {/* Find in chat — simple client-side search across the current
           conversation's messages, with jump-to-match navigation. */}
       <Modal
@@ -2967,29 +2872,100 @@ export function UserChat() {
   );
 }
 
-/** One row inside the "•••" conversation options menu. */
-function MoreMenuItem({
-  icon: Icon,
-  label,
-  onClick,
-  destructive,
+/**
+ * "Chat actions" menu — the "•••" trigger's dropdown content. A compact,
+ * anchored popover (Radix DropdownMenu, same primitive as AccountMenu) that
+ * sizes to its content instead of a near-full-height centered Modal — the
+ * previous version covered most of the viewport for a 9-item list, which
+ * read as a full-screen takeover rather than the small ChatGPT/Claude-style
+ * context menu it should be. Only lists actions actually backed by existing
+ * functionality (share, rename, export, sources, attachments in this chat,
+ * pin, archive, delete, find in chat) — no placeholder buttons.
+ */
+function MoreMenuContent({
+  activeConv,
+  lastSources,
+  attachments,
+  onSearchChats,
+  onShare,
+  onRename,
+  onExport,
+  onViewSources,
+  onFindInChat,
+  onPin,
+  onArchive,
+  onDelete,
 }: {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  destructive?: boolean;
+  activeConv: Conversation | null;
+  lastSources: unknown[];
+  attachments: unknown[];
+  onSearchChats: () => void;
+  onShare: () => void;
+  onRename: () => void;
+  onExport: () => void;
+  onViewSources: () => void;
+  onFindInChat: () => void;
+  onPin: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors hover:bg-accent/60 ${
-        destructive ? "text-destructive" : "text-foreground"
-      }`}
-    >
-      <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-      <span className="truncate">{label}</span>
-    </button>
+    <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuItem onClick={onSearchChats}>
+        <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+        Search chats
+      </DropdownMenuItem>
+      {activeConv ? (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onShare}>
+            <Share2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Share
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onRename}>
+            <RefreshCw className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onExport}>
+            <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Export as PDF
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onViewSources}>
+            <PanelRightOpen className="w-4 h-4 shrink-0" aria-hidden="true" />
+            View verified sources{lastSources.length > 0 ? ` (${lastSources.length})` : ""}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onViewSources}>
+            <Paperclip className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Attachments in this chat{attachments.length > 0 ? ` (${attachments.length})` : ""}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onFindInChat}>
+            <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Find in chat
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onPin}>
+            {activeConv.pinned ? (
+              <PinOff className="w-4 h-4 shrink-0" aria-hidden="true" />
+            ) : (
+              <Pin className="w-4 h-4 shrink-0" aria-hidden="true" />
+            )}
+            {activeConv.pinned ? "Unpin" : "Pin"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onArchive}>
+            <Archive className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Archive
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+            <Trash2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+            Delete
+          </DropdownMenuItem>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground px-2 py-1.5">
+          Start a conversation to see sharing, export, and organization options here.
+        </p>
+      )}
+    </DropdownMenuContent>
   );
 }
 

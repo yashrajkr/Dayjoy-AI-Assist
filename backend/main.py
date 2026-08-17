@@ -751,13 +751,28 @@ async def _route_events(
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(token, message)
 
+    # A non-empty `context` string doesn't mean the retrieved chunks were
+    # actually relevant — the retriever still concatenates whatever it found
+    # even when it has already flagged evidence_sufficient=False (top score
+    # below the sufficiency threshold). Verified live in production: "Who
+    # won the last cricket world cup?" retrieved five unrelated Dayjoy FAQ
+    # chunks at score ~0.2, `context` was truthy, so routing fell through to
+    # the `else` branch below and labeled the answer "dayjoy_knowledge" even
+    # though the model ignored that context and answered from its own
+    # training data — mislabeled *and* skipped the web-search fallback that
+    # should have run instead. Treating weak evidence as "no context" for
+    # routing purposes (while still letting a real match through) closes
+    # that gap without touching the retriever/threshold logic itself.
+    evidence_ok = not (rag_metadata and rag_metadata.get("evidence_sufficient") is False)
+    has_context = bool(context) and evidence_ok
+
     web_context = ""
     web_sources: List[ChatSource] = []
     web_search_provider: Optional[str] = None
     used_web_search = False
     mode = "dayjoy"
 
-    if context and wants_hybrid_comparison(message):
+    if has_context and wants_hybrid_comparison(message):
         # Dayjoy match + an explicit comparison cue: pull web results too so
         # the model can reason across both, with each claim clearly
         # attributed (see HYBRID_MODE_ADDENDUM below).
@@ -777,11 +792,11 @@ async def _route_events(
         # question that never left the server.
         category = "general"
         answer_source = "general_llm"
-    elif not context:
-        # No approved Dayjoy knowledge matched — fall back to a live web
-        # search for general questions (world events, general facts)
-        # instead of the model refusing outright. Dayjoy-specific
-        # questions are unaffected: this only runs when `context` is empty.
+    elif not has_context:
+        # No approved Dayjoy knowledge matched (or what matched was too
+        # weak to trust) — fall back to a live web search for general
+        # questions (world events, general facts) instead of the model
+        # answering off weak/irrelevant context or refusing outright.
         yield ("status", "searching_web")
         web_context, web_sources, web_search_provider = await web_search(message)
         if web_context:
@@ -790,6 +805,10 @@ async def _route_events(
             answer_source = "web_search"
         else:
             answer_source = "general_llm"
+            # Weak/irrelevant Dayjoy chunks shouldn't reach the prompt at
+            # all once we've decided not to trust them for routing — leaving
+            # `context` in would let the model quote them anyway.
+            context = ""
     else:
         answer_source = "dayjoy_knowledge"
 
@@ -899,8 +918,47 @@ HYBRID_MODE_ADDENDUM = (
 )
 
 
-def _system_prompt_for(mode: str) -> str:
-    return SYSTEM_PROMPT + HYBRID_MODE_ADDENDUM if mode == "hybrid" else SYSTEM_PROMPT
+def _system_prompt_for(mode: str, custom_guidance: str = "") -> str:
+    base = SYSTEM_PROMPT + HYBRID_MODE_ADDENDUM if mode == "hybrid" else SYSTEM_PROMPT
+    if not custom_guidance:
+        return base
+    # Admin-configured guidance (Admin Console → AI Configuration → System
+    # Prompt) is layered on TOP of the safety-critical base prompt above,
+    # never substituted for it — an admin field that could disable the
+    # medical-claims/guaranteed-income/casual-routing rules by accident (or
+    # by a careless edit) would be a real safety regression. This is why the
+    # base SYSTEM_PROMPT stays a hardcoded constant rather than coming
+    # entirely from the DB.
+    return (
+        base
+        + "\n\nADDITIONAL BRAND/TONE GUIDANCE (admin-configured — supplements, "
+        "never overrides, the rules above):\n"
+        + custom_guidance.strip()
+    )
+
+
+_ai_custom_guidance_cache: Optional[str] = None
+_ai_custom_guidance_cache_at: float = 0.0
+
+
+async def load_ai_custom_guidance() -> str:
+    """The admin-editable "System Prompt" field from the `ai_configuration`
+    table (Admin Console → AI Configuration) — cached like
+    `load_safety_rules()` so a chat request doesn't cost an extra DB round
+    trip. Previously this field was saved successfully by the admin UI but
+    never actually read anywhere in the chat pipeline, so editing it had
+    zero effect on the AI's behavior."""
+    global _ai_custom_guidance_cache, _ai_custom_guidance_cache_at
+    if _ai_custom_guidance_cache is not None and (time.time() - _ai_custom_guidance_cache_at) < 60:
+        return _ai_custom_guidance_cache
+    try:
+        rows = await supabase_select(None, "ai_configuration", columns="system_prompt", limit=1)
+        prompt = (rows[0].get("system_prompt") if rows else None) or ""
+        _ai_custom_guidance_cache = prompt
+        _ai_custom_guidance_cache_at = time.time()
+        return prompt
+    except Exception:
+        return _ai_custom_guidance_cache or ""
 
 
 _llm_logger = logging.getLogger("dayjoy.llm")
@@ -916,6 +974,7 @@ async def _stream_chat_completions(
     context: str,
     language: str,
     mode: str,
+    custom_guidance: str = "",
 ) -> AsyncIterator[str]:
     """Shared streaming implementation for OpenAI-compatible /chat/completions
     endpoints (Groq, OpenAI). One bounded retry (max 2 attempts total) for
@@ -927,7 +986,7 @@ async def _stream_chat_completions(
     to the rule-based fallback) behavior is unchanged."""
     if not api_key:
         return
-    messages = [{"role": "system", "content": _system_prompt_for(mode)}]
+    messages = [{"role": "system", "content": _system_prompt_for(mode, custom_guidance)}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append(
@@ -996,41 +1055,44 @@ async def _stream_chat_completions(
 
 
 async def stream_groq(
-    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
+    custom_guidance: str = "",
 ) -> AsyncIterator[str]:
     """Stream tokens from Groq's OpenAI-compatible /chat/completions endpoint."""
     async for tok in _stream_chat_completions(
         "groq", "https://api.groq.com/openai/v1/chat/completions", GROQ_API_KEY, GROQ_MODEL,
-        message, history, context, language, mode,
+        message, history, context, language, mode, custom_guidance,
     ):
         yield tok
 
 
 async def stream_openai(
-    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
+    custom_guidance: str = "",
 ) -> AsyncIterator[str]:
     """Stream tokens from OpenAI Chat Completions."""
     async for tok in _stream_chat_completions(
         "openai", "https://api.openai.com/v1/chat/completions", OPENAI_API_KEY, OPENAI_MODEL,
-        message, history, context, language, mode,
+        message, history, context, language, mode, custom_guidance,
     ):
         yield tok
 
 
 async def stream_response(
-    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy"
+    message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
+    custom_guidance: str = "",
 ) -> AsyncIterator[str]:
     """Try Groq first, then OpenAI. Falls back to a context-only answer."""
     if GROQ_API_KEY:
         collected = ""
-        async for tok in stream_groq(message, history, context, language, mode):
+        async for tok in stream_groq(message, history, context, language, mode, custom_guidance):
             collected += tok
             yield tok
         if collected:
             return
     if OPENAI_API_KEY:
         collected = ""
-        async for tok in stream_openai(message, history, context, language, mode):
+        async for tok in stream_openai(message, history, context, language, mode, custom_guidance):
             collected += tok
             yield tok
         if collected:
@@ -1161,10 +1223,13 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     route = await determine_route(token, retrieval_query, casual)
 
     full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
+    custom_guidance = await load_ai_custom_guidance()
 
     # Collect streamed tokens into a single string
     answer_parts: List[str] = []
-    async for tok in stream_response(req.message, history, full_context, req.language, route.mode):
+    async for tok in stream_response(
+        req.message, history, full_context, req.language, route.mode, custom_guidance
+    ):
         answer_parts.append(tok)
     answer = "".join(answer_parts).strip()
 
@@ -1331,9 +1396,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         assert route is not None  # _route_events always yields exactly one "result"
 
         full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
+        custom_guidance = await load_ai_custom_guidance()
         aggregated = ""
 
-        async for tok in stream_response(req.message, history, full_context, req.language, route.mode):
+        async for tok in stream_response(
+            req.message, history, full_context, req.language, route.mode, custom_guidance
+        ):
             aggregated += tok
             yield _sse({"token": tok})
 
