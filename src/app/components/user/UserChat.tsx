@@ -5,6 +5,12 @@ import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Paperclip,
+  Users,
+  TrendingUp,
+  GraduationCap,
+  LifeBuoy,
+  Package,
+  Target,
   ThumbsUp,
   ThumbsDown,
   Shield,
@@ -154,13 +160,16 @@ type Lang = "English" | "Hindi" | "Hinglish";
  * accent color + lucide icon. This makes the welcome screen feel curated
  * rather than generic, and visually connects each card to the brand palette.
  */
-type PromptCategory = "wellness" | "distributor" | "safety" | "policy";
-const PROMPT_THEME: Record<PromptCategory, { icon: typeof Leaf; tint: string; ring: string }> = {
-  wellness: { icon: Leaf, tint: "bg-primary/10 text-primary", ring: "group-hover:border-primary/40" },
-  distributor: { icon: Rocket, tint: "bg-gold-accent/20 text-warning", ring: "group-hover:border-gold-accent/50" },
-  safety: { icon: ShieldCheck, tint: "bg-secondary/10 text-secondary", ring: "group-hover:border-secondary/40" },
-  policy: { icon: ScrollText, tint: "bg-accent text-accent-foreground", ring: "group-hover:border-primary/30" },
-};
+type PromptStyle = { icon: typeof Leaf; tint: string; ring: string };
+
+/** Cycled by card position rather than by topic — keeps the 4-card grid's
+ * color variety even though each role now gets its own set of topics. */
+const PROMPT_STYLES: ReadonlyArray<PromptStyle> = [
+  { icon: Leaf, tint: "bg-primary/10 text-primary", ring: "group-hover:border-primary/40" },
+  { icon: Rocket, tint: "bg-gold-accent/20 text-warning", ring: "group-hover:border-gold-accent/50" },
+  { icon: ShieldCheck, tint: "bg-secondary/10 text-secondary", ring: "group-hover:border-secondary/40" },
+  { icon: ScrollText, tint: "bg-accent text-accent-foreground", ring: "group-hover:border-primary/30" },
+];
 
 /**
  * A <textarea> placeholder renders on a single line — it cannot wrap, so a
@@ -171,32 +180,68 @@ const PROMPT_THEME: Record<PromptCategory, { icon: typeof Leaf; tint: string; ri
  */
 const composerPlaceholder = `Ask ${BRAND.shortName} anything…`;
 
+/**
+ * Voice-orb hero — disabled per product request (2026-08-17): the always-
+ * visible animated sphere read as visually dominant/decorative on the
+ * empty-state screen without adding value in text-chat mode, and looked
+ * broken once the on-screen keyboard opened on mobile. Flip this back to
+ * `true` to restore it as the tappable hands-free-voice centerpiece — the
+ * orb's JSX, `toggleVoiceMode`, and all voice-mode state below are kept
+ * intact, just gated behind this flag, so nothing needs to be rewritten.
+ */
+const SHOW_VOICE_ORB = false;
+
 /** Attachments are inlined as data URLs, so keep them small. */
 const MAX_ATTACHMENT_BYTES = 10_000_000;
 const MAX_ATTACHMENTS = 5;
 
-const SUGGESTED_PROMPTS: ReadonlyArray<{ title: string; text: string; category: PromptCategory }> = [
-  {
-    title: "Wellness products",
-    text: "Which Dayjoy products support daily wellness and immunity?",
-    category: "wellness",
-  },
-  {
-    title: "Distributor onboarding",
-    text: "What are the first 3 steps to start as a Dayjoy distributor?",
-    category: "distributor",
-  },
-  {
-    title: "Safety & usage",
-    text: "Are there any products not recommended during pregnancy?",
-    category: "safety",
-  },
-  {
-    title: "Company policies",
-    text: "What is the Dayjoy return and refund policy?",
-    category: "policy",
-  },
-] as const;
+type SuggestedPrompt = { title: string; text: string; icon: typeof Leaf };
+
+/**
+ * Suggested prompts personalized by role. Each role sees the topics that
+ * actually matter to their job: customers get discovery/wellness/orders/
+ * support, distributors get customers/follow-ups/recommendations/sales/
+ * training, leaders get team performance/coaching/targets/analytics.
+ */
+const ROLE_PROMPTS: Record<string, ReadonlyArray<SuggestedPrompt>> = {
+  customer: [
+    { title: "Find a product", text: "Help me find a Dayjoy product for daily wellness.", icon: Package },
+    { title: "Wellness questions", text: "Which Dayjoy products support immunity and energy?", icon: Leaf },
+    { title: "Track my order", text: "What's the status of my most recent Dayjoy order?", icon: Clock },
+    { title: "Get support", text: "I need help with a product issue — what should I do?", icon: LifeBuoy },
+  ],
+  distributor: [
+    { title: "Customer follow-ups", text: "Which of my customers are due for a follow-up today?", icon: Users },
+    { title: "Product recommendations", text: "Recommend Dayjoy products for a customer interested in wellness.", icon: Package },
+    { title: "Sales guidance", text: "Give me objection handling for a hesitant prospect.", icon: TrendingUp },
+    { title: "Training & growth", text: "What training should I complete next to grow my business?", icon: GraduationCap },
+  ],
+  leader: [
+    { title: "Team performance", text: "How is my team performing against this month's target?", icon: Users },
+    { title: "Coach my team", text: "Help me coach a distributor who's falling behind.", icon: GraduationCap },
+    { title: "Targets & progress", text: "Show me progress toward this month's team target.", icon: Target },
+    { title: "Analytics summary", text: "Summarize my team's key analytics this week.", icon: TrendingUp },
+  ],
+  trainer: [
+    { title: "Build a quiz", text: "Help me build a quiz for new distributor onboarding.", icon: GraduationCap },
+    { title: "Training modules", text: "What training modules cover Dayjoy product knowledge?", icon: Package },
+    { title: "Certification status", text: "Which trainees are close to certification?", icon: Target },
+    { title: "Company policies", text: "What is the Dayjoy return and refund policy?", icon: ScrollText },
+  ],
+  default: [
+    { title: "Wellness products", text: "Which Dayjoy products support daily wellness and immunity?", icon: Leaf },
+    { title: "Distributor onboarding", text: "What are the first 3 steps to start as a Dayjoy distributor?", icon: Rocket },
+    { title: "Safety & usage", text: "Are there any products not recommended during pregnancy?", icon: ShieldCheck },
+    { title: "Company policies", text: "What is the Dayjoy return and refund policy?", icon: ScrollText },
+  ],
+};
+
+function getSuggestedPrompts(role: string | null | undefined): ReadonlyArray<SuggestedPrompt> {
+  if (role && ROLE_PROMPTS[role]) return ROLE_PROMPTS[role];
+  if (role === "employee" || role === "support") return ROLE_PROMPTS.trainer;
+  if (role === "admin" || role === "management" || role === "super_admin") return ROLE_PROMPTS.leader;
+  return ROLE_PROMPTS.default;
+}
 
 /**
  * Role-aware welcome subtitle. Instead of one generic line, the user sees
@@ -1522,93 +1567,116 @@ export function UserChat() {
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && !streamingText ? (
               <div className="py-3 sm:py-12 text-center">
-                {/* Hero — orb + brand mark, layered for depth */}
-                <div className="relative flex justify-center mb-3 sm:mb-5">
-                  {/* Soft mesh halo behind the orb */}
-                  <div
-                    className="absolute inset-0 -m-8 rounded-full opacity-60 pointer-events-none"
-                    aria-hidden="true"
-                    style={{
-                      background:
-                        "radial-gradient(circle at 50% 50%, rgba(var(--primary-rgb), 0.18) 0%, rgba(var(--gold-accent-rgb), 0.10) 40%, transparent 70%)",
-                      filter: "blur(20px)",
-                    }}
-                  />
-                  {/* AIOrb takes a fixed pixel size, so scale it down on
-                      narrow phones — 140px plus the halo eats ~40% of a
-                      360px viewport. The wrapper height matches the scaled
-                      box so no dead space is left behind.
-                      Tappable: starts hands-free voice mode (speak your
-                      question, hear the answer, mic re-opens automatically)
-                      — tap again, or the mic button in the composer, to end. */}
-                  <button
-                    type="button"
-                    onClick={toggleVoiceMode}
-                    disabled={!voice.sttSupported || !isVoiceRepliesEnabled()}
-                    className="relative h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
-                    aria-label={
-                      voiceMode
-                        ? "Voice mode active — tap to end"
-                        : !isVoiceRepliesEnabled()
-                          ? "Voice is disabled — enable it in Settings to talk"
-                          : voice.sttSupported
-                            ? "Tap to start voice conversation"
-                            : "Voice input is not supported in this browser"
-                    }
-                    aria-pressed={voiceMode}
-                  >
-                    {/* AIOrb always renders at its true 140px size (the
-                        `sm:h-140` / `h-100` on the button above is a layout
-                        flow trick, so the *scaled-down* box is what reserves
-                        space in the page — not the orb's real size). The
-                        badge below must center against that real 140x140
-                        box, not the button's shorter mobile layout height,
-                        or the CSS transform ends up scaling the badge toward
-                        a different point than the orb's actual center. */}
-                    <div className="relative w-[140px] h-[140px]">
-                      <Suspense
-                        fallback={
-                          <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
-                            <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
-                          </div>
-                        }
-                      >
-                        <AIOrb
-                          state={
-                            sending
-                              ? "thinking"
-                              : streamingText
-                                ? "answering"
-                                : voice.listening
-                                  ? "listening"
-                                  : "idle"
-                          }
-                          size={140}
-                        />
-                      </Suspense>
-                      {/* Brand mark centered on the orb — a static badge over
-                          the shader sphere rather than a texture baked into
-                          it, so the noise/breathing animation is untouched. */}
-                      {transparentLogo ? (
-                        <img
-                          src={transparentLogo}
-                          alt=""
-                          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 object-contain pointer-events-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
-                        />
-                      ) : null}
+                {/* Welcome text — stands in for the voice-orb hero while it's
+                    disabled below. Remove/replace this block if the orb is
+                    restored (SHOW_VOICE_ORB = true) since the orb's own
+                    "Tap the orb to talk" caption already covers this. */}
+                {!SHOW_VOICE_ORB ? (
+                  <div className="flex justify-center mb-4 sm:mb-6" aria-hidden="true">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                      <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
                     </div>
-                  </button>
-                </div>
-                {voice.sttSupported && isVoiceRepliesEnabled() ? (
-                  <p className="text-xs text-muted-foreground -mt-1 mb-2" aria-live="polite">
-                    {voiceMode
-                      ? voice.listening
-                        ? "Listening… tap the orb or the mic below to stop"
-                        : voice.speaking
-                          ? "Speaking…"
-                          : "Voice mode on — tap the orb or the mic below to stop"
-                      : "Tap the orb to talk"}
-                  </p>
+                  </div>
+                ) : null}
+                {/* ============================================================
+                    VOICE ORB HERO — DISABLED, NOT DELETED.
+                    Set SHOW_VOICE_ORB (top of file) back to `true` to restore
+                    the tappable animated orb centerpiece (hands-free voice
+                    mode: tap to start, speak, hear the answer, mic re-opens
+                    automatically). Everything below is untouched so it can be
+                    flipped back on at any time.
+                    ============================================================ */}
+                {SHOW_VOICE_ORB ? (
+                  <>
+                    {/* Hero — orb + brand mark, layered for depth */}
+                    <div className="relative flex justify-center mb-3 sm:mb-5">
+                      {/* Soft mesh halo behind the orb */}
+                      <div
+                        className="absolute inset-0 -m-8 rounded-full opacity-60 pointer-events-none"
+                        aria-hidden="true"
+                        style={{
+                          background:
+                            "radial-gradient(circle at 50% 50%, rgba(var(--primary-rgb), 0.18) 0%, rgba(var(--gold-accent-rgb), 0.10) 40%, transparent 70%)",
+                          filter: "blur(20px)",
+                        }}
+                      />
+                      {/* AIOrb takes a fixed pixel size, so scale it down on
+                          narrow phones — 140px plus the halo eats ~40% of a
+                          360px viewport. The wrapper height matches the scaled
+                          box so no dead space is left behind.
+                          Tappable: starts hands-free voice mode (speak your
+                          question, hear the answer, mic re-opens automatically)
+                          — tap again, or the mic button in the composer, to end. */}
+                      <button
+                        type="button"
+                        onClick={toggleVoiceMode}
+                        disabled={!voice.sttSupported || !isVoiceRepliesEnabled()}
+                        className="relative h-[100px] sm:h-[140px] origin-top scale-[0.714] sm:scale-100 rounded-full disabled:cursor-default focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
+                        aria-label={
+                          voiceMode
+                            ? "Voice mode active — tap to end"
+                            : !isVoiceRepliesEnabled()
+                              ? "Voice is disabled — enable it in Settings to talk"
+                              : voice.sttSupported
+                                ? "Tap to start voice conversation"
+                                : "Voice input is not supported in this browser"
+                        }
+                        aria-pressed={voiceMode}
+                      >
+                        {/* AIOrb always renders at its true 140px size (the
+                            `sm:h-140` / `h-100` on the button above is a layout
+                            flow trick, so the *scaled-down* box is what reserves
+                            space in the page — not the orb's real size). The
+                            badge below must center against that real 140x140
+                            box, not the button's shorter mobile layout height,
+                            or the CSS transform ends up scaling the badge toward
+                            a different point than the orb's actual center. */}
+                        <div className="relative w-[140px] h-[140px]">
+                          <Suspense
+                            fallback={
+                              <div className="w-32 h-32 rounded-full bg-primary/10 animate-pulse-glow flex items-center justify-center">
+                                <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />
+                              </div>
+                            }
+                          >
+                            <AIOrb
+                              state={
+                                sending
+                                  ? "thinking"
+                                  : streamingText
+                                    ? "answering"
+                                    : voice.listening
+                                      ? "listening"
+                                      : "idle"
+                              }
+                              size={140}
+                            />
+                          </Suspense>
+                          {/* Brand mark centered on the orb — a static badge over
+                              the shader sphere rather than a texture baked into
+                              it, so the noise/breathing animation is untouched. */}
+                          {transparentLogo ? (
+                            <img
+                              src={transparentLogo}
+                              alt=""
+                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 object-contain pointer-events-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                            />
+                          ) : null}
+                        </div>
+                      </button>
+                    </div>
+                    {voice.sttSupported && isVoiceRepliesEnabled() ? (
+                      <p className="text-xs text-muted-foreground -mt-1 mb-2" aria-live="polite">
+                        {voiceMode
+                          ? voice.listening
+                            ? "Listening… tap the orb or the mic below to stop"
+                            : voice.speaking
+                              ? "Speaking…"
+                              : "Voice mode on — tap the orb or the mic below to stop"
+                          : "Tap the orb to talk"}
+                      </p>
+                    ) : null}
+                  </>
                 ) : null}
 
                 {/* Role-aware pill badge — an internal-sounding label
@@ -1691,16 +1759,18 @@ export function UserChat() {
                   </motion.div>
                 )}
 
-                {/* Curated prompt cards — category-themed. Hidden on mobile in
-                    Professional mode: a chat-first empty state shouldn't
-                    front-load a grid of suggestions before the user has typed
-                    anything. Still available in Explorer mode and on desktop. */}
+                {/* Curated prompt cards — personalized per role (see
+                    ROLE_PROMPTS / getSuggestedPrompts above). Hidden on
+                    mobile in Professional mode: a chat-first empty state
+                    shouldn't front-load a grid of suggestions before the
+                    user has typed anything. Still available in Explorer
+                    mode and on desktop. */}
                 <div
                   className={`${professionalMobile ? "hidden lg:grid" : "grid"} grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left`}
                 >
-                  {SUGGESTED_PROMPTS.map((p, idx) => {
-                    const theme = PROMPT_THEME[p.category];
-                    const Icon = theme.icon;
+                  {getSuggestedPrompts(role).map((p, idx) => {
+                    const style = PROMPT_STYLES[idx % PROMPT_STYLES.length];
+                    const Icon = p.icon;
                     return (
                       <motion.button
                         key={p.title}
@@ -1715,7 +1785,7 @@ export function UserChat() {
                         transition={{ duration: 0.35, delay: 0.2 + idx * 0.06 }}
                         whileHover={sending ? undefined : { y: -3 }}
                         whileTap={sending ? undefined : { scale: 0.98 }}
-                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${theme.ring}`}
+                        className={`group relative text-left p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${style.ring}`}
                       >
                         {/* Subtle gradient sheen on hover */}
                         <span
@@ -1728,7 +1798,7 @@ export function UserChat() {
                         />
                         <div className="flex items-start gap-3 relative">
                           <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${theme.tint}`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${style.tint}`}
                             aria-hidden="true"
                           >
                             <Icon className="w-4.5 h-4.5" />

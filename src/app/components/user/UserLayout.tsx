@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { useIsMobile } from "../../lib/useIsMobile";
+import { useVisualViewportHeight } from "../../lib/useVisualViewportHeight";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { UserAvatar } from "../common/UserAvatar";
 import { AccountMenu, AccountMenuItems } from "../common/AccountMenu";
@@ -95,6 +96,13 @@ export function UserLayout() {
   const isVoiceRoute = location.pathname.startsWith("/voice");
   const hideMobileChrome = isBusinessHub || isVoiceRoute;
   const isMobile = useIsMobile();
+  // Prefer the live visualViewport height on mobile so the shell shrinks
+  // to match the on-screen keyboard even on browsers where `100dvh` doesn't
+  // (some Android Chrome versions) — otherwise the composer/footer end up
+  // pinned to a stale, too-tall viewport with a gap of dead space above the
+  // keyboard. Desktop and unsupported browsers keep the `100dvh` CSS class.
+  const visualViewportHeight = useVisualViewportHeight();
+  const shellStyle = isMobile && visualViewportHeight != null ? { height: visualViewportHeight } : undefined;
   const { mode: chatExperienceMode } = useChatExperience();
   // On the chat screen in Professional mode, UserChat.tsx renders its own
   // single minimal mobile header (hamburger + title + New chat + •••) — so
@@ -199,8 +207,12 @@ export function UserLayout() {
   return (
     <TooltipProvider delayDuration={200}>
       {/* 100dvh, not 100vh: mobile browser chrome counts against vh, which
-          pushed the drawer footer (profile / sign out) below the fold. */}
-      <div className="h-[100dvh] flex bg-background">
+          pushed the drawer footer (profile / sign out) below the fold.
+          On mobile we override with an inline height tracking
+          visualViewport instead — see `shellStyle` above — because dvh
+          alone doesn't shrink for the on-screen keyboard on some Android
+          Chrome versions, leaving dead space around the composer. */}
+      <div className="h-[100dvh] flex bg-background" style={shellStyle}>
         <a
           href="#dj-main-content"
           className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
