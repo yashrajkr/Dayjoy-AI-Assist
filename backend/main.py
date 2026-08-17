@@ -424,8 +424,20 @@ async def load_safety_rules() -> List[Dict[str, str]]:
 from backend.message_classifiers import (  # noqa: E402
     is_casual_message,
     is_pure_time_query,
+    is_weather_query,
     wants_hybrid_comparison,
 )
+from backend.orchestrator.tools import weather as weather_tool  # noqa: E402
+
+# Resolves bare references ("it", "that", "this one") against the immediately
+# preceding user turn before the message is used for RAG/web retrieval — was
+# implemented and unit-tested (tests/test_phase4_orchestrator.py) but never
+# actually called from /chat or /chat/stream, so a follow-up like "what about
+# its price?" retrieved on that literal text alone (no product name in it),
+# which is why the pipeline could confidently answer a different question
+# than the one just asked. Only augments the retrieval query — the LLM
+# generation call still sees the user's own original wording via `history`.
+from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -705,6 +717,36 @@ async def _route_events(
         # human handoff" disclaimer on a completely normal reply.
         yield ("result", RouteResult("", "", [], [], "general", None, "dayjoy", "casual", None, False))
         return
+
+    if is_weather_query(message):
+        # Live-data short-circuit: weather has zero Dayjoy-knowledge value,
+        # so running RAG first (which would find nothing anyway) only added
+        # latency. The LLM has no live weather of its own — without this,
+        # it answered with confident-sounding but fabricated conditions.
+        # Open-Meteo needs no API key; `format_context` is the only source
+        # of the actual numbers the model is allowed to state.
+        yield ("status", "checking_weather")
+        weather_data = await weather_tool.run(message)
+        if weather_data:
+            yield (
+                "result",
+                RouteResult(
+                    weather_tool.format_context(weather_data),
+                    "",
+                    [],
+                    [],
+                    "weather",
+                    {"confidence": 0.95, "verification_status": "verified", "evidence_sufficient": True},
+                    "dayjoy",
+                    "live_data",
+                    "open-meteo",
+                    False,
+                ),
+            )
+            return
+        # No resolvable place name (e.g. "what's the weather like?" with no
+        # location) — fall through to the normal path below, which lets the
+        # model ask the user which city/place they mean.
 
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(token, message)
@@ -1115,7 +1157,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
-    route = await determine_route(token, req.message, casual)
+    retrieval_query = rewrite_query(req.message, history)
+    route = await determine_route(token, retrieval_query, casual)
 
     full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
 
@@ -1278,8 +1321,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
+        retrieval_query = rewrite_query(req.message, history)
         route: Optional[RouteResult] = None
-        async for kind, payload in _route_events(token, req.message, casual):
+        async for kind, payload in _route_events(token, retrieval_query, casual):
             if kind == "status":
                 yield _sse({"status": payload})
             else:
@@ -1305,10 +1349,20 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         else:
             confidence = 0.85 if route.context else 0.4
             verification_status = "verified" if route.context else "unverified"
+        # Evidence-verification signal (rag/evidence.py, via rag_metadata) —
+        # kept in sync with the non-streaming /chat handler above, which had
+        # this check but this endpoint didn't, so a weak/unrelated-evidence
+        # answer could stream back here without the "unverified, create a
+        # support ticket" disclosure that /chat would have shown for the
+        # exact same route result.
+        evidence_insufficient = bool(
+            route.rag_metadata and route.rag_metadata.get("evidence_sufficient") is False
+        )
         handoff_required = not casual and not route.used_web_search and (
             verification_status == "unverified"
             or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
             or not bool(route.context)
+            or evidence_insufficient
         )
         category = route.category
         sources = route.sources + route.web_sources

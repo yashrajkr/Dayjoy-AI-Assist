@@ -15,7 +15,11 @@ import re
 from typing import Dict, List, Optional
 
 _PRONOUN_REFERENCE_RE = re.compile(
-    r"\b(it|that|this one|the (?:first|second|third) one|those|these)\b",
+    # "its"/"their" (possessive) added: "what about its price?" is one of
+    # the single most common follow-up phrasings and was previously missed
+    # entirely — "\bit\b" doesn't match "its" since "s" continues the word,
+    # so this needs its own alternative rather than relying on "it" alone.
+    r"\b(it|its|their|that|this one|the (?:first|second|third) one|those|these)\b",
     re.IGNORECASE,
 )
 

@@ -221,8 +221,19 @@ export function VoiceAssistant() {
     }
   }, [voice.supported, voice.error, voice.listening, voice.speaking, thinking]);
 
+  // `behavior: "smooth"` re-fired on every streamed token (streamingText
+  // changes many times a second while the assistant is speaking/writing),
+  // so each new call cancelled the previous still-in-flight smooth-scroll
+  // animation before it reached the bottom — the transcript visually got
+  // stuck part-way up instead of settling on the latest turn. requestAnimationFrame
+  // defers the scroll until layout has actually committed, and instant
+  // ("auto") scrolling can't be interrupted by the next call the way a
+  // smooth animation can.
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const raf = requestAnimationFrame(() => {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [turns, streamingText]);
 
   const ensureConversation = useCallback(async () => {

@@ -132,7 +132,7 @@ export type ChatResponse = {
   rag_metadata?: RAGMetadata | null;
   // ---- AI router labeling ----
   /** Which knowledge source(s) produced this answer. */
-  answer_source?: "dayjoy_knowledge" | "web_search" | "general_llm" | "hybrid" | "casual" | "unsafe" | null;
+  answer_source?: "dayjoy_knowledge" | "web_search" | "general_llm" | "hybrid" | "casual" | "unsafe" | "live_data" | null;
   /** Which web search provider served results, when answer_source involved web search. */
   web_search_provider?: string | null;
 };

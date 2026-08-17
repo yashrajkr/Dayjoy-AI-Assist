@@ -11,6 +11,7 @@ import {
   LifeBuoy,
   Package,
   Target,
+  Globe,
   ThumbsUp,
   ThumbsDown,
   Shield,
@@ -267,6 +268,39 @@ function getRoleWelcome(role: string | null | undefined): { label: string; cta: 
     default:
       return { label: "AI Assistant", cta: "Trusted Dayjoy knowledge, on tap." };
   }
+}
+
+/**
+ * Truthful, contextual per-message trust badge — replaces a literal
+ * "Verified" label that previously rendered unconditionally on every
+ * assistant bubble regardless of what the backend actually reported.
+ * Returns `null` for messages with no verification data (e.g. an
+ * optimistic local bubble not yet reconciled with the backend response),
+ * so no badge renders rather than a misleading one.
+ */
+function messageTrustBadge(
+  message: ChatMessage,
+): { label: string; icon: typeof BadgeCheck; tone: "primary" | "muted" | "warning" } | null {
+  if (message.answer_source === "casual") return null;
+  if (message.answer_source === "live_data") {
+    return { label: "Live data", icon: Globe, tone: "primary" };
+  }
+  if (message.answer_source === "web_search") {
+    return { label: "Web source", icon: Globe, tone: "muted" };
+  }
+  if (message.answer_source === "general_llm") {
+    return { label: "General AI knowledge", icon: Sparkles, tone: "muted" };
+  }
+  if (message.verification_status === "verified") {
+    return { label: "Dayjoy Knowledge Base", icon: BadgeCheck, tone: "primary" };
+  }
+  if (message.verification_status === "partial") {
+    return { label: "Partial match — verify", icon: BadgeCheck, tone: "warning" };
+  }
+  if (message.verification_status === "unverified") {
+    return { label: "Unverified", icon: BadgeCheck, tone: "muted" };
+  }
+  return null;
 }
 
 function sourceLabel(s: ChatSource | string): string {
@@ -1567,17 +1601,13 @@ export function UserChat() {
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && !streamingText ? (
               <div className="py-3 sm:py-12 text-center">
-                {/* Welcome text — stands in for the voice-orb hero while it's
-                    disabled below. Remove/replace this block if the orb is
-                    restored (SHOW_VOICE_ORB = true) since the orb's own
-                    "Tap the orb to talk" caption already covers this. */}
-                {!SHOW_VOICE_ORB ? (
-                  <div className="flex justify-center mb-4 sm:mb-6" aria-hidden="true">
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                      <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
-                    </div>
-                  </div>
-                ) : null}
+                {/* Welcome text — the greeting heading + subtitle below stand
+                    in for the voice-orb hero while it's disabled. No stand-in
+                    icon here on purpose: a generic sparkle/star mark above
+                    the greeting read as an AI-cliché placeholder rather than
+                    part of the brand. If the orb is restored
+                    (SHOW_VOICE_ORB = true) this comment can go too, since the
+                    orb's own "Tap the orb to talk" caption covers the hero. */}
                 {/* ============================================================
                     VOICE ORB HERO — DISABLED, NOT DELETED.
                     Set SHOW_VOICE_ORB (top of file) back to `true` to restore
@@ -2504,6 +2534,8 @@ export function UserChat() {
                         <><GitCompare className="w-3.5 h-3.5" aria-hidden="true" /> Hybrid — Dayjoy + Web</>
                       ) : lastAssistant.answer_source === "general_llm" ? (
                         <><Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> General AI knowledge</>
+                      ) : lastAssistant.answer_source === "live_data" ? (
+                        <><Globe className="w-3.5 h-3.5" aria-hidden="true" /> Live data</>
                       ) : null}
                     </Badge>
                   ) : null}
@@ -3115,10 +3147,23 @@ function MessageBubble({
       <div className="flex-1 min-w-0">
         <div className="text-xs mb-1 flex items-center gap-2">
           <span className="font-semibold text-foreground">{BRAND.shortName}</span>
-          <span className="inline-flex items-center gap-0.5 text-[10px] text-primary font-medium px-1.5 py-0.5 rounded-full bg-primary/8">
-            <BadgeCheck className="w-2.5 h-2.5" aria-hidden="true" />
-            Verified
-          </span>
+          {(() => {
+            const badge = messageTrustBadge(message);
+            if (!badge) return null;
+            const toneClass =
+              badge.tone === "primary"
+                ? "text-primary bg-primary/8"
+                : badge.tone === "warning"
+                  ? "text-warning bg-gold-accent/15"
+                  : "text-muted-foreground bg-accent";
+            const Icon = badge.icon;
+            return (
+              <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${toneClass}`}>
+                <Icon className="w-2.5 h-2.5" aria-hidden="true" />
+                {badge.label}
+              </span>
+            );
+          })()}
           {message.created_at ? (
             <span className="text-muted-foreground">· {formatTimestamp(message.created_at)}</span>
           ) : null}

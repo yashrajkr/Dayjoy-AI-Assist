@@ -66,3 +66,18 @@ def is_pure_time_query(text: str) -> bool:
     came from a web search" disclosure instruction for something that
     didn't actually need external search at all."""
     return bool(_TIME_QUERY_RE.search(text)) and len(text.strip()) < 60
+
+
+_WEATHER_QUERY_RE = re.compile(
+    r"\b(weather|temperature|forecast|rain(?:fall|ing)?|humidity|"
+    r"mausam|barish)\b",
+    re.IGNORECASE,
+)
+
+
+def is_weather_query(text: str) -> bool:
+    """True for weather-ish questions ("weather in Patna today?", "will it
+    rain tomorrow?") — routed to a real weather API instead of the general
+    LLM, which previously fabricated plausible-sounding but fake conditions
+    since it has no live data of its own."""
+    return bool(_WEATHER_QUERY_RE.search(text))
