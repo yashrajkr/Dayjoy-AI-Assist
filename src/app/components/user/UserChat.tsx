@@ -53,6 +53,7 @@ import {
   GitCompare,
   Menu,
   MoreVertical,
+  Ghost,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -368,6 +369,14 @@ export function UserChat() {
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
+  // Temporary Chat (Claude/ChatGPT-style): messages aren't written to
+  // Supabase and no conversation row is created, so nothing appears in the
+  // sidebar's history and nothing survives a refresh/navigation. Only
+  // togglable before the first message of a chat — like those products,
+  // switching modes mid-conversation would be confusing (the messages
+  // already sent don't retroactively become saved/unsaved).
+  const [isTemporary, setIsTemporary] = useState(false);
+
   // Voice AI (Web Speech API — gracefully degrades if unsupported)
   const voice = useVoice(language === "Hindi" ? "hi" : "en");
 
@@ -452,6 +461,8 @@ export function UserChat() {
     }
     // A send in flight owns `messages`; refetching here would race it.
     if (sendingRef.current) return;
+    // Opening a saved conversation (it has a real chatId) is never temporary.
+    setIsTemporary(false);
     let cancelled = false;
     (async () => {
       const msgs = await listMessages(chatId);
@@ -507,7 +518,7 @@ export function UserChat() {
       let convId = chatId ?? activeConv?.id;
       let conv: Conversation | null = activeConv;
 
-      if (!convId) {
+      if (!convId && !isTemporary) {
         if (!currentUser) {
           setError("Unable to start a conversation without a logged-in user.");
           sendingRef.current = false;
@@ -573,6 +584,7 @@ export function UserChat() {
             role: role ?? "customer",
             language,
             conversation_id: convId,
+            is_temporary: isTemporary,
           },
           (chunk) => {
             aggregated += chunk;
@@ -595,30 +607,37 @@ export function UserChat() {
           web_search_provider: res.web_search_provider,
         };
 
-        const persisted = await appendMessage(convId!, {
-          role: "user",
-          content: text,
-        });
-        if (persisted?.id) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m === userMsg ? { ...m, id: persisted.id, conversation_id: convId ?? undefined } : m,
-            ),
-          );
+        // Temporary Chat: never write to Supabase — build the same message
+        // shapes purely in local state so the transcript still renders
+        // normally, but nothing persists past this browser session.
+        if (!isTemporary) {
+          const persisted = await appendMessage(convId!, {
+            role: "user",
+            content: text,
+          });
+          if (persisted?.id) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m === userMsg ? { ...m, id: persisted.id, conversation_id: convId ?? undefined } : m,
+              ),
+            );
+          }
         }
 
-        const assistantMsg = await appendMessage(convId!, {
-          role: "assistant",
-          content: aggregated,
-          sources: sourcesSnapshot as unknown,
-          safety_status: meta.safety_status ?? "safe",
-          handoff_required: meta.handoff_required ?? false,
-          confidence: meta.confidence ?? null,
-          verification_status: meta.verification_status ?? null,
-          handoff_message: meta.handoff_message ?? null,
-          rag_metadata: meta.rag_metadata ?? null,
-          answer_source: meta.answer_source ?? null,
-        });
+        const assistantMsg = isTemporary
+          ? null
+          : await appendMessage(convId!, {
+              role: "assistant",
+              content: aggregated,
+              sources: sourcesSnapshot as unknown,
+              safety_status: meta.safety_status ?? "safe",
+              handoff_required: meta.handoff_required ?? false,
+              confidence: meta.confidence ?? null,
+              verification_status: meta.verification_status ?? null,
+              handoff_message: meta.handoff_message ?? null,
+              rag_metadata: meta.rag_metadata ?? null,
+              answer_source: meta.answer_source ?? null,
+            });
 
         // The answer must always render, even if the Supabase write above
         // failed (network blip, RLS, etc.) — fall back to a locally-built
@@ -638,7 +657,7 @@ export function UserChat() {
             rag_metadata: meta.rag_metadata ?? null,
             answer_source: meta.answer_source ?? null,
             created_at: new Date().toISOString(),
-            _unsaved: !assistantMsg,
+            _unsaved: !assistantMsg && !isTemporary,
           };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -676,18 +695,20 @@ export function UserChat() {
           }
         }
 
-        await refreshConversations();
+        if (!isTemporary) await refreshConversations();
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           // User pressed stop — keep what we have, even if persistence fails.
-          if (aggregated && convId) {
+          if (aggregated && (convId || isTemporary)) {
             const stoppedContent = aggregated + "\n\n_⃠ Generation stopped by user._";
-            const m = await appendMessage(convId!, {
-              role: "assistant",
-              content: stoppedContent,
-              safety_status: "safe",
-              handoff_required: false,
-            });
+            const m = isTemporary
+              ? null
+              : await appendMessage(convId!, {
+                  role: "assistant",
+                  content: stoppedContent,
+                  safety_status: "safe",
+                  handoff_required: false,
+                });
             // Show the partial answer even if it failed to persist.
             setMessages((prev) => [
               ...prev,
@@ -698,7 +719,7 @@ export function UserChat() {
                 safety_status: "safe",
                 handoff_required: false,
                 created_at: new Date().toISOString(),
-                _unsaved: true,
+                _unsaved: !isTemporary,
               },
             ]);
           }
@@ -726,7 +747,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, currentUser, input, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -964,6 +985,7 @@ export function UserChat() {
     setMessages([]);
     setStreamingText("");
     setError(null);
+    setIsTemporary(false);
     navigate("/");
     setSidebarOpen(false);
     inputRef.current?.focus();
@@ -1435,6 +1457,21 @@ export function UserChat() {
               <DayjoyLogo variant="full" size={22} />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {!activeConv ? (
+                <button
+                  type="button"
+                  onClick={() => setIsTemporary((v) => !v)}
+                  disabled={messages.length > 0}
+                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 disabled:opacity-40 ${
+                    isTemporary ? "bg-accent text-primary" : "bg-accent/60 text-foreground hover:bg-accent"
+                  }`}
+                  aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
+                  aria-pressed={isTemporary}
+                  title="Temporary Chat"
+                >
+                  <Ghost className="w-4.5 h-4.5" aria-hidden="true" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleNewChat}
@@ -1518,13 +1555,18 @@ export function UserChat() {
             </Button>
             <div className="flex flex-col min-w-0">
               <h2 className="text-sm sm:text-base font-semibold truncate leading-tight">
-                {activeConv?.title ?? "New conversation"}
+                {activeConv?.title ?? (isTemporary ? "Temporary Chat" : "New conversation")}
               </h2>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground min-w-0">
                 {activeConv ? (
                   <span className="inline-flex items-center gap-1 truncate">
                     <Clock className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
                     <span className="truncate">{formatTimestamp(activeConv.updated_at ?? activeConv.created_at)}</span>
+                  </span>
+                ) : isTemporary ? (
+                  <span className="inline-flex items-center gap-1 font-medium truncate">
+                    <Ghost className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">Not saved to history</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-primary font-medium truncate">
@@ -1536,6 +1578,23 @@ export function UserChat() {
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {!activeConv ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsTemporary((v) => !v)}
+                disabled={messages.length > 0}
+                className={`h-auto w-auto p-2 disabled:opacity-40 ${
+                  isTemporary ? "bg-accent/60 text-primary" : "text-muted-foreground"
+                }`}
+                aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
+                aria-pressed={isTemporary}
+                title={isTemporary ? "Temporary Chat is on — this chat won't be saved" : "Start a Temporary Chat"}
+              >
+                <Ghost className="w-4 h-4" aria-hidden="true" />
+              </Button>
+            ) : null}
             {activeConv ? (
               <>
                 <Button
@@ -1745,6 +1804,17 @@ export function UserChat() {
                       </p>
                     ) : null}
                   </>
+                ) : null}
+
+                {isTemporary ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-accent/50 px-3.5 py-1.5 text-xs font-medium text-muted-foreground"
+                  >
+                    <Ghost className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    Temporary Chat — this conversation won't be saved or appear in your history
+                  </motion.div>
                 ) : null}
 
                 <motion.h1

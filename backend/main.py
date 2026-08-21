@@ -330,6 +330,12 @@ class ChatRequest(BaseModel):
     role: str = Field("customer")
     language: str = Field("English")
     conversation_id: Optional[str] = None
+    # Temporary Chat: skip server-side conversation auto-creation so nothing
+    # is persisted or shows up in the sidebar's chat history. The frontend
+    # never sends a conversation_id for these, and this flag stops the
+    # `elif token and user_id: ensure_conversation(...)` fallback below from
+    # silently creating (and titling) a conversation row anyway.
+    is_temporary: bool = False
 
 
 class TitleRequest(BaseModel):
@@ -1078,6 +1084,23 @@ async def stream_openai(
         yield tok
 
 
+_SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
+_DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
+
+
+def _clean_fallback_answer(context: str, max_chars: int = 800) -> str:
+    """Strip retrieval debug metadata (source/score headers, the injected
+    current-time line, `---` block separators) from raw RAG context so the
+    LLM-unavailable fallback reads like an answer instead of a log dump."""
+    text = _DATETIME_LINE_RE.sub("", context)
+    text = _SOURCE_HEADER_RE.sub("", text)
+    text = re.sub(r"\n\s*---\s*\n", "\n\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
+    return text or "I found related information, but couldn't format a full answer right now."
+
+
 async def stream_response(
     message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
     custom_guidance: str = "",
@@ -1097,9 +1120,16 @@ async def stream_response(
             yield tok
         if collected:
             return
-    # Fallback: rule-based answer from context
+    # Fallback: both LLM providers are unconfigured or failed. Log loudly —
+    # this degraded path serving raw retrieval text (no answer synthesis) is
+    # never expected in a healthy deployment.
+    _llm_logger.error(
+        "Both Groq and OpenAI unavailable (configured: groq=%s, openai=%s) — "
+        "serving degraded context-only fallback answer",
+        bool(GROQ_API_KEY), bool(OPENAI_API_KEY),
+    )
     if context:
-        yield f"Here is approved information I found:\n\n{context[:1000]}\n\nIf you need a more specific answer, please contact Dayjoy support."
+        yield f"{_clean_fallback_answer(context)}\n\nFor a more specific answer, please contact Dayjoy support."
     else:
         yield (
             "I don't have enough approved information to answer that safely. "
@@ -1214,7 +1244,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     conv_id = req.conversation_id
     if token and conv_id:
         history = await load_history(token, conv_id)
-    elif token and user_id:
+    elif token and user_id and not req.is_temporary:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
     casual = is_casual_message(req.message)
@@ -1381,7 +1411,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         conv_id = req.conversation_id
         if token and conv_id:
             history = await load_history(token, conv_id)
-        elif token and user_id:
+        elif token and user_id and not req.is_temporary:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
         casual = is_casual_message(req.message)

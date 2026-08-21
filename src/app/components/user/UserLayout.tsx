@@ -328,7 +328,9 @@ export function UserLayout() {
             </NavGroup>
             <NavGroup label="Personal" collapsed={collapsed}>
               <NavItem to="/dashboard" icon={LayoutDashboard} label="My Dashboard" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
-              <NavItem to="/favorites" icon={Heart} label="Favorites" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              {/* Favorites moved to Settings → Personalization (see UserSettings.tsx)
+                  to declutter the main nav — it's a low-frequency destination
+                  compared to Dashboard/Wellness. */}
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
                 // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,
@@ -415,28 +417,42 @@ export function UserLayout() {
               tapped. showLabel=false: the row itself already shows the name
               and role right there, so the menu doesn't repeat them. */}
           <div className="p-3 border-t border-border space-y-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                {!collapsed ? (
-                  <button
-                    type="button"
-                    title={userName}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/60"
-                  >
-                    <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="text-sm font-medium truncate">{userName}</p>
-                      <p className="text-xs text-muted-foreground">{roleLabel}</p>
-                    </div>
-                  </button>
-                ) : (
-                  <button type="button" title={userName} className="w-full flex justify-center p-2 rounded-lg transition-colors hover:bg-accent/60">
-                    <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
-                  </button>
-                )}
-              </DropdownMenuTrigger>
-              <AccountMenuItems showLabel={false} />
-            </DropdownMenu>
+            <div className="flex items-center gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  {!collapsed ? (
+                    <button
+                      type="button"
+                      title={userName}
+                      className="flex-1 min-w-0 flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-accent/60"
+                    >
+                      <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="text-sm font-medium truncate">{userName}</p>
+                        <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                      </div>
+                    </button>
+                  ) : (
+                    <button type="button" title={userName} className="w-full flex justify-center p-2 rounded-lg transition-colors hover:bg-accent/60">
+                      <UserAvatar user={currentUser} initials={userInitials} size={36} className="text-sm" />
+                    </button>
+                  )}
+                </DropdownMenuTrigger>
+                <AccountMenuItems showLabel={false} />
+              </DropdownMenu>
+
+              {!collapsed ? (
+                <button
+                  type="button"
+                  title="Settings"
+                  aria-label="Settings"
+                  onClick={() => { navigate("/settings"); setDrawerOpen(false); }}
+                  className="shrink-0 p-2 rounded-lg text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                >
+                  <Settings className="w-[18px] h-[18px]" />
+                </button>
+              ) : null}
+            </div>
 
             {(role === "admin" || role === "management" || role === "employee") ? (
               <NavLink

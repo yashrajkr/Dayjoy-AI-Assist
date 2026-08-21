@@ -10,6 +10,7 @@ import {
   Mic2,
   Brain,
   BookMarked,
+  Heart,
   ShieldCheck,
   KeyRound,
   LifeBuoy,
@@ -163,6 +164,12 @@ export function UserSettings() {
               label="Knowledge sources"
               value={knowledgePref}
               onClick={() => navigate("/settings/knowledge-sources")}
+            />
+            <SettingsRow
+              icon={Heart}
+              label="Favorites"
+              description="Products and answers you've saved"
+              onClick={() => navigate("/favorites")}
             />
           </SettingsSection>
 

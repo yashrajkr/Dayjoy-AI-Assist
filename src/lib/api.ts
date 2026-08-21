@@ -21,6 +21,8 @@ export type ChatRequest = {
   language: string;
   /** Optional conversation ID for multi-turn context. */
   conversation_id?: string;
+  /** Temporary Chat: tells the backend not to auto-create/persist a conversation. */
+  is_temporary?: boolean;
 };
 
 export type ChatSource = {
