@@ -22,6 +22,7 @@ from backend.orchestrator.types import (
     INTENT_CASUAL,
     INTENT_COMPARISON,
     INTENT_GENERAL,
+    INTENT_PRICING,
     INTENT_RECOMMENDATION,
     IntentResult,
 )
@@ -39,7 +40,15 @@ def build_plan(message: str) -> QueryPlan:
     available = set(registry.names())
 
     tools: List[str] = []
-    if intent.intent == INTENT_RECOMMENDATION:
+    if intent.intent == INTENT_PRICING:
+        # Structured MRP/DP/BV/PV lookup first (exact table row, never
+        # guessed) — dayjoy_kb is NOT proposed alongside it: a pricing
+        # question has one authoritative source, and letting generic RAG
+        # text stand next to it risks a stale/rounded figure contradicting
+        # the structured one in the same answer.
+        if "pricing_lookup" in available:
+            tools.append("pricing_lookup")
+    elif intent.intent == INTENT_RECOMMENDATION:
         # Structured recommendation engine first (exact chart-driven match,
         # never guessed), dayjoy_kb second for supporting explanation text
         # only — never web_search: a product recommendation is never a

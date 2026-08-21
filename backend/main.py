@@ -445,6 +445,19 @@ from backend.orchestrator.tools import weather as weather_tool  # noqa: E402
 # generation call still sees the user's own original wording via `history`.
 from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 
+# Structured-intent short-circuits — checked in `_route_events` before RAG
+# retrieval runs. Each has a single authoritative source (a DB table, not a
+# document chunk), so a match here skips RAG entirely for that turn rather
+# than risking a stale/rounded RAG figure sitting next to the exact one.
+from backend.orchestrator.clarify import needs_clarification  # noqa: E402
+from backend.orchestrator.intent import wants_pricing, wants_recommendation  # noqa: E402
+from backend.orchestrator.tools import pricing as pricing_tool  # noqa: E402
+from backend.orchestrator.tools import recommend as recommend_tool  # noqa: E402
+
+# Post-generation answer-relevance check — see module docstring for why this
+# is the one genuinely new link in the pipeline rather than a rebuild of it.
+from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
+
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
     """Returns (is_blocked, rule_key)."""
@@ -692,6 +705,61 @@ class RouteResult:
     answer_source: str  # dayjoy_knowledge | web_search | general_llm | hybrid | casual
     web_search_provider: Optional[str]  # tavily | brave | None
     used_web_search: bool
+    # When set, the router has already produced the final user-facing text
+    # itself (a clarifying question, or — pending future phases — a fully
+    # deterministic structured answer) and generation should be skipped
+    # entirely rather than handed to the LLM. Defaulted so every existing
+    # positional RouteResult(...) construction in this file keeps working.
+    direct_answer: Optional[str] = None
+
+
+def _format_pricing_context(data: Dict[str, Any]) -> str:
+    """Deterministic, all-facts-present context string for a structured
+    pricing_lookup result. The LLM is only ever asked to phrase these exact
+    numbers into a sentence, never to state a price on its own — every
+    figure here is a verbatim `product_prices` row value."""
+    lines = [f"[Verified pricing — {data['product_name']}]"]
+    if data.get("mrp") is not None:
+        lines.append(f"MRP: {data.get('currency') or 'INR'} {data['mrp']}")
+    if data.get("dp") is not None:
+        lines.append(f"Distributor Price (DP): {data.get('currency') or 'INR'} {data['dp']}")
+    if data.get("bv") is not None:
+        lines.append(f"BV: {data['bv']}")
+    if data.get("pv") is not None:
+        lines.append(f"PV: {data['pv']}")
+    if data.get("effective_from"):
+        lines.append(f"Effective from: {data['effective_from']}")
+    return "\n".join(lines)
+
+
+def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
+    """Deterministic context string for a structured product_recommendation
+    result — every field is a verbatim DB value (see recommend.py's
+    `_bundle_product` docstring); the LLM only phrases these into prose."""
+    blocks: List[str] = []
+    for p in products:
+        lines = [f"[Official Dayjoy Recommendation — {p.get('product_name')}]"]
+        lines.append(f"Matched for: {p.get('matched_condition')}")
+        if p.get("benefits"):
+            lines.append(f"Benefits: {p['benefits']}")
+        if p.get("usage"):
+            lines.append(f"Usage: {p['usage']}")
+        if p.get("dosage"):
+            lines.append(f"Dosage: {p['dosage']}")
+        if p.get("who_can_use"):
+            lines.append(f"Who can use: {p['who_can_use']}")
+        if p.get("contraindications"):
+            lines.append(f"Contraindications: {p['contraindications']}")
+        if p.get("safety_note"):
+            lines.append(f"Safety note: {p['safety_note']}")
+        price = p.get("price")
+        if price:
+            lines.append(
+                f"Price: MRP {price.get('currency') or 'INR'} {price.get('mrp')}, "
+                f"DP {price.get('dp')}, BV {price.get('bv')}, PV {price.get('pv')}"
+            )
+        blocks.append("\n".join(lines))
+    return "\n\n---\n\n".join(blocks)
 
 
 async def _route_events(
@@ -753,6 +821,83 @@ async def _route_events(
         # No resolvable place name (e.g. "what's the weather like?" with no
         # location) — fall through to the normal path below, which lets the
         # model ask the user which city/place they mean.
+
+    clarifying_question = needs_clarification(message)
+    if clarifying_question:
+        # Too vague to route confidently (e.g. "which product is best?" with
+        # no stated goal) — ask instead of guessing. No LLM call, no
+        # retrieval: this is a deterministic question, not a generated one.
+        yield (
+            "result",
+            RouteResult(
+                context="", web_context="", sources=[], web_sources=[],
+                category="clarification", rag_metadata=None, mode="dayjoy",
+                answer_source="clarification", web_search_provider=None,
+                used_web_search=False, direct_answer=clarifying_question,
+            ),
+        )
+        return
+
+    if wants_pricing(message):
+        yield ("status", "checking_pricing")
+        try:
+            pricing_data = await pricing_tool.run(token, message)
+        except Exception:
+            pricing_data = {"found": False}
+        if pricing_data.get("found"):
+            yield (
+                "result",
+                RouteResult(
+                    context=_format_pricing_context(pricing_data), web_context="",
+                    sources=[], web_sources=[], category="pricing",
+                    rag_metadata={
+                        "confidence": 0.98, "verification_status": "verified",
+                        "evidence_sufficient": True, "source": "structured_pricing",
+                    },
+                    mode="dayjoy", answer_source="dayjoy_knowledge",
+                    web_search_provider=None, used_web_search=False,
+                ),
+            )
+            return
+        # No product resolved, or no trusted current price row — fall
+        # through to RAG below rather than dead-ending: the product may
+        # still be documented (without a live price) in an approved doc.
+
+    if wants_recommendation(message):
+        yield ("status", "checking_recommendations")
+        try:
+            rec = await recommend_tool.run(token, message)
+        except Exception:
+            rec = {"status": "insufficient_evidence"}
+        if rec.get("status") == "needs_clarification":
+            yield (
+                "result",
+                RouteResult(
+                    context="", web_context="", sources=[], web_sources=[],
+                    category="clarification", rag_metadata=None, mode="dayjoy",
+                    answer_source="clarification", web_search_provider=None,
+                    used_web_search=False, direct_answer=rec.get("clarifying_question"),
+                ),
+            )
+            return
+        if rec.get("status") == "ok" and rec.get("products"):
+            yield (
+                "result",
+                RouteResult(
+                    context=_format_recommendation_context(rec["products"]), web_context="",
+                    sources=[], web_sources=[], category="recommendation",
+                    rag_metadata={
+                        "confidence": 0.95, "verification_status": "verified",
+                        "evidence_sufficient": True, "source": "structured_recommendation",
+                    },
+                    mode="dayjoy", answer_source="dayjoy_knowledge",
+                    web_search_provider=None, used_web_search=False,
+                ),
+            )
+            return
+        # "insufficient_evidence" — no chart condition matched well enough
+        # to recommend anything structured; fall through to RAG/general so
+        # the user still gets an answer instead of a dead end.
 
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(token, message)
@@ -857,12 +1002,30 @@ def _run_orchestrator_observability(message: str) -> None:
                 entities={
                     "wants_comparison": plan.intent.wants_comparison,
                     "is_time_query": plan.intent.is_time_query,
+                    "wants_pricing": plan.intent.wants_pricing,
+                    "wants_recommendation": plan.intent.wants_recommendation,
                 },
                 selected_tools=plan.proposed_tools,
             )
         )
     except Exception:
         _orchestrator_logger.exception("orchestrator observability pass failed")
+
+
+def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
+    """Shared by /chat and /chat/stream — was previously duplicated inline in
+    both (see git history), which is exactly how this endpoint pair drifted
+    out of sync before (the evidence-insufficiency check existed in /chat for
+    a while before /chat/stream got it). One implementation, used by both."""
+    if casual:
+        return 1.0, "verified"
+    if route.rag_metadata and route.rag_metadata.get("confidence") is not None:
+        return route.rag_metadata["confidence"], route.rag_metadata.get("verification_status", "unverified")
+    if route.used_web_search:
+        return 0.6, "unverified"
+    if route.context:
+        return 0.85, "verified"
+    return 0.4, "unverified"
 
 
 async def determine_route(token: Optional[str], message: str, casual: bool) -> RouteResult:
@@ -1255,38 +1418,63 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
     custom_guidance = await load_ai_custom_guidance()
 
-    # Collect streamed tokens into a single string
-    answer_parts: List[str] = []
-    async for tok in stream_response(
-        req.message, history, full_context, req.language, route.mode, custom_guidance
-    ):
-        answer_parts.append(tok)
-    answer = "".join(answer_parts).strip()
-
-    # Compute confidence: prefer RAG confidence; fall back to legacy heuristic
-    if casual:
-        confidence = 1.0
-        verification_status = "verified"
-    elif route.rag_metadata and route.rag_metadata.get("confidence") is not None:
-        confidence = route.rag_metadata["confidence"]
-        verification_status = route.rag_metadata.get("verification_status", "unverified")
-    elif route.used_web_search:
-        confidence = 0.6
-        verification_status = "unverified"
+    answer_mismatch = False
+    if route.direct_answer is not None:
+        # Router already produced the final text (a clarifying question) —
+        # skip generation entirely rather than asking the LLM to rephrase a
+        # question we already know how to ask.
+        answer = route.direct_answer
     else:
-        confidence = 0.85 if route.context else 0.4
-        verification_status = "verified" if route.context else "unverified"
+        # Collect streamed tokens into a single string
+        answer_parts: List[str] = []
+        async for tok in stream_response(
+            req.message, history, full_context, req.language, route.mode, custom_guidance
+        ):
+            answer_parts.append(tok)
+        answer = "".join(answer_parts).strip()
+
+        # Post-generation answer-relevance check — only for RAG-sourced
+        # answers (dayjoy_knowledge/hybrid): structured pricing/recommendation
+        # answers are already grounded to a specific DB row and casual/web/
+        # general answers aren't checked against Dayjoy evidence at all.
+        if not casual and route.answer_source in ("dayjoy_knowledge", "hybrid"):
+            verdict = await verify_answer(req.message, answer, full_context)
+            if verdict.checked and not verdict.addresses_question:
+                corrective_context = (
+                    full_context
+                    + "\n\n[SYSTEM NOTE: your previous answer did not address the exact "
+                    "question asked. Re-read the question and answer ONLY what was asked, "
+                    "using only the evidence above. If the evidence doesn't cover it, say "
+                    "so honestly instead of guessing.]"
+                )
+                retry_parts: List[str] = []
+                async for tok in stream_response(
+                    req.message, history, corrective_context, req.language, route.mode, custom_guidance
+                ):
+                    retry_parts.append(tok)
+                retried = "".join(retry_parts).strip()
+                if retried:
+                    recheck = await verify_answer(req.message, retried, full_context)
+                    if not recheck.checked or recheck.addresses_question:
+                        answer = retried
+                    else:
+                        answer_mismatch = True
+                else:
+                    answer_mismatch = True
+
+    confidence, verification_status = _compute_confidence(casual, route)
     # Evidence-verification signal (rag/evidence.py, via rag_metadata) is
     # additive to the existing checks below — it only ever pushes toward
     # handoff, never suppresses one of the pre-existing conditions.
     evidence_insufficient = bool(
         route.rag_metadata and route.rag_metadata.get("evidence_sufficient") is False
     )
-    handoff_required = not casual and not route.used_web_search and (
+    handoff_required = route.direct_answer is None and not casual and not route.used_web_search and (
         verification_status == "unverified"
         or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
         or not bool(route.context)
         or evidence_insufficient
+        or answer_mismatch
     )
     category = route.category
     sources = route.sources + route.web_sources
@@ -1300,7 +1488,12 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
 
     handoff_msg = None
-    if handoff_required:
+    if answer_mismatch:
+        handoff_msg = (
+            "This answer may not directly address your exact question. Please rephrase, "
+            "or create a support ticket for a verified response."
+        )
+    elif handoff_required:
         handoff_msg = (
             "This answer could not be verified from approved Dayjoy documents. "
             "Please create a support ticket for a verified response."
@@ -1429,24 +1622,34 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         custom_guidance = await load_ai_custom_guidance()
         aggregated = ""
 
-        async for tok in stream_response(
-            req.message, history, full_context, req.language, route.mode, custom_guidance
-        ):
-            aggregated += tok
-            yield _sse({"token": tok})
-
-        if casual:
-            confidence = 1.0
-            verification_status = "verified"
-        elif route.rag_metadata and route.rag_metadata.get("confidence") is not None:
-            confidence = route.rag_metadata["confidence"]
-            verification_status = route.rag_metadata.get("verification_status", "unverified")
-        elif route.used_web_search:
-            confidence = 0.6
-            verification_status = "unverified"
+        if route.direct_answer is not None:
+            # Router already produced the final text (a clarifying question)
+            # — skip generation and send it as a single frame. It's short
+            # and deterministic, so there's nothing gained by token-by-token
+            # streaming here.
+            aggregated = route.direct_answer
+            yield _sse({"token": aggregated})
         else:
-            confidence = 0.85 if route.context else 0.4
-            verification_status = "verified" if route.context else "unverified"
+            async for tok in stream_response(
+                req.message, history, full_context, req.language, route.mode, custom_guidance
+            ):
+                aggregated += tok
+                yield _sse({"token": tok})
+
+        # Post-generation answer-relevance check. Unlike /chat (non-streaming,
+        # so it can retry generation before anything is shown), tokens here
+        # have already reached the client by the time this runs — there is
+        # no way to un-send them over SSE without a confusing "answer
+        # replaced itself" UX. So this path only FLAGS a mismatch (via
+        # handoff_required + a specific message below) rather than retrying;
+        # /chat is where a caller that needs the retry-before-serving
+        # behavior should go.
+        answer_mismatch = False
+        if route.direct_answer is None and not casual and route.answer_source in ("dayjoy_knowledge", "hybrid"):
+            verdict = await verify_answer(req.message, aggregated, full_context)
+            answer_mismatch = bool(verdict.checked and not verdict.addresses_question)
+
+        confidence, verification_status = _compute_confidence(casual, route)
         # Evidence-verification signal (rag/evidence.py, via rag_metadata) —
         # kept in sync with the non-streaming /chat handler above, which had
         # this check but this endpoint didn't, so a weak/unrelated-evidence
@@ -1456,16 +1659,22 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         evidence_insufficient = bool(
             route.rag_metadata and route.rag_metadata.get("evidence_sufficient") is False
         )
-        handoff_required = not casual and not route.used_web_search and (
+        handoff_required = route.direct_answer is None and not casual and not route.used_web_search and (
             verification_status == "unverified"
             or confidence < float(os.getenv("RAG_HANDOFF_THRESHOLD", "0.40"))
             or not bool(route.context)
             or evidence_insufficient
+            or answer_mismatch
         )
         category = route.category
         sources = route.sources + route.web_sources
         handoff_msg = None
-        if handoff_required:
+        if answer_mismatch:
+            handoff_msg = (
+                "This answer may not directly address your exact question. Please rephrase, "
+                "or create a support ticket for a verified response."
+            )
+        elif handoff_required:
             handoff_msg = (
                 "This answer could not be verified from approved Dayjoy documents. "
                 "Please create a support ticket for a verified response."
