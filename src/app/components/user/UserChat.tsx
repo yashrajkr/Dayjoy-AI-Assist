@@ -1461,13 +1461,18 @@ export function UserChat() {
                 <button
                   type="button"
                   onClick={() => setIsTemporary((v) => !v)}
-                  disabled={messages.length > 0}
+                  // Turning temporary mode OFF must always be reachable —
+                  // only block turning it ON once a message exists (can't
+                  // retroactively make already-persisted messages temporary).
+                  disabled={messages.length > 0 && !isTemporary}
                   className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 disabled:opacity-40 ${
-                    isTemporary ? "bg-accent text-primary" : "bg-accent/60 text-foreground hover:bg-accent"
+                    isTemporary
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                      : "bg-accent/60 text-foreground hover:bg-accent"
                   }`}
                   aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
                   aria-pressed={isTemporary}
-                  title="Temporary Chat"
+                  title={isTemporary ? "Temporary Chat is on — tap to turn off" : "Temporary Chat"}
                 >
                   <Ghost className="w-4.5 h-4.5" aria-hidden="true" />
                 </button>
@@ -1584,13 +1589,15 @@ export function UserChat() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsTemporary((v) => !v)}
-                disabled={messages.length > 0}
+                disabled={messages.length > 0 && !isTemporary}
                 className={`h-auto w-auto p-2 disabled:opacity-40 ${
-                  isTemporary ? "bg-accent/60 text-primary" : "text-muted-foreground"
+                  isTemporary
+                    ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                    : "text-muted-foreground"
                 }`}
                 aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
                 aria-pressed={isTemporary}
-                title={isTemporary ? "Temporary Chat is on — this chat won't be saved" : "Start a Temporary Chat"}
+                title={isTemporary ? "Temporary Chat is on — tap to turn off" : "Start a Temporary Chat"}
               >
                 <Ghost className="w-4 h-4" aria-hidden="true" />
               </Button>

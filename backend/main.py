@@ -1249,19 +1249,79 @@ async def stream_openai(
 
 _SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
 _DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
+_LEGACY_TABLE_TAG_RE = re.compile(r"^\[\w+\]\s*")
 
 
-def _clean_fallback_answer(context: str, max_chars: int = 800) -> str:
-    """Strip retrieval debug metadata (source/score headers, the injected
-    current-time line, `---` block separators) from raw RAG context so the
-    LLM-unavailable fallback reads like an answer instead of a log dump."""
+# Excludes both generic stopwords AND "dayjoy" itself — the brand name
+# appears in nearly every approved document, so counting it as an overlap
+# signal made every FAQ block look equally relevant to every Dayjoy-related
+# question. Mirrors the stopword-exclusion pattern orchestrator/tools/
+# recommend.py already uses for the same reason (condition-chart matching).
+_RELEVANCE_STOPWORDS = {
+    "what", "are", "the", "for", "with", "and", "that", "this", "from",
+    "have", "has", "does", "is", "was", "were", "will", "would", "could",
+    "should", "can", "you", "your", "please", "about", "into", "than",
+    "then", "when", "where", "which", "who", "whom", "whose", "why", "how",
+    "dayjoy",
+}
+
+
+def _tokenize_for_relevance(text: str) -> set:
+    return {
+        t for t in re.split(r"[^a-z0-9]+", text.lower())
+        if len(t) >= 3 and t not in _RELEVANCE_STOPWORDS
+    }
+
+
+def _best_matching_block(context: str, message: str, min_overlap: int = 2, max_chars: int = 800) -> Optional[str]:
+    """Splits `context` into its individual retrieval blocks (one per
+    matched chunk/row/web result) and returns only the ONE block that
+    actually overlaps the user's question — never several concatenated
+    blocks. Returns None when nothing clears `min_overlap`.
+
+    This exists because the no-LLM-available fallback below has no model to
+    judge relevance with. Verified live: three unrelated FAQ blocks ("Dayjoy
+    contact details", "company registration", "what is Dayjoy") were being
+    concatenated and shown as the answer to "What's the status of my order?"
+    — each individually plausible-looking, together an obvious non-answer.
+    Evidence-sufficiency gating in `_route_events` already clears `context`
+    entirely when the *retriever's own* confidence is low, but a chunk can
+    still score above that threshold on lexical overlap with generic tokens
+    ("Dayjoy") while being irrelevant to the actual question — this is a
+    second, cheap, question-specific check on top of that, not a
+    replacement for it.
+    """
     text = _DATETIME_LINE_RE.sub("", context)
-    text = _SOURCE_HEADER_RE.sub("", text)
     text = re.sub(r"\n\s*---\s*\n", "\n\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    if len(text) > max_chars:
-        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
-    return text or "I found related information, but couldn't format a full answer right now."
+    blocks = [b.strip() for b in re.split(r"\n{2,}", text) if b.strip()]
+    if not blocks:
+        return None
+
+    question_tokens = _tokenize_for_relevance(message)
+    if not question_tokens:
+        return None
+    # A short question ("Spirulina benefits?") may only carry 1-2 signal
+    # tokens once stopwords/the brand name are stripped — requiring the
+    # fixed min_overlap in that case would reject a genuinely exact match.
+    # Only relax below the fixed floor, never raise it above.
+    required = min(min_overlap, len(question_tokens))
+
+    best_score = 0
+    best_block: Optional[str] = None
+    for block in blocks:
+        cleaned = _LEGACY_TABLE_TAG_RE.sub("", _SOURCE_HEADER_RE.sub("", block)).strip()
+        if not cleaned:
+            continue
+        score = len(question_tokens & _tokenize_for_relevance(cleaned))
+        if score > best_score:
+            best_score = score
+            best_block = cleaned
+
+    if best_score < required or not best_block:
+        return None
+    if len(best_block) > max_chars:
+        best_block = best_block[:max_chars].rsplit(" ", 1)[0] + "…"
+    return best_block
 
 
 async def stream_response(
@@ -1291,8 +1351,9 @@ async def stream_response(
         "serving degraded context-only fallback answer",
         bool(GROQ_API_KEY), bool(OPENAI_API_KEY),
     )
-    if context:
-        yield f"{_clean_fallback_answer(context)}\n\nFor a more specific answer, please contact Dayjoy support."
+    best_block = _best_matching_block(context, message) if context else None
+    if best_block:
+        yield f"{best_block}\n\nFor a more specific answer, please contact Dayjoy support."
     else:
         yield (
             "I don't have enough approved information to answer that safely. "
