@@ -1452,20 +1452,37 @@ export function UserChat() {
                 the one page in the app that's deliberately chat-first with
                 no account chrome in its header; profile is still reachable
                 from the hamburger drawer, and from every other page's
-                header/mobile top bar as before. */}
+                header/mobile top bar as before.
+
+                Swapped for a "Temporary Chat" pill when active — this is
+                the ONLY header shown on mobile in Professional mode (the
+                default), and it previously showed the fixed logo
+                regardless of temporary-chat state, so there was no visible
+                confirmation anywhere on screen that the toggle had actually
+                done anything besides the small icon's subtle color change. */}
             <div className="flex-1 min-w-0 flex items-center justify-center px-1">
-              <DayjoyLogo variant="full" size={22} />
+              {isTemporary ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 text-primary ring-1 ring-primary/40 px-3 py-1 text-xs font-semibold">
+                  <Ghost className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  Temporary Chat
+                </span>
+              ) : (
+                <DayjoyLogo variant="full" size={22} />
+              )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {!activeConv ? (
                 <button
                   type="button"
                   onClick={() => setIsTemporary((v) => !v)}
-                  // Turning temporary mode OFF must always be reachable —
-                  // only block turning it ON once a message exists (can't
-                  // retroactively make already-persisted messages temporary).
-                  disabled={messages.length > 0 && !isTemporary}
-                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 disabled:opacity-40 ${
+                  // Always clickable in both directions — a disabled button
+                  // gives zero feedback on tap, which is exactly what reads
+                  // as "this button doesn't work." This only renders while
+                  // `!activeConv` (no saved conversation yet), so toggling
+                  // never affects an already-persisted message either way —
+                  // it only changes what happens to messages sent AFTER
+                  // this tap.
+                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 ${
                     isTemporary
                       ? "bg-primary/15 text-primary ring-1 ring-primary/40"
                       : "bg-accent/60 text-foreground hover:bg-accent"
@@ -1589,8 +1606,7 @@ export function UserChat() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsTemporary((v) => !v)}
-                disabled={messages.length > 0 && !isTemporary}
-                className={`h-auto w-auto p-2 disabled:opacity-40 ${
+                className={`h-auto w-auto p-2 ${
                   isTemporary
                     ? "bg-primary/15 text-primary ring-1 ring-primary/40"
                     : "text-muted-foreground"
