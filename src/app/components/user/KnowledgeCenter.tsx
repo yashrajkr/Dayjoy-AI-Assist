@@ -4,7 +4,7 @@ import { Search, FileQuestion, ScrollText, Package, GraduationCap, FileText, Loa
 import { ErrorState, EmptyState } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
 import { useAuth } from "../../lib/AuthContext";
-import { customerKnowledgeSearch, chatWithBackend, type KnowledgeSearchResult } from "../../../lib/api";
+import { customerKnowledgeSearch, streamChatWithBackend, type KnowledgeSearchResult } from "../../../lib/api";
 import ReactMarkdown from "react-markdown";
 
 const ENTITY_ICONS: Record<string, typeof Package> = {
@@ -65,11 +65,19 @@ export function KnowledgeCenter() {
     if (!q) return;
     setAiLoading(true);
     setAiError(null);
+    setAiAnswer({ query: q, answer: "" });
     try {
-      const res = await chatWithBackend({ message: q, role: role ?? "customer", language: "English" });
-      setAiAnswer({ query: q, answer: res.answer });
+      let answer = "";
+      await streamChatWithBackend(
+        { message: q, role: role ?? "customer", language: "English" },
+        (chunk) => {
+          answer += chunk;
+          setAiAnswer({ query: q, answer });
+        },
+      );
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "Couldn't reach the AI assistant. Please try again.");
+      setAiAnswer(null);
     } finally {
       setAiLoading(false);
     }
@@ -88,7 +96,7 @@ export function KnowledgeCenter() {
         icon={Search}
       />
       <div className="flex-1 overflow-y-auto">
-      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
       <div className="relative mb-3">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input id="dj-knowledge-search" type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}

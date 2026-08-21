@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   getCurrentSession,
@@ -72,6 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
+  // Tracks whether we've ever resolved a signed-in user, so a later SIGNED_IN
+  // event (Supabase re-fires this on tab refocus in some supabase-js
+  // versions, even though the session didn't actually change) can be told
+  // apart from a real first-time sign-in and treated as benign too.
+  const hasSignedInRef = useRef(false);
 
   const logout = useCallback(async () => {
     try {
@@ -112,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const user = await getCurrentUser();
         setCurrentUser(user);
+        if (user) hasSignedInRef.current = true;
         // Prefer the role stored in `profiles` (RLS-protected, admin-managed)
         // over user_metadata (writable by the user, sanitized only at signup).
         let resolvedRole: UserRole | null = null;
@@ -146,7 +152,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // (e.g. the tab regaining focus) — refresh state without flipping
         // `loading`, so returning to the tab doesn't flash the full-page
         // loading fallback. Real sign-in/out transitions still show it.
-        const isBenignEvent = event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION";
+        // SIGNED_IN is also re-fired by supabase-js on tab refocus in some
+        // versions even when the session hasn't actually changed — once
+        // we've already resolved a signed-in user once, treat repeat
+        // SIGNED_IN events the same way (a fresh login always starts with
+        // hasSignedInRef.current === false, so that transition still shows
+        // the loading state).
+        const isBenignEvent =
+          event === "TOKEN_REFRESHED" ||
+          event === "INITIAL_SESSION" ||
+          (event === "SIGNED_IN" && hasSignedInRef.current);
         refresh({ silent: isBenignEvent && hasRunInitialRefresh });
       });
       unsub = () => data.subscription.unsubscribe();
