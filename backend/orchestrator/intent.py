@@ -54,7 +54,7 @@ _RECOMMENDATION_CUES_RE = re.compile(
 # cues (never appear outside a pricing ask in practice) match on their own;
 # see `wants_pricing` for why bare DP/BV/PV acronyms need an extra check.
 _PRICING_CUES_RE = re.compile(
-    r"\b(pric\w*|costs?|how much|mrp|distributor price|discount price)\b",
+    r"\b(pric\w*|costs?|how much|mrp|distributor price\w*|discount price\w*)\b",
     re.IGNORECASE,
 )
 # DP/BV/PV alone are NOT reliable pricing cues — they're also compensation-
@@ -67,6 +67,20 @@ _PRICING_CUES_RE = re.compile(
 _PRICING_ACRONYM_RE = re.compile(r"\b(dp|bv|pv)\b", re.IGNORECASE)
 _PRICING_ACRONYM_CONTEXT_RE = re.compile(r"\b(of|for)\b", re.IGNORECASE)
 
+# Signals a pricing (or recommendation) question is actually compound — it
+# also wants product knowledge beyond the figure/recommendation itself, e.g.
+# "what are the ingredients of X and how much does it cost". Used by
+# planner.py to decide whether dayjoy_kb should run ALONGSIDE the structured
+# tool (in parallel) rather than being skipped entirely — a pure "how much
+# for X" still gets only the single authoritative source, since adding
+# generic RAG text next to an exact figure for no reason is exactly the risk
+# the structured short-circuit was built to avoid.
+_ADDITIONAL_INFO_CUES_RE = re.compile(
+    r"\b(ingredient\w*|benefit\w*|usage\w*|dosage\w*|safety|contraindicat\w*|who can use|"
+    r"side effect\w*|how (to|do) (use|take)|works?|made of|composition\w*)\b",
+    re.IGNORECASE,
+)
+
 
 def wants_recommendation(text: str) -> bool:
     return bool(_RECOMMENDATION_CUES_RE.search(text))
@@ -76,6 +90,10 @@ def wants_pricing(text: str) -> bool:
     if _PRICING_CUES_RE.search(text):
         return True
     return bool(_PRICING_ACRONYM_RE.search(text) and _PRICING_ACRONYM_CONTEXT_RE.search(text))
+
+
+def wants_additional_info(text: str) -> bool:
+    return bool(_ADDITIONAL_INFO_CUES_RE.search(text))
 
 
 def detect_intent(message: str) -> IntentResult:

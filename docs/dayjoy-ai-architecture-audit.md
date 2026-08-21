@@ -34,20 +34,21 @@ USER → QUERY ANALYZER → AI ORCHESTRATOR → {DB | RAG | Recommendation | Web
 | Database lookup for exact figures (MRP/DP/BV/PV) | **Done** | `orchestrator/tools/pricing.py`, wired via `_route_events` | Verified via `backend/tests/test_structured_routing.py` — a pricing question never reaches RAG when the structured lookup succeeds. |
 | Recommendation engine (never from generic RAG) | **Done** | `orchestrator/tools/recommend.py`, wired via `_route_events` | Chart-driven (`condition_recommendations` table), never vector-similarity-only. Ambiguous matches (>3 candidate conditions) return a clarifying question instead of guessing. |
 | Company/policy/training knowledge | **Done** (pre-existing) | `retrieve_context()` (RAG + legacy keyword search over `SEARCH_TABLES`) | Unchanged by this pass — was already reasonably built. |
-| User/business/distributor data | **Partial** | `/memory` endpoints (`orchestrator/tools/memory.py`) exist and are wired for user-controlled preference storage; `orchestrator/context_builder.py`'s `PersonalizationContext` (separates company knowledge / user memory / business data / conversation summary) is fully built and tested but **not called from `/chat` or `/chat/stream`** — same "built but inert" pattern found in the first audit. |
+| User/business/distributor data | **Partial** | `/memory` endpoints (`orchestrator/tools/memory.py`) exist and are wired for user-controlled preference storage. `context_builder.py`'s `PersonalizationContext` is now wired into `/chat` and `/chat/stream` (see below) for company knowledge + user memory; **business/team data (`business_intelligence_api.py`) is still not connected** — a distributor asking "how is my team performing" still doesn't reach their own RLS-scoped business data through this path. |
 | Current/latest information → web search | **Done** (pre-existing) | `web_search()`, `search_providers.py` | Unchanged by this pass. |
 | Ambiguous question → clarification, not a guess | **Done** | `orchestrator/clarify.py`, wired via `_route_events` | Verified end-to-end: `needs_clarification()` and `recommend.run()`'s own `needs_clarification` status both short-circuit to a deterministic question with zero LLM calls or retrieval. |
-| Parallel multi-tool execution | **Not done** (infra exists, unused) | `orchestrator/executor.py` (`run_tools`, per-tool timeout, `asyncio.gather`) | Fully built and unit-tested but never called from `_route_events` — the new pricing/recommendation/RAG short-circuits added in this pass run **sequentially** (pricing tried, then recommendation, then RAG), not concurrently. A query needing two sources at once ("which product and what does it cost") still only gets one structured tool's worth of context, not a merged result from both. This is the single largest gap left versus the target spec's Phase 3. |
+| Parallel multi-tool execution | **Done** | `orchestrator/executor.py`'s `run_tools()`, driven by `planner.build_plan()`, wired into `_route_events` | A pricing question that also asks for product info ("what are the ingredients of X and how much does it cost") now runs `pricing_lookup` and `dayjoy_kb` **concurrently** via `asyncio.gather` and merges both into one context; same for `product_recommendation` + `dayjoy_kb`. Caught and fixed a real bug along the way: the tool registry is a process-wide singleton that captures each tool's function *by reference* at first use, which silently broke per-test mocking until tests reset it — documented in `test_structured_routing.py`'s `_isolate` fixture since the same trap exists in production if a tool's module is ever hot-swapped (it isn't, so no live impact, but worth knowing). Verified via `test_pricing_compound_question_merges_kb_context_in_parallel` and `test_recommendation_ok_merges_supporting_kb_context`. |
 | Hybrid retrieval (semantic + keyword + rerank + authority/recency weighting) | **Done** (pre-existing) | `rag/retriever.py`, `rag/rerank.py` | Unchanged by this pass — was already built (weighted rerank: 0.60 relevance + 0.25 authority + 0.15 recency). |
-| Relevance threshold / evidence sufficiency | **Done** (pre-existing, now double-gated) | `rag/evidence.py` (`verify_evidence`, pre-generation, chunk-level) + `backend/main.py` `_best_matching_block()` (new, post-generation-fallback-only, question-specific) | See "What this pass actually fixed" below — the evidence-sufficiency gate alone wasn't catching every case where a lexically-scored-high chunk was still off-topic for the specific question. |
-| Answer generation adapts to requested format (short/detailed/list/comparison) | **Not done** | — | No format-detection or prompt-branching by requested response shape exists. The system prompt is one fixed style regardless of "give me a short answer" vs "explain in detail." |
-| Post-generation answer verification | **Done** | `orchestrator/answer_verify.py`, wired into both endpoints | The one link that was completely missing in the first audit. `/chat` retries generation once on a verified mismatch before handing off; `/chat/stream` flags (can't retroactively un-send SSE tokens) — see code comments at both call sites for why they differ. |
-| Contextual follow-up suggestions | **Partial** | Frontend renders a "Follow-up suggestions" row (see `UserChat.tsx`) | Not audited in this pass whether these are backend-generated per-question or a static/generic set — flagged as unverified, not confirmed working as described in the target spec's Phase 8. |
-| Personalization (role/preferences/history-aware answers) | **Not done** | — | `context_builder.py`'s `PersonalizationContext` exists but is unwired (see above). No answer in the live path currently says "based on what you've been asking about." |
-| Latency measurement | **Partial** | `rag/retriever.py` records `retrieval_time_ms`; tool calls via the (unused) executor record `latency_ms` | No end-to-end request-latency metric (query-in to first-token, or query-in to done) is logged anywhere today. |
-| Observability | **Partial** | `_log_analytics()` (main.py, `analytics` table), `Retriever._log_query()` (`rag_queries` table, has chunk IDs + scores), `orchestrator/observability.py` (`ORCHESTRATOR_ENABLED`-gated, Python-logger only) | Three separate, unmerged logging paths — not the single structured per-request record (intent, entities, route, tools, evidence, verification result, latency) the target spec asks for. Not consolidated in this pass; flagged as remaining work. |
-| Evaluation suite | **Partial** | `backend/tests/fixtures/golden_qa.json` (155 cases: casual, product, pricing, recommendation, company, distributor, support, comparison, time-query, out-of-domain) | Well below the 300+ cases the latest spec asks for (50 product / 30 pricing / 30 recommendation / 30 company / 30 policy / 30 distributor / 30 leader / 30 follow-up / 30 ambiguous / 30 adversarial / 30 out-of-domain / 30 current-web). Tests intent + tool-routing correctness only — **no live answer-content grading**, because this sandbox has no route to actually invoke Groq/OpenAI end-to-end. |
-| Live testing against the real deployed system | **Not done** | — | This pass validated against `TestClient` (real FastAPI app object, real Pydantic validation, real routing/verification logic) with the true external boundaries (Supabase, Groq/OpenAI, web search) mocked — plus one live server boot confirming clean startup against real configured Supabase/Groq credentials in *this* environment. It did **not** run a live authenticated `/chat` request against production Supabase with a real user token, real embeddings, or real Groq generation — no such credentials are available here. Do not treat this as "verified end-to-end in production." |
+| Relevance threshold / evidence sufficiency | **Done** (pre-existing, now double-gated) | `rag/evidence.py` (`verify_evidence`, pre-generation, chunk-level) + `backend/main.py` `_best_matching_block()` (post-generation-fallback-only, question-specific) | See "What this pass actually fixed" below — the evidence-sufficiency gate alone wasn't catching every case where a lexically-scored-high chunk was still off-topic for the specific question. Caught a real regression while wiring parallel execution: the relevance filter was initially also suppressing already-authoritative structured pricing/recommendation answers (which don't need the same lexical re-check) — fixed via `stream_response()`'s new `already_grounded` flag. |
+| Answer generation adapts to requested format (short/detailed/list/comparison) | **Done** | `orchestrator/format_intent.py`, wired into both endpoints via `custom_guidance` | Regex-based (matches this codebase's existing classifier style, not an LLM call): "answer in short" / "explain in detail" / "give me steps" / "compare X and Y" / "show me a table" / "which is better and why" each get a matching structural instruction appended to the system prompt. Verified the directive reaches the actual LLM call (`test_format_intent.py`'s endpoint-level tests spy on `stream_response`'s `custom_guidance` argument), not just that the classifier returns the right label in isolation. |
+| Post-generation answer verification | **Done** | `orchestrator/answer_verify.py`, wired into both endpoints | The one link that was completely missing in the first audit. `/chat` retries generation once on a verified mismatch before handing off; `/chat/stream` flags (can't retroactively un-send SSE tokens) — see code comments at both call sites for why they differ. Structured pricing/recommendation answers skip this check (`already_grounded`) since they're already grounded to a specific DB row, not a lexical RAG match. |
+| Contextual follow-up suggestions | **Partial** | Frontend renders a "Follow-up suggestions" row (see `UserChat.tsx`) | Still not audited in this pass whether these are backend-generated per-question or a static/generic set — flagged as unverified. |
+| Personalization (role/preferences/history-aware answers) | **Done** | `backend/main.py` `_maybe_personalization_context()`, using `context_builder.build_context()` + `tools/memory.list_memory()` | Fetches only the top 3 recency+pinned-scored memory items, and **only** when the conversation has at least one prior turn AND (a reference-resolution cue like "what about that one?" is present, OR the message is recommendation-shaped) — never on every message, per the explicit "don't inject all memory into every prompt" requirement. Verified with both positive cases (memory correctly injected and used) and negative cases (memory correctly NOT fetched for a first message, or for an unrelated self-contained question) in `test_personalization.py`. Business/team data is still not part of this (see the User/business/distributor row above). |
+| Latency measurement | **Done** (total only) | `backend/main.py`'s `_log_unified_trace()`, `request_start`/`time.monotonic()` in both endpoints | Total request latency (auth to response) is now measured and logged on every request. Per-stage breakdown (routing vs. retrieval vs. LLM generation vs. verification) is not — `latency_ms` currently carries one `"total"` key, not a stage-by-stage dict, which the target spec's Phase 12 asks for. |
+| Observability | **Partial → mostly done** | `orchestrator/observability.py`'s `TraceEvent`/`emit_trace()`, called unconditionally (not `ORCHESTRATOR_ENABLED`-gated) from `_log_unified_trace()` at the end of both `/chat` and `/chat/stream`, plus the safety-blocked early-return path | Now carries request_id, user_id, original + rewritten query, intent, entities, route, retrieved chunk IDs + scores, total latency, model, confidence, verification result, fallback reason, and handoff status — one structured log line per request. Deliberately does **not** replace `_log_analytics()` (`analytics` table) or `Retriever._log_query()` (`rag_queries` table) — reshaping either without verifying against the live production schema (an admin dashboard may already read from `analytics`) is a bigger, riskier migration than this pass covers; those two keep writing exactly as before. So there are now effectively two paths (the DB-table writes, and this one log line), not three, and the important one for debugging (this log line) is real and unconditional. Verified it actually fires — `test_unified_observability.py` — not just that the helper exists. |
+| Evaluation suite | **Partial** | `backend/tests/fixtures/golden_qa.json` (147 intent/routing cases) + `test_adversarial_wrong_context.py` (17 dedicated "does the fallback confidently answer a different question" cases, directly modeled on the reported production bug) | Still below the 300+ cases the latest spec asks for. Tests intent + tool-routing correctness, the structured/parallel-execution wiring, and the no-LLM-fallback's question-relevance filtering — **no live answer-content grading**, because this sandbox has no route to actually invoke Groq/OpenAI end-to-end. The adversarial battery is the one piece of this that directly answers "does the AI answer the question that was actually asked?" at a mechanism level (not full production simulation). |
+| Live testing against the real deployed system | **Not done** | — | This pass validated against `TestClient` (real FastAPI app object, real Pydantic validation, real routing/verification/personalization/parallel-execution logic) with the true external boundaries (Supabase, Groq/OpenAI, web search) mocked — plus a live server boot each session confirming clean startup against real configured Supabase/Groq credentials *in this sandbox*. It did **not** run a live authenticated `/chat` request against production Supabase with a real user token, real embeddings, or real Groq generation, and it has zero access to the actual Render deployment (dashboard, env vars, logs) the reported bug came from — no such access exists from here. Do not treat any of this as "verified end-to-end in production." |
+| Security/role boundary testing | **Not done** (narrow check only) | — | Confirmed the new personalization code reuses the caller's own already-verified `token`/`user_id` for `list_memory()` (never a different user's) and added no new endpoints or privilege paths. This is a targeted check of what changed in this pass, not a role-by-role (customer/distributor/leader/admin/super-admin) cross-access audit of the wider app — that's unaudited here. |
 
 ## What this pass actually fixed (the concrete reported bug)
 
@@ -96,25 +97,58 @@ with a clearer visually-distinct active state (`bg-primary/15 text-primary
 ring-1 ring-primary/40` instead of a barely-visible tint). Verified live via
 the browser preview: toggle on → send → toggle off all worked in sequence.
 
-## Honest summary of what's left
+## What this pass wired in (parallel execution, personalization, adaptive
+## formatting, consolidated observability)
 
-The single largest structural gap versus the full target spec is **Phase 3
-(parallel multi-tool execution)** — the executor exists and is tested but
-isn't driving the router yet, so a question genuinely needing two sources at
-once only gets one. After that, in rough priority order:
+Four more target-spec phases moved from inert/missing to done-and-tested:
 
-1. Wire `context_builder.py`'s `PersonalizationContext` so answers can
-   actually reference user history/preferences (Phase 7 — currently inert).
-2. Consolidate the three separate logging paths into one structured
-   per-request observability record (Phase 13).
-3. Expand the eval fixture toward the requested per-category counts, and —
-   the only way to actually validate answer *content* quality, not just
-   routing — run it against a real Groq/OpenAI + Supabase environment
+- **Parallel multi-tool execution** (target Phase 2) — `planner.build_plan()` +
+  `executor.run_tools()`, previously built but never called from the actual
+  routing path, now drive real concurrent tool calls for compound questions.
+- **Personalization** (target Phase 3) — `context_builder.py` + `tools/
+  memory.py`, previously built but unwired, now feed a small, relevance-gated
+  slice of user memory into the prompt for follow-up/recommendation questions
+  only, never on every message.
+- **Adaptive response formatting** (target Phase 4) — new
+  `orchestrator/format_intent.py`, regex-classified, appended to
+  `custom_guidance`.
+- **Consolidated observability** (target Phase 7) — one unconditional,
+  structured trace log line per request, added without touching the two
+  existing DB-backed logging paths (an admin dashboard may depend on their
+  current schema).
+
+Three real bugs were found and fixed *while* wiring these — not before, not
+in a separate pass: a tool-registry singleton that silently broke per-test
+mocking (a real trap, though not a live-traffic bug since tools aren't
+hot-swapped in production), a relevance filter that was suppressing
+already-authoritative structured answers, and two regex stemming bugs
+("ingredients" not matching `\bingredient\b`, "which one works" not matching
+the recommendation cue) caught by writing the adversarial eval cases rather
+than assumed away.
+
+## Honest summary of what's still left
+
+In rough priority order:
+
+1. **Business/team data** is still not connected to `/chat` — a distributor
+   asking "how is my team performing" doesn't reach their own RLS-scoped
+   data through this pipeline (`business_intelligence_api.py` is a separate,
+   unconnected surface).
+2. **Live LLM connectivity on the actual production deployment** — this
+   sandbox has no access to Render's dashboard, env vars, or logs; the
+   original reported symptom (Groq/OpenAI unreachable in production) has not
+   been diagnosed or fixed, only mitigated on the degraded-fallback side.
+3. **Expand the eval fixture** toward the requested 300+ per-category counts,
+   and — the only way to actually validate answer *content* quality, not
+   just routing — run it against a real Groq/OpenAI + Supabase environment
    outside this sandbox.
-4. Add response-format adaptation (short vs. detailed vs. list vs.
-   comparison) to answer generation (Phase 5 — not started).
-5. Confirm whether the frontend's follow-up-suggestion chips are actually
-   backend-generated per-question or a static set (unaudited in this pass).
+4. **Per-stage latency breakdown** (routing vs. retrieval vs. LLM vs.
+   verification) — only total request latency is measured today.
+5. **Role-by-role security/RLS audit** beyond the narrow "did this pass's
+   changes introduce a cross-user leak" check.
+6. Confirm whether the frontend's follow-up-suggestion chips are actually
+   backend-generated per-question or a static set (unaudited across two
+   passes now).
 
 None of the above are silently glossed over as "done" — they're listed here
 specifically so they aren't lost.

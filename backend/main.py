@@ -450,13 +450,40 @@ from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 # document chunk), so a match here skips RAG entirely for that turn rather
 # than risking a stale/rounded RAG figure sitting next to the exact one.
 from backend.orchestrator.clarify import needs_clarification  # noqa: E402
-from backend.orchestrator.intent import wants_pricing, wants_recommendation  # noqa: E402
 from backend.orchestrator.tools import pricing as pricing_tool  # noqa: E402
 from backend.orchestrator.tools import recommend as recommend_tool  # noqa: E402
+
+# Parallel multi-tool execution — when a pricing/recommendation question also
+# needs supporting knowledge-base context (e.g. "what are the ingredients of
+# X and how much does it cost"), the structured tool and dayjoy_kb run
+# concurrently via the same executor used everywhere else tools run, instead
+# of a second sequential retrieval round-trip. `build_plan` (intent + which
+# tools apply) drives which tools actually get called here, not a second,
+# separate routing decision duplicating planner.py's own logic.
+from backend.orchestrator.executor import run_tools  # noqa: E402
+from backend.orchestrator.planner import build_plan  # noqa: E402
+from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # noqa: E402
 
 # Post-generation answer-relevance check — see module docstring for why this
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
+
+# Personalization — was fully built (context_builder.py's labeled-block
+# assembly, tools/memory.py's recency+pinned-scored memory read) but never
+# called from /chat or /chat/stream. Wired in as a light-touch addition to
+# full_context rather than a _route_events signature change: only fetched
+# for an authenticated, multi-turn conversation that actually looks like it
+# needs it (see personalization_context() below) — never on every message,
+# per the explicit "don't inject all memory into every prompt" requirement.
+from backend.orchestrator.context_builder import build_context  # noqa: E402
+from backend.orchestrator.intent import wants_recommendation  # noqa: E402
+from backend.orchestrator.rewrite import wants_reference_resolution  # noqa: E402
+from backend.orchestrator.tools.memory import list_memory  # noqa: E402
+
+# Adaptive response formatting — "answer in short" / "give me steps" /
+# "compare X and Y" get a matching structural instruction instead of the
+# model always answering in one fixed shape regardless of what was asked.
+from backend.orchestrator.format_intent import format_instruction  # noqa: E402
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -762,6 +789,42 @@ def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
+async def _route_from_kb_result(
+    kb_data: Dict[str, Any], message: str
+) -> AsyncIterator[Tuple[str, Any]]:
+    """Continues routing from an already-fetched dayjoy_kb tool result (ran
+    concurrently alongside a structured pricing/recommendation lookup that
+    didn't pan out) instead of a second, redundant retrieve_context() call.
+    Mirrors the has_context/web-search/evidence-gate decision `_route_events`
+    applies to its own direct retrieve_context() call — one implementation,
+    not two copies that could drift out of sync."""
+    yield ("status", "searching_knowledge")
+    context, sources, category, rag_metadata = (
+        kb_data.get("context", ""), kb_data.get("sources") or [],
+        kb_data.get("category", "general"), kb_data.get("rag_metadata"),
+    )
+    evidence_ok = not (rag_metadata and rag_metadata.get("evidence_sufficient") is False)
+    has_context = bool(context) and evidence_ok
+    web_context, web_sources, web_search_provider, used_web_search, mode = "", [], None, False, "dayjoy"
+    if not has_context:
+        yield ("status", "searching_web")
+        web_context, web_sources, web_search_provider = await web_search(message)
+        if web_context:
+            used_web_search, category, answer_source = True, "general", "web_search"
+        else:
+            answer_source, context = "general_llm", ""
+    else:
+        answer_source = "dayjoy_knowledge"
+    yield (
+        "result",
+        RouteResult(
+            context=context, web_context=web_context, sources=sources, web_sources=web_sources,
+            category=category, rag_metadata=rag_metadata, mode=mode, answer_source=answer_source,
+            web_search_provider=web_search_provider, used_web_search=used_web_search,
+        ),
+    )
+
+
 async def _route_events(
     token: Optional[str], message: str, casual: bool
 ) -> AsyncIterator[Tuple[str, Any]]:
@@ -838,18 +901,33 @@ async def _route_events(
         )
         return
 
-    if wants_pricing(message):
+    plan = build_plan(message)
+
+    if plan.intent.intent == INTENT_PRICING and plan.proposed_tools:
         yield ("status", "checking_pricing")
-        try:
-            pricing_data = await pricing_tool.run(token, message)
-        except Exception:
-            pricing_data = {"found": False}
+        # Runs pricing_lookup and (only for a compound question — see
+        # planner.py) dayjoy_kb CONCURRENTLY via the same executor every
+        # other multi-tool call in this codebase uses, instead of two
+        # sequential round-trips.
+        tool_calls = [{"name": name, "kwargs": {"token": token, "message": message}} for name in plan.proposed_tools]
+        results = {r.tool_name: r for r in await run_tools(tool_calls)}
+
+        pricing_result = results.get("pricing_lookup")
+        pricing_data = pricing_result.data if pricing_result and pricing_result.ok else {"found": False}
+        kb_result = results.get("dayjoy_kb")
+        kb_data = kb_result.data if kb_result and kb_result.ok else None
+
         if pricing_data.get("found"):
+            context_parts = [_format_pricing_context(pricing_data)]
+            kb_sources: List[ChatSource] = []
+            if kb_data and kb_data.get("context"):
+                context_parts.append(f"[Supporting product information]\n{kb_data['context'][:1500]}")
+                kb_sources = kb_data.get("sources") or []
             yield (
                 "result",
                 RouteResult(
-                    context=_format_pricing_context(pricing_data), web_context="",
-                    sources=[], web_sources=[], category="pricing",
+                    context="\n\n".join(context_parts), web_context="",
+                    sources=kb_sources, web_sources=[], category="pricing",
                     rag_metadata={
                         "confidence": 0.98, "verification_status": "verified",
                         "evidence_sufficient": True, "source": "structured_pricing",
@@ -859,16 +937,27 @@ async def _route_events(
                 ),
             )
             return
-        # No product resolved, or no trusted current price row — fall
-        # through to RAG below rather than dead-ending: the product may
-        # still be documented (without a live price) in an approved doc.
+        # No product resolved, or no trusted current price row. If dayjoy_kb
+        # already ran (compound question), reuse its result as the RAG
+        # context instead of a second retrieval round-trip; otherwise fall
+        # through to the normal retrieve_context() call below.
+        if kb_data is not None:
+            async for event in _route_from_kb_result(kb_data, message):
+                yield event
+            return
+        # Neither structured pricing nor dayjoy_kb ran (simple "how much for
+        # X" that didn't resolve) — fall through to the normal path below.
 
-    if wants_recommendation(message):
+    elif plan.intent.intent == INTENT_RECOMMENDATION and plan.proposed_tools:
         yield ("status", "checking_recommendations")
-        try:
-            rec = await recommend_tool.run(token, message)
-        except Exception:
-            rec = {"status": "insufficient_evidence"}
+        tool_calls = [{"name": name, "kwargs": {"token": token, "message": message}} for name in plan.proposed_tools]
+        results = {r.tool_name: r for r in await run_tools(tool_calls)}
+
+        rec_result = results.get("product_recommendation")
+        rec = rec_result.data if rec_result and rec_result.ok else {"status": "insufficient_evidence"}
+        kb_result = results.get("dayjoy_kb")
+        kb_data = kb_result.data if kb_result and kb_result.ok else None
+
         if rec.get("status") == "needs_clarification":
             yield (
                 "result",
@@ -881,11 +970,16 @@ async def _route_events(
             )
             return
         if rec.get("status") == "ok" and rec.get("products"):
+            context_parts = [_format_recommendation_context(rec["products"])]
+            kb_sources = []
+            if kb_data and kb_data.get("context"):
+                context_parts.append(f"[Supporting context]\n{kb_data['context'][:1500]}")
+                kb_sources = kb_data.get("sources") or []
             yield (
                 "result",
                 RouteResult(
-                    context=_format_recommendation_context(rec["products"]), web_context="",
-                    sources=[], web_sources=[], category="recommendation",
+                    context="\n\n".join(context_parts), web_context="",
+                    sources=kb_sources, web_sources=[], category="recommendation",
                     rag_metadata={
                         "confidence": 0.95, "verification_status": "verified",
                         "evidence_sufficient": True, "source": "structured_recommendation",
@@ -896,8 +990,14 @@ async def _route_events(
             )
             return
         # "insufficient_evidence" — no chart condition matched well enough
-        # to recommend anything structured; fall through to RAG/general so
-        # the user still gets an answer instead of a dead end.
+        # to recommend anything structured. dayjoy_kb already ran alongside
+        # the attempt (planner.py always proposes it for recommendation
+        # intent) — reuse that result instead of a second retrieval
+        # round-trip, same as the pricing branch above.
+        if kb_data is not None:
+            async for event in _route_from_kb_result(kb_data, message):
+                yield event
+            return
 
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(token, message)
@@ -993,7 +1093,6 @@ def _run_orchestrator_observability(message: str) -> None:
         return
     try:
         from backend.orchestrator.observability import TraceEvent, emit_trace
-        from backend.orchestrator.planner import build_plan
 
         plan = build_plan(message)
         emit_trace(
@@ -1010,6 +1109,124 @@ def _run_orchestrator_observability(message: str) -> None:
         )
     except Exception:
         _orchestrator_logger.exception("orchestrator observability pass failed")
+
+
+def _log_unified_trace(
+    *,
+    request_id: str,
+    user_id: Optional[str],
+    query: str,
+    rewritten_query: Optional[str] = None,
+    route: Optional["RouteResult"] = None,
+    confidence: Optional[float] = None,
+    handoff_required: Optional[bool] = None,
+    answer_mismatch: bool = False,
+    verification_ran: bool = False,
+    started_at: float = 0.0,
+    final_status: str = "ok",
+) -> None:
+    """Phase 7 — the single per-request observability call site. Does NOT
+    replace `_log_analytics` (writes to the `analytics` table an admin
+    dashboard may already read from) or `Retriever._log_query` (writes to
+    `rag_queries`) — reshaping either table without verifying against the
+    live production schema is a bigger migration than this covers (see
+    orchestrator/observability.py's module docstring). This adds the one
+    thing genuinely missing before this pass: ONE structured log line per
+    request carrying everything — intent, route, retrieval IDs/scores,
+    latency, verification outcome, fallback reason — in one place instead of
+    three unmerged ones. Called unconditionally (not gated behind
+    ORCHESTRATOR_ENABLED, unlike the pre-generation-only observability hook)
+    since real observability shouldn't be an opt-in debug flag. Best-effort:
+    any failure here must never affect the response, which has already been
+    built and returned by the time this runs.
+    """
+    try:
+        from backend.orchestrator.intent import detect_intent
+        from backend.orchestrator.observability import TraceEvent, emit_trace
+
+        intent_result = detect_intent(query)
+        chunk_ids: List[str] = []
+        scores: List[float] = []
+        fallback_reason: Optional[str] = None
+        if route is not None:
+            chunk_ids = [s.id for s in route.sources if s.table == "knowledge_chunks"]
+            for c in (route.rag_metadata or {}).get("chunks", []) or []:
+                score = c.get("rerank_score", c.get("score"))
+                if score is not None:
+                    scores.append(score)
+            if route.rag_metadata and route.rag_metadata.get("evidence_sufficient") is False:
+                fallback_reason = "evidence_insufficient"
+        if not GROQ_API_KEY and not OPENAI_API_KEY:
+            fallback_reason = "no_llm_configured"
+
+        if not verification_ran:
+            verification_result = "not_checked"
+        elif answer_mismatch:
+            verification_result = "failed_handoff"
+        else:
+            verification_result = "passed"
+
+        emit_trace(
+            TraceEvent(
+                request_id=request_id,
+                user_id=user_id,
+                query=query,
+                rewritten_query=rewritten_query if rewritten_query != query else None,
+                intent=intent_result.intent,
+                entities={
+                    "wants_pricing": intent_result.wants_pricing,
+                    "wants_recommendation": intent_result.wants_recommendation,
+                    "wants_comparison": intent_result.wants_comparison,
+                },
+                route=route.answer_source if route else None,
+                retrieval_sources=list({s.table for s in route.sources}) if route else [],
+                retrieved_chunk_ids=chunk_ids,
+                retrieved_scores=scores,
+                latency_ms={"total": (time.monotonic() - started_at) * 1000} if started_at else {},
+                model=GROQ_MODEL if GROQ_API_KEY else (OPENAI_MODEL if OPENAI_API_KEY else None),
+                confidence=confidence,
+                verification_result=verification_result,
+                fallback_reason=fallback_reason,
+                handoff_required=handoff_required,
+                final_status=final_status,
+            )
+        )
+    except Exception:
+        _orchestrator_logger.exception("unified trace logging failed")
+
+
+async def _maybe_personalization_context(
+    token: Optional[str], user_id: Optional[str], message: str,
+    history: List[Dict[str, str]], casual: bool,
+) -> str:
+    """Fetches a small, relevance-scored slice of this user's own memory
+    (tools/memory.py's `list_memory`, already recency+pinned scored) and
+    renders it as a labeled block (context_builder.py) — only when the
+    conversation actually looks like it needs it, never on every message:
+    a follow-up that references something earlier ("what about that one?")
+    or a recommendation-shaped question, and only once the conversation has
+    at least one prior turn (a brand-new chat's first message has nothing to
+    resolve a reference against). Checked against the message's own intent
+    shape directly (not `route.category`) — a recommendation question that
+    fell through to RAG because the structured chart had no match is
+    exactly a case where personal preferences (e.g. "vegetarian") still
+    help the final answer, not one where they've become irrelevant.
+    Best-effort: any failure here must never block the chat response.
+    """
+    if casual or not token or not user_id or not history:
+        return ""
+    if not (wants_reference_resolution(message) or wants_recommendation(message)):
+        return ""
+    try:
+        items = await list_memory(token, user_id, limit=5)
+    except Exception:
+        return ""
+    if not items:
+        return ""
+    # Top 3 by the tool's own recency+pinned score — not the full 20-item
+    # cap `list_memory` allows, per "don't inject all memory into every
+    # prompt."
+    return build_context(user_memory_items=items[:3]).to_prompt_blocks()
 
 
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
@@ -1324,11 +1541,23 @@ def _best_matching_block(context: str, message: str, min_overlap: int = 2, max_c
     return best_block
 
 
+_BRACKET_HEADER_LINE_RE = re.compile(r"^\[(.+)\]$", re.MULTILINE)
+
+
 async def stream_response(
     message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
-    custom_guidance: str = "",
+    custom_guidance: str = "", already_grounded: bool = False,
 ) -> AsyncIterator[str]:
-    """Try Groq first, then OpenAI. Falls back to a context-only answer."""
+    """Try Groq first, then OpenAI. Falls back to a context-only answer.
+
+    `already_grounded=True` marks context that came from a structured
+    pricing/recommendation lookup (an exact DB match against the parsed
+    intent) rather than lexically-scored RAG chunks — it skips the
+    question-relevance re-filter below and shows the context as-is, since
+    that filter exists to reject chunks that merely share a common word with
+    the question, which doesn't apply to a result that's already precisely
+    matched by construction.
+    """
     if GROQ_API_KEY:
         collected = ""
         async for tok in stream_groq(message, history, context, language, mode, custom_guidance):
@@ -1351,6 +1580,10 @@ async def stream_response(
         "serving degraded context-only fallback answer",
         bool(GROQ_API_KEY), bool(OPENAI_API_KEY),
     )
+    if already_grounded and context:
+        cleaned = _BRACKET_HEADER_LINE_RE.sub(r"\1", context).strip()
+        yield f"{cleaned}\n\nFor a more specific answer, please contact Dayjoy support."
+        return
     best_block = _best_matching_block(context, message) if context else None
     if best_block:
         yield f"{best_block}\n\nFor a more specific answer, please contact Dayjoy support."
@@ -1445,6 +1678,8 @@ async def readiness() -> Dict[str, Any]:
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     """Non-streaming chat endpoint. Requires authentication."""
+    request_id = str(uuid.uuid4())
+    started_at = time.monotonic()
     user_id = await get_user_id(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -1455,6 +1690,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     is_blocked, rule_key = run_safety_check(req.message, rules)
     if is_blocked:
         await _log_analytics(token, user_id, req, "blocked", [], 0.0, "unsafe")
+        _log_unified_trace(
+            request_id=request_id, user_id=user_id, query=req.message,
+            handoff_required=True, started_at=started_at, final_status="blocked",
+        )
         return ChatResponse(
             answer=f"Sorry, I can't help with that. Safety rule triggered: {rule_key}.",
             category="unsafe",
@@ -1476,10 +1715,22 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     retrieval_query = rewrite_query(req.message, history)
     route = await determine_route(token, retrieval_query, casual)
 
-    full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
+    personalization_context = await _maybe_personalization_context(
+        token, user_id, req.message, history, casual
+    )
+    full_context = "\n\n".join(
+        p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+    )
     custom_guidance = await load_ai_custom_guidance()
+    fmt_directive = format_instruction(req.message)
+    if fmt_directive:
+        custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+    already_grounded = bool(
+        route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
+    )
 
     answer_mismatch = False
+    verification_ran = False
     if route.direct_answer is not None:
         # Router already produced the final text (a clarifying question) —
         # skip generation entirely rather than asking the LLM to rephrase a
@@ -1489,16 +1740,19 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         # Collect streamed tokens into a single string
         answer_parts: List[str] = []
         async for tok in stream_response(
-            req.message, history, full_context, req.language, route.mode, custom_guidance
+            req.message, history, full_context, req.language, route.mode, custom_guidance,
+            already_grounded=already_grounded,
         ):
             answer_parts.append(tok)
         answer = "".join(answer_parts).strip()
 
         # Post-generation answer-relevance check — only for RAG-sourced
         # answers (dayjoy_knowledge/hybrid): structured pricing/recommendation
-        # answers are already grounded to a specific DB row and casual/web/
-        # general answers aren't checked against Dayjoy evidence at all.
-        if not casual and route.answer_source in ("dayjoy_knowledge", "hybrid"):
+        # answers are already grounded to a specific DB row (not a lexical
+        # RAG match) and casual/web/general answers aren't checked against
+        # Dayjoy evidence at all.
+        verification_ran = not casual and not already_grounded and route.answer_source in ("dayjoy_knowledge", "hybrid")
+        if verification_ran:
             verdict = await verify_answer(req.message, answer, full_context)
             if verdict.checked and not verdict.addresses_question:
                 corrective_context = (
@@ -1547,6 +1801,11 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     # chat_messages — this endpoint only needs conv_id for history/context.
 
     await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+    _log_unified_trace(
+        request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
+        route=route, confidence=confidence, handoff_required=handoff_required,
+        answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
+    )
 
     handoff_msg = None
     if answer_mismatch:
@@ -1639,6 +1898,8 @@ async def chat_title(req: TitleRequest, user_id: str = Depends(require_user_id))
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming chat endpoint. Requires authentication."""
+    request_id = str(uuid.uuid4())
+    started_at = time.monotonic()
     user_id = await get_user_id(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -1650,6 +1911,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
     async def event_gen() -> AsyncIterator[str]:
         if is_blocked:
+            _log_unified_trace(
+                request_id=request_id, user_id=user_id, query=req.message,
+                handoff_required=True, started_at=started_at, final_status="blocked",
+            )
             yield _sse({"token": "", "done": True, "safety_status": "blocked", "category": "unsafe", "handoff_required": True, "answer_source": "unsafe"})
             return
 
@@ -1679,8 +1944,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 route = payload
         assert route is not None  # _route_events always yields exactly one "result"
 
-        full_context = "\n\n".join(p for p in [current_time_context(), route.context, route.web_context] if p)
+        personalization_context = await _maybe_personalization_context(
+            token, user_id, req.message, history, casual
+        )
+        full_context = "\n\n".join(
+            p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+        )
         custom_guidance = await load_ai_custom_guidance()
+        fmt_directive = format_instruction(req.message)
+        if fmt_directive:
+            custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+        already_grounded = bool(
+            route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
+        )
         aggregated = ""
 
         if route.direct_answer is not None:
@@ -1692,7 +1968,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             yield _sse({"token": aggregated})
         else:
             async for tok in stream_response(
-                req.message, history, full_context, req.language, route.mode, custom_guidance
+                req.message, history, full_context, req.language, route.mode, custom_guidance,
+                already_grounded=already_grounded,
             ):
                 aggregated += tok
                 yield _sse({"token": tok})
@@ -1704,9 +1981,15 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # replaced itself" UX. So this path only FLAGS a mismatch (via
         # handoff_required + a specific message below) rather than retrying;
         # /chat is where a caller that needs the retry-before-serving
-        # behavior should go.
+        # behavior should go. Structured pricing/recommendation answers are
+        # already grounded to a specific DB row (not a lexical RAG match),
+        # so they skip this check the same way /chat's does.
         answer_mismatch = False
-        if route.direct_answer is None and not casual and route.answer_source in ("dayjoy_knowledge", "hybrid"):
+        verification_ran = (
+            route.direct_answer is None and not casual and not already_grounded
+            and route.answer_source in ("dayjoy_knowledge", "hybrid")
+        )
+        if verification_ran:
             verdict = await verify_answer(req.message, aggregated, full_context)
             answer_mismatch = bool(verdict.checked and not verdict.addresses_question)
 
@@ -1745,6 +2028,11 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # note in the non-streaming /chat handler above.
 
         await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+        _log_unified_trace(
+            request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
+            route=route, confidence=confidence, handoff_required=handoff_required,
+            answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
+        )
 
         yield _sse({
             "done": True,
