@@ -109,7 +109,19 @@ SUPABASE_JWKS_URL = (
     f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else None
 )
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Live-verified against the actual configured key: `llama-3.3-70b-versatile`
+# (the old default) 404s with "does not exist or you do not have access to
+# it" — GET /openai/v1/models against this key doesn't list any llama-*
+# model at all, only openai/gpt-oss-*, qwen/*, groq/compound*, and a few
+# audio/guard models. This was the root cause of every "answer is a raw
+# Q&A dump" / "no answer at all" report: every non-casual, non-structured
+# chat request was silently falling all the way through to the no-LLM
+# fallback. openai/gpt-oss-120b was tested directly (real streaming call,
+# real prompt, ~2.6s) and produces a normal, correctly-grounded answer. If
+# your Groq account's available models change, override via the
+# GROQ_MODEL env var rather than editing this default blind — verify with
+# `GET https://api.groq.com/openai/v1/models` against your actual key first.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # Web search API keys (TAVILY_API_KEY, BRAVE_API_KEY) are read directly by
