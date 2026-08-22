@@ -167,3 +167,107 @@ def test_recommendation_question_with_history_fetches_memory(authed_client, monk
 
 async def _empty_ctx(*_a, **_kw):
     return "", [], "general", None
+
+
+# ---------------------------------------------------------------------------
+# Business/team data (the largest gap flagged in docs/dayjoy-ai-architecture-audit.md)
+# ---------------------------------------------------------------------------
+
+
+def test_distributor_asking_about_team_gets_business_snapshot(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
+
+    async def _fake_team(token, table, columns, filters, limit):
+        if table == "team_members":
+            return [{"status": "active"}, {"status": "active"}, {"status": "inactive"}]
+        if table == "business_volume_ledger":
+            return [{"bv": 100, "created_at": "2026-08-20T00:00:00Z"}, {"bv": 50, "created_at": "2020-01-01T00:00:00Z"}]
+        return []
+
+    monkeypatch.setattr(backend_main, "supabase_select", _fake_team)
+    contexts_seen: list = []
+    _stub_stream_response_spy(monkeypatch, contexts_seen)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "How is my team performing?", "role": "distributor", "language": "English"},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert res.status_code == 200
+    assert "Team size: 3 (2 active)" in contexts_seen[0]
+    assert "Business Data" in contexts_seen[0]
+    # Only BV within the last 30 days counted — the 2020 row must not
+    # inflate the figure.
+    assert "100 BV" in contexts_seen[0]
+
+
+def test_business_data_works_as_the_first_message_no_history_needed(authed_client, monkeypatch):
+    """Unlike memory (needs a prior turn to resolve a reference against),
+    "how's my team?" is a perfectly normal first message."""
+    monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
+
+    async def _fake_team(token, table, columns, filters, limit):
+        if table == "team_members":
+            return [{"status": "active"}]
+        return []
+
+    monkeypatch.setattr(backend_main, "supabase_select", _fake_team)
+    contexts_seen: list = []
+    _stub_stream_response_spy(monkeypatch, contexts_seen)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "What's my rank progress?", "role": "distributor", "language": "English"},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert res.status_code == 200
+    assert "Team size: 1" in contexts_seen[0]
+
+
+def test_customer_role_never_fetches_business_data(authed_client, monkeypatch):
+    """Business data is distributor-specific — a customer's own account has
+    no team_members/business_volume_ledger rows to query, so this must not
+    even attempt the fetch."""
+    monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
+    calls: list = []
+
+    async def _tracking(token, table, columns, filters, limit):
+        calls.append(table)
+        return []
+
+    monkeypatch.setattr(backend_main, "supabase_select", _tracking)
+    contexts_seen: list = []
+    _stub_stream_response_spy(monkeypatch, contexts_seen)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "How is my team performing?", "role": "customer", "language": "English"},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert res.status_code == 200
+    assert calls == []
+    assert "Business Data" not in contexts_seen[0]
+
+
+def test_distributor_unrelated_question_does_not_fetch_business_data(authed_client, monkeypatch):
+    """"Don't inject all memory/data into every prompt" applies here too —
+    a distributor asking a plain product question shouldn't trigger a
+    business-data fetch just because of their role."""
+    monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
+    calls: list = []
+
+    async def _tracking(token, table, columns, filters, limit):
+        calls.append(table)
+        return []
+
+    monkeypatch.setattr(backend_main, "supabase_select", _tracking)
+    contexts_seen: list = []
+    _stub_stream_response_spy(monkeypatch, contexts_seen)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "What is Dayjoy's refund policy?", "role": "distributor", "language": "English"},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert res.status_code == 200
+    assert calls == []

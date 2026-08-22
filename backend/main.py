@@ -488,7 +488,7 @@ from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
 # needs it (see personalization_context() below) — never on every message,
 # per the explicit "don't inject all memory into every prompt" requirement.
 from backend.orchestrator.context_builder import build_context  # noqa: E402
-from backend.orchestrator.intent import wants_recommendation  # noqa: E402
+from backend.orchestrator.intent import wants_recommendation, wants_business_data  # noqa: E402
 from backend.orchestrator.rewrite import wants_reference_resolution  # noqa: E402
 from backend.orchestrator.tools.memory import list_memory  # noqa: E402
 
@@ -1207,38 +1207,82 @@ def _log_unified_trace(
         _orchestrator_logger.exception("unified trace logging failed")
 
 
+async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Optional[str]:
+    """A deliberately minimal, fast business-data snapshot for chat
+    personalization — NOT the full BI dashboard computation
+    (business_intelligence_api.py's `bi_overview` does that: 15+ sequential
+    queries and RPC calls for the dashboard page, where that latency is
+    expected; running the same thing on every eligible chat message would
+    add multiple seconds for what's meant to be a one-line context blurb).
+    Two bounded, RLS-scoped reads — team size and this month's business
+    volume — via the same anon-key + bearer-token pattern every other read
+    in this file already uses. Returns None (not "") on any failure/empty
+    result so the caller can tell "nothing to add" apart from "found zero
+    team members", which is itself a valid, real answer worth surfacing.
+    """
+    try:
+        team = await supabase_select(token, "team_members", columns="status,joined_date", filters={"leader_id": user_id}, limit=500)
+        active_team = sum(1 for t in team if t.get("status") == "active")
+        month_start = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+        bv_rows = await supabase_select(token, "business_volume_ledger", columns="bv,created_at", filters={"distributor_id": user_id}, limit=1000)
+        month_bv = sum(
+            float(r.get("bv") or 0) for r in bv_rows if str(r.get("created_at") or "") >= month_start
+        )
+    except Exception:
+        return None
+    if not team and not bv_rows:
+        return None
+    return (
+        f"Team size: {len(team)} ({active_team} active). "
+        f"Business volume (last 30 days): {month_bv:.0f} BV."
+    )
+
+
 async def _maybe_personalization_context(
     token: Optional[str], user_id: Optional[str], message: str,
-    history: List[Dict[str, str]], casual: bool,
+    history: List[Dict[str, str]], casual: bool, role: Optional[str] = None,
 ) -> str:
     """Fetches a small, relevance-scored slice of this user's own memory
-    (tools/memory.py's `list_memory`, already recency+pinned scored) and
-    renders it as a labeled block (context_builder.py) — only when the
+    (tools/memory.py's `list_memory`, already recency+pinned scored) and/or
+    a minimal business-data snapshot, and renders them as labeled,
+    non-interleaved blocks (context_builder.py) — only when the
     conversation actually looks like it needs it, never on every message:
-    a follow-up that references something earlier ("what about that one?")
-    or a recommendation-shaped question, and only once the conversation has
-    at least one prior turn (a brand-new chat's first message has nothing to
-    resolve a reference against). Checked against the message's own intent
-    shape directly (not `route.category`) — a recommendation question that
-    fell through to RAG because the structured chart had no match is
-    exactly a case where personal preferences (e.g. "vegetarian") still
-    help the final answer, not one where they've become irrelevant.
-    Best-effort: any failure here must never block the chat response.
+    a follow-up that references something earlier ("what about that one?"),
+    a recommendation-shaped question, or (for a distributor) their own
+    business standing ("how's my team doing?"). Memory requires at least
+    one prior turn (a brand-new chat's first message has nothing to resolve
+    a reference against); a business-data question doesn't — "how's my
+    team?" is a perfectly normal FIRST message. Checked against the
+    message's own intent shape directly (not `route.category`) — a
+    recommendation question that fell through to RAG because the
+    structured chart had no match is exactly a case where personal
+    preferences (e.g. "vegetarian") still help the final answer, not one
+    where they've become irrelevant. Best-effort: any failure here must
+    never block the chat response.
     """
-    if casual or not token or not user_id or not history:
+    if casual or not token or not user_id:
         return ""
-    if not (wants_reference_resolution(message) or wants_recommendation(message)):
+
+    memory_items = None
+    if history and (wants_reference_resolution(message) or wants_recommendation(message)):
+        try:
+            memory_items = await list_memory(token, user_id, limit=5)
+        except Exception:
+            memory_items = None
+
+    business_snapshot = None
+    if role == "distributor" and wants_business_data(message):
+        business_snapshot = await _fetch_business_snapshot(token, user_id)
+
+    if not memory_items and not business_snapshot:
         return ""
-    try:
-        items = await list_memory(token, user_id, limit=5)
-    except Exception:
-        return ""
-    if not items:
-        return ""
-    # Top 3 by the tool's own recency+pinned score — not the full 20-item
-    # cap `list_memory` allows, per "don't inject all memory into every
-    # prompt."
-    return build_context(user_memory_items=items[:3]).to_prompt_blocks()
+    # Top 3 memory items by the tool's own recency+pinned score — not the
+    # full 20-item cap `list_memory` allows, per "don't inject all memory
+    # into every prompt."
+    return build_context(
+        user_memory_items=(memory_items or [])[:3],
+        business_data=business_snapshot,
+    ).to_prompt_blocks()
 
 
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
@@ -1728,7 +1772,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     route = await determine_route(token, retrieval_query, casual)
 
     personalization_context = await _maybe_personalization_context(
-        token, user_id, req.message, history, casual
+        token, user_id, req.message, history, casual, req.role
     )
     full_context = "\n\n".join(
         p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
@@ -1957,7 +2001,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         assert route is not None  # _route_events always yields exactly one "result"
 
         personalization_context = await _maybe_personalization_context(
-            token, user_id, req.message, history, casual
+            token, user_id, req.message, history, casual, req.role
         )
         full_context = "\n\n".join(
             p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p

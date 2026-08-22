@@ -96,6 +96,24 @@ def wants_additional_info(text: str) -> bool:
     return bool(_ADDITIONAL_INFO_CUES_RE.search(text))
 
 
+# "my team", "my rank", "my BV" — a distributor asking about their OWN
+# business standing, distinct from a general company/policy question. Only
+# meaningful combined with an authenticated distributor-role caller (see
+# _maybe_business_context in main.py) — the possessive alone isn't enough
+# signal on its own (a customer could ask "what's my order status" with no
+# distributor business data to show).
+_BUSINESS_DATA_CUES_RE = re.compile(
+    r"\bmy (team|downline|rank|business volume|bv\b|commission\w*|sales|"
+    r"target\w*|performance|earnings|income|customers?)\b|"
+    r"\b(how is my team|how('s| is) my (business|rank|performance))\b",
+    re.IGNORECASE,
+)
+
+
+def wants_business_data(text: str) -> bool:
+    return bool(_BUSINESS_DATA_CUES_RE.search(text))
+
+
 def detect_intent(message: str) -> IntentResult:
     """Classify `message` into one of the INTENT_* labels.
 

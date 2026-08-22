@@ -125,20 +125,34 @@ function getGreeting(): string {
  * response and the sources it cited. These are heuristic (not LLM-generated)
  * to keep the UX instant and free of extra API calls.
  */
-function generateFollowUps(answer: string, sources: unknown): string[] {
+function generateFollowUps(answer: string, sources: unknown, answerSource?: string | null): string[] {
   const followUps: string[] = [];
   const lower = answer.toLowerCase();
 
-  // Product-related follow-ups
-  if (sources && Array.isArray(sources) && sources.length > 0) {
-    const hasProducts = (sources as Array<{ table?: string }>).some((s) => s?.table === "products");
-    if (hasProducts) {
-      followUps.push("Compare this with similar products");
-      followUps.push("What are the safety notes?");
+  // answer_source-based follow-ups first — these reflect what the backend
+  // actually determined the question WAS (structured pricing/recommendation
+  // vs. a plain knowledge lookup), a stronger signal than re-guessing from
+  // the answer text alone.
+  if (answerSource === "dayjoy_knowledge") {
+    if (sources && Array.isArray(sources) && sources.length > 0) {
+      const hasProducts = (sources as Array<{ table?: string }>).some((s) => s?.table === "products");
+      if (hasProducts) {
+        followUps.push("Compare this with similar products");
+        followUps.push("What are the safety notes?");
+      }
     }
+  } else if (answerSource === "web_search") {
+    followUps.push("Is there an official Dayjoy source for this?");
+  } else if (answerSource === "clarification") {
+    // The answer IS the clarifying question — nothing more specific to
+    // suggest until the user picks an option.
+    return [];
   }
 
-  // Category-based follow-ups
+  // Category-based follow-ups, from the answer's own content
+  if (lower.includes("price") || lower.includes("mrp") || lower.includes("dp") || lower.includes(" bv")) {
+    followUps.push("What's the BV and PV for this?");
+  }
   if (lower.includes("policy") || lower.includes("refund") || lower.includes("return")) {
     followUps.push("Where can I find the full policy document?");
   }
@@ -152,14 +166,19 @@ function generateFollowUps(answer: string, sources: unknown): string[] {
   if (lower.includes("ingredient") || lower.includes("benefit")) {
     followUps.push("Tell me about related products");
   }
-
-  // Generic fallbacks — always offer at least 2 options
-  if (followUps.length < 2) {
-    followUps.push("Tell me more about this");
-    followUps.push("Can you give me an example?");
+  if (lower.includes("recommend") || lower.includes("matched for")) {
+    followUps.push("What's the price of this?");
+    followUps.push("Are there any alternatives?");
   }
 
-  return followUps.slice(0, 3);
+  // Last resort — still Dayjoy-scoped, never a content-free "give me an
+  // example" that has nothing to do with what was actually asked.
+  if (followUps.length === 0) {
+    followUps.push("Can you point me to a verified source for this?");
+    followUps.push("What else does Dayjoy offer here?");
+  }
+
+  return Array.from(new Set(followUps)).slice(0, 3);
 }
 
 type Lang = "English" | "Hindi" | "Hinglish";
@@ -2031,14 +2050,18 @@ export function UserChat() {
                   );
                 })}
 
-                {/* Follow-up suggestions — only after the last assistant message, when not sending */}
-                {lastAssistant && !sending && !streamingText ? (
-                  <FollowUpChips
-                    suggestions={generateFollowUps(lastAssistant.content, lastAssistant.sources)}
-                    onSelect={handleSend}
-                    disabled={sending}
-                  />
-                ) : null}
+                {/* Follow-up suggestions — only after the last assistant message, when not
+                    sending, and only when generateFollowUps actually has something
+                    question-specific to suggest (it returns [] for a clarification
+                    reply, where nothing more specific applies until the user answers). */}
+                {(() => {
+                  if (!lastAssistant || sending || streamingText) return null;
+                  const suggestions = generateFollowUps(
+                    lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
+                  );
+                  if (suggestions.length === 0) return null;
+                  return <FollowUpChips suggestions={suggestions} onSelect={handleSend} disabled={sending} />;
+                })()}
               </>
             )}
 
