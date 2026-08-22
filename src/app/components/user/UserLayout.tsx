@@ -347,7 +347,7 @@ export function UserLayout() {
               <div className="pt-5">
                 {groupChatsByDate(recentChats).map((group) => (
                   <div key={group.label} className="mb-2">
-                    <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-foreground/45">
                       {group.label}
                     </p>
                     {group.items.map((c) => (
@@ -355,7 +355,7 @@ export function UserLayout() {
                         <NavLink
                           to={`/chat/${c.id}`}
                           onClick={() => setDrawerOpen(false)}
-                          className="flex-1 min-w-0 flex items-center gap-1.5 truncate rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                          className="flex-1 min-w-0 flex items-center gap-1.5 truncate rounded-lg px-3 py-1.5 text-[13px] text-foreground/85 transition-colors hover:bg-accent/60 hover:text-foreground"
                         >
                           {c.pinned ? (
                             <Pin className="w-3 h-3 shrink-0 text-primary" aria-hidden="true" />
@@ -598,7 +598,11 @@ function NavGroup({
   return (
     <div className={last ? "" : "mb-4"}>
       {!collapsed ? (
-        <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 px-3 uppercase tracking-wide">
+        // Deliberately NOT text-muted-foreground — that's the same token
+        // the nav items/chat titles below it use, so a section label and
+        // its own content were rendering at identical contrast with
+        // nothing but a 1-2px size difference to tell them apart.
+        <p className="text-[11px] font-bold text-foreground/45 mb-1.5 px-3 uppercase tracking-wider">
           {label}
         </p>
       ) : null}

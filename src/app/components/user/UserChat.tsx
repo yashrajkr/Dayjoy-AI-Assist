@@ -54,6 +54,8 @@ import {
   Menu,
   MoreVertical,
   Ghost,
+  Mic,
+  Pencil,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -79,7 +81,6 @@ import {
   type ChatSource,
 } from "../../../lib/api";
 import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
-import { VoiceControls } from "../voice/VoiceControls";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
@@ -369,6 +370,12 @@ export function UserChat() {
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
+  // Edit-and-resend a previously sent user message (ChatGPT-style). Keyed
+  // the same way message list `key`s are (`m.id ?? "role-created_at"`) so a
+  // not-yet-persisted message can still be edited.
+  const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
   // Temporary Chat (Claude/ChatGPT-style): messages aren't written to
   // Supabase and no conversation row is created, so nothing appears in the
   // sidebar's history and nothing survives a refresh/navigation. Only
@@ -501,9 +508,17 @@ export function UserChat() {
   const handleSend = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
-      // Ref, not state: a rapid double/triple tap on a suggestion card
-      // dispatches several calls before React commits `setSending(true)`.
-      if (!text || sending || sendingRef.current) return;
+      // Ref, not state: `sending` (state) isn't in this callback's own
+      // dependency array, so its closure can go stale — once created while
+      // `sending` was true, it stays permanently stuck reading `true` until
+      // some OTHER listed dep happens to change, blocking every later call
+      // even long after the send actually finished. Caught via the edit-
+      // and-resend flow: editing a message and saving silently no-opped
+      // because handleSend's captured `sending` never updated back to
+      // false. `sendingRef.current` doesn't have this problem — a ref's
+      // `.current` is always read live, never captured by a closure — so
+      // it alone is the correct guard here.
+      if (!text || sendingRef.current) return;
       if (text.length > 4000) {
         setError("Message is too long (max 4000 characters).");
         return;
@@ -978,6 +993,36 @@ export function UserChat() {
       // ignore
     }
   }, []);
+
+  // ---- Edit-and-resend a sent user message ----
+  const handleStartEdit = useCallback((m: ChatMessage) => {
+    setEditingMessageKey(m.id ?? `${m.role}-${m.created_at}`);
+    setEditingValue(m.content);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageKey(null);
+    setEditingValue("");
+  }, []);
+
+  const handleSaveEdit = useCallback(
+    async (m: ChatMessage) => {
+      const trimmed = editingValue.trim();
+      if (!trimmed || sendingRef.current) return;
+      const key = m.id ?? `${m.role}-${m.created_at}`;
+      const idx = messages.findIndex((x) => (x.id ?? `${x.role}-${x.created_at}`) === key);
+      // Drop the edited message and everything after it — same "keep local
+      // state, resend fresh" convention handleRegenerate already uses above;
+      // any already-persisted rows for the dropped tail stay in Supabase
+      // (a reload will show the fuller history) rather than adding a new
+      // bulk-delete path for this.
+      if (idx !== -1) setMessages((prev) => prev.slice(0, idx));
+      setEditingMessageKey(null);
+      setEditingValue("");
+      await handleSend(trimmed);
+    },
+    [editingValue, messages, handleSend],
+  );
 
   // ---- Conversation actions ----
   const handleNewChat = useCallback(() => {
@@ -1962,20 +2007,29 @@ export function UserChat() {
               </div>
             ) : (
               <>
-                {messages.map((m) => (
-                  <MessageBubble
-                    key={m.id ?? `${m.role}-${m.created_at}`}
-                    message={m}
-                    onFeedback={handleFeedback}
-                    onCopy={handleCopy}
-                    copiedId={copiedId}
-                    onRegenerate={
-                      m.role === "assistant" && m.id === lastAssistantId
-                        ? handleRegenerate
-                        : undefined
-                    }
-                  />
-                ))}
+                {messages.map((m) => {
+                  const key = m.id ?? `${m.role}-${m.created_at}`;
+                  return (
+                    <MessageBubble
+                      key={key}
+                      message={m}
+                      onFeedback={handleFeedback}
+                      onCopy={handleCopy}
+                      copiedId={copiedId}
+                      onRegenerate={
+                        m.role === "assistant" && m.id === lastAssistantId
+                          ? handleRegenerate
+                          : undefined
+                      }
+                      isEditing={editingMessageKey === key}
+                      editingValue={editingValue}
+                      onEditingValueChange={setEditingValue}
+                      onStartEdit={handleStartEdit}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                    />
+                  );
+                })}
 
                 {/* Follow-up suggestions — only after the last assistant message, when not sending */}
                 {lastAssistant && !sending && !streamingText ? (
@@ -2094,7 +2148,7 @@ export function UserChat() {
                 rows={1}
                 maxLength={4000}
                 disabled={sending}
-                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm focus:outline-none disabled:opacity-60"
+                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-base focus:outline-none disabled:opacity-60"
                 aria-label={`Ask ${BRAND.shortName} about Dayjoy products, policies, or training`}
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
@@ -2251,42 +2305,48 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic sits beside Send — both always visible (Send just
-                      disables when empty) rather than swapping one for the
-                      other, so the send control is never simply missing.
-                      Mic itself is hidden when voice is turned off in
-                      Settings (isVoiceRepliesEnabled). Speak/mute toggles
-                      are omitted here since normal text chat no longer
-                      auto-speaks answers. */}
-                  {isVoiceRepliesEnabled() ? (
-                    <VoiceControls
-                      voice={voice}
-                      onTranscript={setInput}
-                      voiceMode={voiceMode}
-                      onToggleVoiceMode={toggleVoiceMode}
-                      showSpeakToggle={false}
-                    />
-                  ) : null}
-                  <motion.button
-                    type="button"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || sending}
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
-                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
-                    aria-label="Send message"
-                  >
-                    {/* Gradient sheen on hover */}
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
-                      }}
-                    />
-                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
-                  </motion.button>
+                  {/* Mic and Send swap for each other, matching ChatGPT's
+                      composer: an empty composer shows Mic (tapping it goes
+                      to the dedicated Voice Assistant page, not an inline
+                      dictation/hands-free mode — a second, different voice
+                      entry point would be confusing here); as soon as
+                      there's text to send, Mic is replaced by Send. Hidden
+                      entirely when voice is turned off in Settings or the
+                      browser has no STT support. */}
+                  {!input.trim() && !sending && isVoiceRepliesEnabled() && voice.sttSupported ? (
+                    <motion.button
+                      type="button"
+                      onClick={() => navigate("/voice")}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: 1.05 }}
+                      className="relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Start voice conversation"
+                      title="Voice mode"
+                    >
+                      <Mic className="w-4 h-4" aria-hidden="true" />
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      type="button"
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || sending}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Send message"
+                    >
+                      {/* Gradient sheen on hover */}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
+                    </motion.button>
+                  )}
                 </div>
               </div>
               {/* Attachments preview row */}
@@ -3148,18 +3208,75 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  isEditing = false,
+  editingValue = "",
+  onEditingValueChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
 }: {
   message: ChatMessage;
   onFeedback: (id: string | undefined, rating: "up" | "down") => void;
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  isEditing?: boolean;
+  editingValue?: string;
+  onEditingValueChange?: (value: string) => void;
+  onStartEdit?: (message: ChatMessage) => void;
+  onSaveEdit?: (message: ChatMessage) => void;
+  onCancelEdit?: () => void;
 }) {
   const isUser = message.role === "user";
   const bubbleId = message.id ?? `temp-${message.created_at}`;
   const isBlocked = message.safety_status === "blocked";
 
   if (isUser) {
+    if (isEditing) {
+      return (
+        <motion.div
+          id={`msg-${bubbleId}`}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex gap-3 justify-end"
+        >
+          <div className="flex flex-col items-end max-w-[80%] w-full">
+            <textarea
+              autoFocus
+              value={editingValue}
+              onChange={(e) => onEditingValueChange?.(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSaveEdit?.(message);
+                } else if (e.key === "Escape") {
+                  onCancelEdit?.();
+                }
+              }}
+              rows={Math.min(6, Math.max(2, editingValue.split("\n").length))}
+              className="w-full rounded-2xl rounded-tr-md bg-primary text-primary-foreground px-4 py-2.5 shadow-sm text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-primary-foreground/60"
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="px-3 py-1.5 rounded-full text-xs font-medium text-muted-foreground hover:bg-accent/60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveEdit?.(message)}
+                disabled={!editingValue.trim()}
+                className="px-3 py-1.5 rounded-full text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
     return (
       <motion.div
         id={`msg-${bubbleId}`}
@@ -3181,11 +3298,43 @@ function MessageBubble({
             />
             <p className="text-sm whitespace-pre-wrap break-words relative">{message.content}</p>
           </div>
-          {message.created_at ? (
-            <div className="text-[10px] text-muted-foreground mt-1 pr-1 opacity-70 group-hover:opacity-100 transition-opacity">
-              {formatTimestamp(message.created_at)}
+          <div className="flex items-center gap-2 mt-1 pr-1">
+            {/* Edit + Copy — hidden until hover, matching ChatGPT's own
+                pattern for a sent message. Edit truncates everything after
+                this message and resends the edited text (see
+                handleSaveEdit); Copy just copies the raw text. */}
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              {onStartEdit ? (
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(message)}
+                  className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Edit message"
+                  title="Edit"
+                >
+                  <Pencil className="w-3 h-3" aria-hidden="true" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onCopy(message.content, bubbleId)}
+                className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={copiedId === bubbleId ? "Copied" : "Copy message"}
+                title={copiedId === bubbleId ? "Copied!" : "Copy"}
+              >
+                {copiedId === bubbleId ? (
+                  <Check className="w-3 h-3 text-primary" aria-hidden="true" />
+                ) : (
+                  <Copy className="w-3 h-3" aria-hidden="true" />
+                )}
+              </button>
             </div>
-          ) : null}
+            {message.created_at ? (
+              <div className="text-[10px] text-muted-foreground opacity-70 group-hover:opacity-100 transition-opacity">
+                {formatTimestamp(message.created_at)}
+              </div>
+            ) : null}
+          </div>
         </div>
       </motion.div>
     );
