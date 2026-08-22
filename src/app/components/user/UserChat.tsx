@@ -54,6 +54,7 @@ import {
   Menu,
   MoreVertical,
   Ghost,
+  AudioLines,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -2228,13 +2229,12 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic sits beside Send — both always visible (Send just
-                      disables when empty) rather than swapping one for the
-                      other, so the send control is never simply missing.
-                      Mic itself is hidden when voice is turned off in
-                      Settings (isVoiceRepliesEnabled). Speak/mute toggles
-                      are omitted here since normal text chat no longer
-                      auto-speaks answers. */}
+                  {/* Mic (dictation) always sits beside the primary button —
+                      tap it to speak and have the transcript land in the
+                      composer, no typing needed. Hidden when voice is
+                      turned off in Settings (isVoiceRepliesEnabled). Speak/
+                      mute toggles are omitted here since normal text chat
+                      no longer auto-speaks answers. */}
                   {isVoiceRepliesEnabled() ? (
                     <VoiceControls
                       voice={voice}
@@ -2244,26 +2244,52 @@ export function UserChat() {
                       showSpeakToggle={false}
                     />
                   ) : null}
-                  <motion.button
-                    type="button"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || sending}
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
-                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
-                    aria-label="Send message"
-                  >
-                    {/* Gradient sheen on hover */}
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
-                      }}
-                    />
-                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
-                  </motion.button>
+                  {/* Primary circular button is dual-purpose, ChatGPT-style:
+                      empty composer -> jump into the full hands-free Voice
+                      Assistant page (autoStart tells it to open the mic on
+                      arrival, since this click IS the user gesture); once
+                      there's text to send, it becomes the Send button. */}
+                  {isVoiceRepliesEnabled() && !input.trim() ? (
+                    <motion.button
+                      type="button"
+                      onClick={() => navigate("/voice", { state: { autoStart: true } })}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: 1.05 }}
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Start voice assistant"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <AudioLines className="w-4 h-4 relative" aria-hidden="true" />
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      type="button"
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || sending}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Send message"
+                    >
+                      {/* Gradient sheen on hover */}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
+                    </motion.button>
+                  )}
                 </div>
               </div>
               {/* Attachments preview row */}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic,
@@ -150,6 +150,7 @@ function formatTime(iso: string): string {
  */
 export function VoiceAssistant() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, role } = useAuth();
 
   const [settings, setSettings] = useState<PersistedSettings>(() => loadSettings());
@@ -392,6 +393,23 @@ export function VoiceAssistant() {
       voice.startListening();
     }
   }, [voice]);
+
+  // The composer's voice-assistant button navigates here with
+  // `state: { autoStart: true }` — that click IS the user gesture, so it's
+  // safe to open the mic immediately rather than waiting for a second tap.
+  // Runs once per navigation (guarded by hasUserStartedMicRef, same as a
+  // manual toggleMic tap) and only once STT is confirmed supported.
+  useEffect(() => {
+    if (
+      (location.state as { autoStart?: boolean } | null)?.autoStart &&
+      voice.sttSupported &&
+      !hasUserStartedMicRef.current
+    ) {
+      toggleMic();
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, voice.sttSupported]);
 
   const endSession = useCallback(async () => {
     voice.stopListening();
