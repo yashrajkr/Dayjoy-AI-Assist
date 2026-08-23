@@ -54,8 +54,8 @@ import {
   Menu,
   MoreVertical,
   Ghost,
-  Mic,
   Pencil,
+  AudioLines,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -84,6 +84,7 @@ import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
+import { VoiceControls } from "../voice/VoiceControls";
 import { notifyAIResponseReady } from "../../lib/pushNotifications";
 import { AccountMenu } from "../common/AccountMenu";
 import { DayjoyLogo } from "../brand/DayjoyLogo";
@@ -2328,29 +2329,47 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic and Send swap for each other, matching ChatGPT's
-                      composer: an empty composer shows Mic (tapping it goes
-                      to the dedicated Voice Assistant page, not an inline
-                      dictation/hands-free mode — a second, separate voice
-                      control here reintroduces exactly the "two voice
-                      buttons" confusion this design deliberately avoids);
-                      as soon as there's text to send, Mic is replaced by
-                      Send. autoStart tells the Voice Assistant page to open
-                      the mic immediately on arrival, since this click IS
-                      the user gesture. Hidden entirely when voice is
-                      turned off in Settings or the browser has no STT
-                      support. */}
-                  {!input.trim() && !sending && isVoiceRepliesEnabled() && voice.sttSupported ? (
+                  {/* Mic (dictation) always sits beside the primary button —
+                      tap it to speak and the transcript lands in the
+                      composer, no typing needed. Deliberately NOT wired to
+                      voiceMode/toggleVoiceMode (the tap-the-orb hands-free
+                      loop, see its declaration above) — this mic is a
+                      one-shot dictate-into-input control, matching
+                      ChatGPT's composer mic. Hidden entirely when voice is
+                      turned off in Settings (isVoiceRepliesEnabled). Speak/
+                      mute toggles are omitted since normal text chat no
+                      longer auto-speaks answers. */}
+                  {isVoiceRepliesEnabled() ? (
+                    <VoiceControls
+                      voice={voice}
+                      onTranscript={setInput}
+                      showSpeakToggle={false}
+                    />
+                  ) : null}
+                  {/* Primary circular button is dual-purpose, ChatGPT-style:
+                      empty composer -> jump into the full hands-free Voice
+                      Assistant page (autoStart tells it to open the mic on
+                      arrival, since this click IS the user gesture); once
+                      there's text to send, it becomes the Send button. */}
+                  {isVoiceRepliesEnabled() && voice.sttSupported && !input.trim() ? (
                     <motion.button
                       type="button"
                       onClick={() => navigate("/voice", { state: { autoStart: true } })}
                       whileTap={{ scale: 0.95 }}
                       whileHover={{ scale: 1.05 }}
-                      className="relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
-                      aria-label="Start voice conversation"
-                      title="Voice mode"
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Start voice assistant"
+                      title="Voice assistant"
                     >
-                      <Mic className="w-4 h-4" aria-hidden="true" />
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <AudioLines className="w-4 h-4 relative" aria-hidden="true" />
                     </motion.button>
                   ) : (
                     <motion.button
