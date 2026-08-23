@@ -495,6 +495,10 @@ def test_ambiguous_which_product_is_best_asks_before_any_lookup(authed_client, m
     # Neither structured tool nor RAG ran — clarification is checked first.
     assert pricing_calls == []
     assert recommend_calls == []
+    # Feature: Clarification Intelligence — selectable options, not just an
+    # open-ended "please provide more details" question.
+    assert len(body["clarification_options"]) > 0
+    assert all("?" in opt for opt in body["clarification_options"])
     assert rag_calls == []
 
 

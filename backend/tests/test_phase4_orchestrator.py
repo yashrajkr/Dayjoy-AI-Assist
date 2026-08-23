@@ -41,7 +41,8 @@ def test_rewrite_no_history_returns_unchanged():
 def test_ambiguous_recommendation_triggers_clarification():
     q = clarify.needs_clarification("Which product is best?")
     assert q is not None
-    assert "?" in q
+    assert "?" in q.question
+    assert len(q.options) > 0
 
 
 def test_specific_goal_does_not_trigger_clarification():

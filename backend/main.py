@@ -413,6 +413,10 @@ class ChatResponse(BaseModel):
     # on its own; this just exposes the same structure other clients of
     # this API can use without re-implementing the markdown parsing.
     structured: Optional[Dict[str, Any]] = None
+    # Clarification Intelligence — selectable options accompanying a
+    # clarifying-question answer (orchestrator/clarify.py). Empty for
+    # every non-clarification route.
+    clarification_options: List[str] = []
 
 
 class FeedbackRequest(BaseModel):
@@ -503,6 +507,7 @@ from backend.orchestrator.refinement import build_refinement_instruction, needs_
 # Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
 # Intelligence Layer capabilities 1-2).
 from backend.orchestrator.quality_router import route_query  # noqa: E402
+from backend.orchestrator.user_goal import analyze_user_goal  # noqa: E402
 from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
 
 # Structured-intent short-circuits — checked in `_route_events` before RAG
@@ -825,6 +830,12 @@ class RouteResult:
     # render a rich card instead of (or alongside) prose. Empty for every
     # other route.
     product_cards: List[Dict[str, Any]] = field(default_factory=list)
+    # Clarification Intelligence — selectable options to accompany
+    # `direct_answer` when it's a clarifying question (orchestrator/
+    # clarify.py). Each option is itself a complete follow-up message, not
+    # a bare label — clicking one sends it verbatim as the user's next
+    # turn. Empty for every route that isn't a clarification.
+    clarification_options: List[str] = field(default_factory=list)
 
 
 def _format_pricing_context(data: Dict[str, Any]) -> str:
@@ -972,8 +983,8 @@ async def _route_events(
         # location) — fall through to the normal path below, which lets the
         # model ask the user which city/place they mean.
 
-    clarifying_question = needs_clarification(message)
-    if clarifying_question:
+    clarification = needs_clarification(message)
+    if clarification:
         # Too vague to route confidently (e.g. "which product is best?" with
         # no stated goal) — ask instead of guessing. No LLM call, no
         # retrieval: this is a deterministic question, not a generated one.
@@ -983,7 +994,8 @@ async def _route_events(
                 context="", web_context="", sources=[], web_sources=[],
                 category="clarification", rag_metadata=None, mode="dayjoy",
                 answer_source="clarification", web_search_provider=None,
-                used_web_search=False, direct_answer=clarifying_question,
+                used_web_search=False, direct_answer=clarification.question,
+                clarification_options=clarification.options,
             ),
         )
         return
@@ -1111,6 +1123,16 @@ async def _route_events(
     # module's docstring for why that isolation is what makes this safe to
     # wire in as one branch instead of a riskier rewrite of the shared path.
     quality_decision = route_query(message, plan.intent, plan)
+    # User Goal Analyzer — internal-only structured representation of what
+    # the user actually wants, assembled from signals already computed
+    # above (intent + routing decision), never re-classified with an extra
+    # LLM call. Logged for observability only; never sent to the client or
+    # used to gate behaviour, so a bad guess here can't break an answer.
+    try:
+        goal_profile = analyze_user_goal(message, plan.intent, quality_decision)
+        _llm_logger.debug("user_goal_profile=%s", goal_profile.to_dict())
+    except Exception:
+        pass
     if quality_decision.use_reasoning:
         yield ("status", "analyzing")
         route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
@@ -2166,6 +2188,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         follow_ups=follow_ups,
         products=route.product_cards,
         structured=structure_answer(answer).to_dict(),
+        clarification_options=route.clarification_options,
     )
 
 
@@ -2410,6 +2433,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "follow_ups": follow_ups,
             "products": route.product_cards,
             "structured": structure_answer(aggregated).to_dict(),
+            "clarification_options": route.clarification_options,
         })
 
     return StreamingResponse(
