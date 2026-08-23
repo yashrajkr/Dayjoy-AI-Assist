@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useNavigate, useParams, useOutletContext } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -58,6 +58,10 @@ import {
   Volume2,
   VolumeX,
   AudioLines,
+  Lightbulb,
+  CheckCircle2,
+  Wand2,
+  ListChecks,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -80,7 +84,9 @@ import {
   streamChatWithBackend,
   generateConversationTitle,
   SessionExpiredError,
+  distributorCreateFollowUp,
   type ChatSource,
+  type ChatProductCard,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -184,6 +190,294 @@ function generateFollowUps(answer: string, sources: unknown, answerSource?: stri
   }
 
   return Array.from(new Set(followUps)).slice(0, 3);
+}
+
+/**
+ * Structured answer blocks — parsed from the specific bold-labeled markers
+ * SYSTEM_PROMPT (backend/main.py) optionally asks the model to emit
+ * ("**TL;DR:** ...", "**💡 Key Insight:** ...", etc). Each marker is still
+ * valid Markdown on its own (a bold-prefixed line), so a message that never
+ * uses one just renders as a single markdown block exactly as before —
+ * this is additive, not a replacement rendering path.
+ */
+/**
+ * ChartBlock — renders a small bar/line chart from a fenced ```chart code
+ * block's JSON payload (see MARKDOWN_COMPONENTS' `code` override below).
+ * Self-contained inline SVG — no charting library dependency. Only renders
+ * for a fenced block whose language is literally "chart" and whose content
+ * parses as valid JSON matching ChartSpec; anything else (including a
+ * genuine ```json or code sample) falls through to normal code rendering.
+ */
+type ChartSpec = {
+  type?: "bar" | "line";
+  title?: string;
+  data: Array<{ label: string; value: number }>;
+};
+
+function isChartSpec(v: unknown): v is ChartSpec {
+  if (!v || typeof v !== "object") return false;
+  const data = (v as { data?: unknown }).data;
+  return (
+    Array.isArray(data) &&
+    data.length > 0 &&
+    data.every((d) => d && typeof d === "object" && "label" in d && "value" in d && typeof (d as { value: unknown }).value === "number")
+  );
+}
+
+function ChartBlock({ spec }: { spec: ChartSpec }) {
+  const width = 320;
+  const height = 140;
+  const padding = 24;
+  const chartW = width - padding * 2;
+  const chartH = height - padding * 2;
+  const values = spec.data.map((d) => d.value);
+  const max = Math.max(...values, 1);
+  const isLine = spec.type === "line";
+
+  return (
+    <div className="not-prose rounded-xl border border-border bg-card px-3 py-3 my-2">
+      {spec.title ? <div className="text-xs font-semibold text-foreground mb-2">{spec.title}</div> : null}
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img" aria-label={spec.title || "Chart"}>
+        {isLine ? (
+          <polyline
+            fill="none"
+            stroke="rgb(var(--primary-rgb))"
+            strokeWidth={2}
+            points={spec.data
+              .map((d, i) => {
+                const x = padding + (i / Math.max(spec.data.length - 1, 1)) * chartW;
+                const y = padding + chartH - (d.value / max) * chartH;
+                return `${x},${y}`;
+              })
+              .join(" ")}
+          />
+        ) : (
+          spec.data.map((d, i) => {
+            const slot = chartW / spec.data.length;
+            const barW = Math.max(slot - 8, 4);
+            const x = padding + i * slot + 4;
+            const barH = (d.value / max) * chartH;
+            const y = padding + chartH - barH;
+            return <rect key={i} x={x} y={y} width={barW} height={barH} rx={3} fill="rgb(var(--primary-rgb))" opacity={0.85} />;
+          })
+        )}
+      </svg>
+      <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+        {spec.data.map((d, i) => (
+          <span key={i} className="truncate px-0.5" style={{ maxWidth: `${100 / spec.data.length}%` }} title={d.label}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wraps every markdown table in a horizontally-scrollable container — a wide
+ * comparison table (common in Compare mode's answers) would otherwise force
+ * the whole chat column wider than the viewport on mobile instead of
+ * scrolling within its own box.
+ */
+const MARKDOWN_COMPONENTS: Components = {
+  table: ({ children, ...props }) => (
+    <div className="overflow-x-auto">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+  code: ({ className, children, ...props }) => {
+    if (/language-chart/.test(className || "")) {
+      const raw = String(children).replace(/\n$/, "");
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (isChartSpec(parsed)) return <ChartBlock spec={parsed} />;
+      } catch {
+        // Invalid JSON in a ```chart block — fall through to plain code
+        // rendering below rather than silently dropping the content.
+      }
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
+};
+
+type AnswerBlock =
+  | { type: "markdown"; text: string }
+  | { type: "tldr"; text: string }
+  | { type: "callout"; variant: "insight" | "warning" | "tip" | "recommended"; text: string };
+
+const CALLOUT_DEFS: ReadonlyArray<{
+  variant: "insight" | "warning" | "tip" | "recommended";
+  re: RegExp;
+}> = [
+  { variant: "insight", re: /^\*\*💡\s*Key Insight:\*\*\s*(.+)$/i },
+  { variant: "warning", re: /^\*\*⚠️\s*Warning:\*\*\s*(.+)$/i },
+  { variant: "tip", re: /^\*\*✅\s*Tip:\*\*\s*(.+)$/i },
+  { variant: "recommended", re: /^\*\*🎯\s*Recommended:\*\*\s*(.+)$/i },
+];
+
+const TLDR_RE = /^\*\*TL;DR:\*\*\s*(.+)$/i;
+
+function parseAnswerBlocks(content: string): AnswerBlock[] {
+  const lines = content.split("\n");
+  const blocks: AnswerBlock[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const text = buffer.join("\n").trim();
+    if (text) blocks.push({ type: "markdown", text });
+    buffer = [];
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // Only the very first non-blank line can be the TL;DR — a mid-answer
+    // line that happens to start "**TL;DR:**" (unlikely, but possible in
+    // quoted/copied text) is left as plain markdown instead.
+    if (blocks.length === 0 && buffer.length === 0 && idx === lines.findIndex((l) => l.trim())) {
+      const tldrMatch = trimmed.match(TLDR_RE);
+      if (tldrMatch) {
+        blocks.push({ type: "tldr", text: tldrMatch[1].trim() });
+        return;
+      }
+    }
+
+    const calloutDef = CALLOUT_DEFS.find((d) => d.re.test(trimmed));
+    if (calloutDef) {
+      flush();
+      const match = trimmed.match(calloutDef.re);
+      blocks.push({ type: "callout", variant: calloutDef.variant, text: (match?.[1] ?? "").trim() });
+      return;
+    }
+
+    buffer.push(line);
+  });
+  flush();
+
+  return blocks;
+}
+
+const CALLOUT_STYLES: Record<
+  "insight" | "warning" | "tip" | "recommended",
+  { icon: typeof Lightbulb; label: string; cls: string }
+> = {
+  insight: { icon: Lightbulb, label: "Key Insight", cls: "border-primary/25 bg-primary/[0.06] text-primary" },
+  warning: {
+    icon: AlertTriangle,
+    label: "Warning",
+    cls: "border-destructive/25 bg-destructive/[0.06] text-destructive",
+  },
+  tip: { icon: CheckCircle2, label: "Tip", cls: "border-secondary/25 bg-secondary/[0.06] text-secondary" },
+  recommended: {
+    icon: Target,
+    label: "Recommended",
+    cls: "border-gold-accent/40 bg-gold-accent/[0.08] text-warning",
+  },
+};
+
+function AnswerCallout({ variant, text }: { variant: "insight" | "warning" | "tip" | "recommended"; text: string }) {
+  const { icon: Icon, label, cls } = CALLOUT_STYLES[variant];
+  return (
+    <div className={`flex gap-2 items-start rounded-xl border px-3 py-2 my-2 text-sm not-prose ${cls}`}>
+      <Icon className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{label}</div>
+        <div className="text-foreground/90 break-words">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+function AnswerTLDR({ text }: { text: string }) {
+  return (
+    <div className="flex gap-2 items-start rounded-xl border border-primary/20 bg-primary/[0.05] px-3 py-2 mb-2 text-sm not-prose">
+      <Sparkles className="w-4 h-4 mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/80">TL;DR</div>
+        <div className="text-foreground/90 break-words">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
+ * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
+function AnswerContent({ content }: { content: string }) {
+  const blocks = useMemo(() => parseAnswerBlocks(content), [content]);
+  return (
+    <>
+      {blocks.map((block, i) => {
+        if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
+        if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
+        return (
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+            {block.text}
+          </ReactMarkdown>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * ProductCard — renders structured product data (ChatResponse.products).
+ * Only ever populated from a verified DB row (pricing_lookup /
+ * product_recommendation tool result — see backend/main.py's RouteResult.
+ * product_cards), never from RAG/LLM text, so every field here is safe to
+ * show as fact rather than AI-generated content.
+ */
+function ProductCard({ product }: { product: ChatProductCard }) {
+  const price = product.price;
+  return (
+    <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
+      <div className="flex items-start gap-2">
+        <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 text-primary shrink-0">
+          <Package className="w-3.5 h-3.5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground truncate">{product.product_name ?? "Dayjoy product"}</div>
+          {product.matched_condition ? (
+            <div className="text-[11px] text-muted-foreground">Matched for: {product.matched_condition}</div>
+          ) : null}
+        </div>
+        {price ? (
+          <div className="text-right shrink-0">
+            <div className="font-semibold text-foreground">
+              {price.currency ?? "INR"} {price.dp ?? price.mrp}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {price.dp != null ? "DP" : "MRP"}
+              {price.bv != null ? ` · BV ${price.bv}` : ""}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {product.benefits ? (
+        <p className="mt-1.5 text-foreground/80 line-clamp-2">{product.benefits}</p>
+      ) : null}
+      {product.safety_note ? (
+        <p className="mt-1 text-[11px] text-warning">⚠ {product.safety_note}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Roles that own rows in the `follow_ups` table (backend/distributor_api.py
+ * scopes every /distributor/* route to `distributor_id = auth.uid()`) —
+ * gates the "Save as follow-up task" chat action so a customer never gets
+ * offered an action meant for a distributor's own business workflow. */
+const CAN_SAVE_FOLLOW_UPS = new Set(["distributor", "management", "admin", "super_admin"]);
+
+/** Only offer "Save as follow-up task" on answers that are actually
+ * plan/step-shaped — never on a plain factual lookup, matching the "no
+ * irrelevant buttons" guidance for follow-up intelligence generally. */
+function looksActionable(content: string, aiMode?: string | null): boolean {
+  if (aiMode === "create") return true;
+  return /(^|\n)\s*\d+\.\s/.test(content);
 }
 
 type Lang = "English" | "Hindi" | "Hinglish";
@@ -392,6 +686,9 @@ export function UserChat() {
   const [findQuery, setFindQuery] = useState("");
   const [findMatchIndex, setFindMatchIndex] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // "Save as follow-up task" — id of the message currently showing a
+  // saved/saving/error confirmation on its action button.
+  const [followUpSaveState, setFollowUpSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -626,6 +923,8 @@ export function UserChat() {
         answer_source?: string | null;
         web_search_provider?: string | null;
         ai_mode?: string;
+        follow_ups?: string[] | null;
+        products?: ChatProductCard[] | null;
       } = {};
 
       try {
@@ -663,6 +962,8 @@ export function UserChat() {
           answer_source: res.answer_source,
           web_search_provider: res.web_search_provider,
           ai_mode: res.ai_mode ?? sentAiMode,
+          follow_ups: res.follow_ups,
+          products: res.products,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -702,8 +1003,8 @@ export function UserChat() {
         // failed (network blip, RLS, etc.) — fall back to a locally-built
         // message so the reply never silently vanishes after streaming.
         assistantId = assistantMsg?.id ?? null;
-        const displayedAssistantMsg: ChatMessage =
-          (assistantMsg as ChatMessage | null) ?? {
+        const displayedAssistantMsg: ChatMessage = {
+          ...((assistantMsg as ChatMessage | null) ?? {
             conversation_id: convId ?? undefined,
             role: "assistant",
             content: aggregated,
@@ -718,7 +1019,13 @@ export function UserChat() {
             ai_mode: meta.ai_mode ?? sentAiMode,
             created_at: new Date().toISOString(),
             _unsaved: !assistantMsg && !isTemporary,
-          };
+          }),
+          // Not a DB column — attached client-side only, after the Supabase
+          // write (which spreads its input object verbatim into `.insert()`
+          // and would otherwise error on an unknown `follow_ups` column).
+          follow_ups: meta.follow_ups ?? null,
+          products: meta.products ?? null,
+        };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
         // Auto-speak the response only inside hands-free Voice mode — a
@@ -1065,6 +1372,61 @@ export function UserChat() {
       // ignore
     }
   }, []);
+
+  // ---- Transform a previous answer (Explain simpler / Make it actionable) ----
+  // Reuses the normal send pipeline (same as a follow-up chip) rather than a
+  // dedicated backend endpoint — the transform is just a differently-phrased
+  // question about the prior answer, and the existing orchestrator/RAG/
+  // grounding pipeline already handles "explain X simply" style requests.
+  const handleTransform = useCallback(
+    (kind: "simplify" | "actionable", text: string) => {
+      if (sendingRef.current) return;
+      const truncated = text.length > 3000 ? `${text.slice(0, 3000)}…` : text;
+      const prompt =
+        kind === "simplify"
+          ? `Explain this more simply, in plain everyday language:\n\n"""${truncated}"""`
+          : `Turn this into a clear, practical action plan — what to do, in what order:\n\n"""${truncated}"""`;
+      void handleSend(prompt);
+    },
+    [handleSend],
+  );
+
+  // ---- Save an assistant answer as a distributor follow-up task ----
+  // Feature: Agentic Workflows, scoped safely — this calls the EXISTING,
+  // already-authorized POST /distributor/follow-ups (RLS-scoped to the
+  // caller's own distributor_id, see backend/distributor_api.py), not a
+  // staff-only endpoint. The user's own button click IS the required
+  // explicit approval (see the safety rule against autonomous consequential
+  // actions) — nothing here executes anything on its own.
+  const handleSaveFollowUp = useCallback(
+    async (message: ChatMessage) => {
+      const key = message.id ?? `${message.role}-${message.created_at}`;
+      setFollowUpSaveState((prev) => ({ ...prev, [key]: "saving" }));
+      try {
+        const dueDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        await distributorCreateFollowUp({
+          title: deriveTitle(message.content, 60),
+          description: message.content,
+          due_date: dueDate,
+          task_type: "follow_up",
+          priority: "normal",
+          ai_generated: true,
+          ai_suggestion: message.content,
+        });
+        setFollowUpSaveState((prev) => ({ ...prev, [key]: "saved" }));
+      } catch {
+        setFollowUpSaveState((prev) => ({ ...prev, [key]: "error" }));
+        setTimeout(() => {
+          setFollowUpSaveState((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        }, 2500);
+      }
+    },
+    [],
+  );
 
   // ---- Edit-and-resend a sent user message ----
   const handleStartEdit = useCallback((m: ChatMessage) => {
@@ -2103,6 +2465,13 @@ export function UserChat() {
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
+                      onTransform={m.role === "assistant" ? handleTransform : undefined}
+                      onSaveFollowUp={
+                        m.role === "assistant" && CAN_SAVE_FOLLOW_UPS.has(role ?? "")
+                          ? handleSaveFollowUp
+                          : undefined
+                      }
+                      followUpSaveState={followUpSaveState[key]}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -2119,9 +2488,17 @@ export function UserChat() {
                     reply, where nothing more specific applies until the user answers). */}
                 {(() => {
                   if (!lastAssistant || sending || streamingText) return null;
-                  const suggestions = generateFollowUps(
-                    lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
-                  );
+                  // Prefer the backend's context-aware suggestions
+                  // (orchestrator/followups.py — sees answer_source AND
+                  // category) over the local heuristic; fall back to the
+                  // heuristic only when the backend didn't return any
+                  // (older cached messages, or a route it doesn't cover yet).
+                  const suggestions =
+                    lastAssistant.follow_ups && lastAssistant.follow_ups.length > 0
+                      ? lastAssistant.follow_ups
+                      : generateFollowUps(
+                          lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
+                        );
                   if (suggestions.length === 0) return null;
                   return <FollowUpChips suggestions={suggestions} onSelect={handleSend} disabled={sending} />;
                 })()}
@@ -2190,7 +2567,7 @@ export function UserChat() {
                       transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
                       aria-hidden="true"
                     />
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
                       {streamingText + " ▌"}
                     </ReactMarkdown>
                   </div>
@@ -3420,6 +3797,9 @@ function MessageBubble({
   onSpeak,
   speakingId,
   onShare,
+  onTransform,
+  onSaveFollowUp,
+  followUpSaveState,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -3435,6 +3815,9 @@ function MessageBubble({
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
+  onTransform?: (kind: "simplify" | "actionable", text: string) => void;
+  onSaveFollowUp?: (message: ChatMessage) => void;
+  followUpSaveState?: "saving" | "saved" | "error";
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -3633,7 +4016,14 @@ function MessageBubble({
               : "border-border bg-card group-hover:border-primary/20"
           }`}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          {message.products && message.products.length > 0 ? (
+            <div className="not-prose mb-2 flex flex-col gap-2">
+              {message.products.map((p, i) => (
+                <ProductCard key={p.product_id ?? i} product={p} />
+              ))}
+            </div>
+          ) : null}
+          <AnswerContent content={message.content} />
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
@@ -3688,6 +4078,42 @@ function MessageBubble({
           {onShare ? (
             <ActionButton onClick={() => onShare(message.content, bubbleId)} label="Share">
               <Share2 className="w-3.5 h-3.5" aria-hidden="true" />
+            </ActionButton>
+          ) : null}
+          {onTransform ? (
+            <>
+              <ActionButton
+                onClick={() => onTransform("simplify", message.content)}
+                label="Explain simpler"
+              >
+                <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+              <ActionButton
+                onClick={() => onTransform("actionable", message.content)}
+                label="Make it actionable"
+              >
+                <ScrollText className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+            </>
+          ) : null}
+          {onSaveFollowUp && looksActionable(message.content, message.ai_mode) ? (
+            <ActionButton
+              onClick={() => onSaveFollowUp(message)}
+              label={
+                followUpSaveState === "saved"
+                  ? "Saved to Follow-Ups"
+                  : followUpSaveState === "error"
+                    ? "Couldn't save — try again"
+                    : "Save as follow-up task"
+              }
+              active={followUpSaveState === "saved"}
+              activeColor="primary"
+            >
+              {followUpSaveState === "saved" ? (
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <ListChecks className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
             </ActionButton>
           ) : null}
         </div>

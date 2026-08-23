@@ -24,7 +24,18 @@ def generate_followups(
     lowered = message.lower()
     suggestions: List[str] = []
 
-    if category == "product" or answer_source in ("dayjoy_knowledge", "hybrid"):
+    # Checked BEFORE the broad product/dayjoy_knowledge branch below —
+    # `category == "compensation"` is a strictly more specific signal, and a
+    # real compensation-plan question almost always answers via
+    # dayjoy_knowledge (it's core Dayjoy content), so checking the broad
+    # `answer_source in ("dayjoy_knowledge", "hybrid")` branch first made
+    # this compensation branch effectively unreachable for the overwhelming
+    # majority of real compensation questions (caught by
+    # test_followups.py::test_compensation_category_suggests_rank_and_commission_questions).
+    if category == "compensation":
+        suggestions.append("What rank do I need for this?")
+        suggestions.append("How is this commission calculated?")
+    elif category == "product" or answer_source in ("dayjoy_knowledge", "hybrid"):
         if not any(k in lowered for k in ("price", "dp", "mrp")):
             suggestions.append("What is the DP and MRP of this product?")
         if not any(k in lowered for k in ("bv", "pv")):
@@ -33,9 +44,6 @@ def generate_followups(
             suggestions.append("What are its ingredients?")
         if not any(k in lowered for k in ("compare", " vs", "versus")):
             suggestions.append("Compare it with a similar Dayjoy product.")
-    elif category == "compensation":
-        suggestions.append("What rank do I need for this?")
-        suggestions.append("How is this commission calculated?")
     elif answer_source == "web_search":
         suggestions.append("Is there a Dayjoy product related to this?")
     elif answer_source == "general_llm":

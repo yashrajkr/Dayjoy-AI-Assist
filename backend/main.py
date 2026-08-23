@@ -26,7 +26,7 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
@@ -399,6 +399,20 @@ class ChatResponse(BaseModel):
     # AI Mode System — which mode (normal/thinking/deep_research/compare_products)
     # actually produced this answer, echoed back so the frontend can badge it.
     ai_mode: str = "normal"
+    # Contextual next-question suggestions (orchestrator/followups.py) — the
+    # frontend prefers these over its own local heuristic when non-empty.
+    follow_ups: List[str] = []
+    # Structured product data (RouteResult.product_cards) — only ever
+    # populated from a verified DB row (pricing_lookup/product_recommendation
+    # tool result), never fabricated from RAG/LLM text. Empty for every
+    # route that isn't a structured pricing/recommendation match.
+    products: List[Dict[str, Any]] = []
+    # Structured Response JSON (orchestrator/answer_structure.py) — parsed
+    # from `answer`'s own markdown, not LLM-emitted JSON (see that module's
+    # docstring for why). Additive: `answer` is always present and correct
+    # on its own; this just exposes the same structure other clients of
+    # this API can use without re-implementing the markdown parsing.
+    structured: Optional[Dict[str, Any]] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -490,6 +504,19 @@ from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # 
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
 
+# Contextual follow-up suggestions — was fully built and tested
+# (backend/tests/ has no direct test file yet, but the module is pure/
+# deterministic) but never actually called from either chat endpoint; the
+# frontend independently reimplemented a cruder heuristic version instead
+# (see generateFollowUps in UserChat.tsx). Wiring the real one in here lets
+# the frontend prefer backend-computed suggestions, which react to more
+# signals (route.answer_source, category) than the frontend has access to.
+from backend.orchestrator.followups import generate_followups  # noqa: E402
+
+# Structured Response JSON — parsed from the answer's own markdown (see
+# module docstring for why this is safer than asking the LLM for raw JSON).
+from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
+
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
 # called from /chat or /chat/stream. Wired in as a light-touch addition to
@@ -505,7 +532,7 @@ from backend.orchestrator.tools.memory import list_memory  # noqa: E402
 # Adaptive response formatting — "answer in short" / "give me steps" /
 # "compare X and Y" get a matching structural instruction instead of the
 # model always answering in one fixed shape regardless of what was asked.
-from backend.orchestrator.format_intent import format_instruction  # noqa: E402
+from backend.orchestrator.format_intent import example_instruction, format_instruction  # noqa: E402
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -762,6 +789,13 @@ class RouteResult:
     # entirely rather than handed to the LLM. Defaulted so every existing
     # positional RouteResult(...) construction in this file keeps working.
     direct_answer: Optional[str] = None
+    # Product Cards — populated ONLY from a structured pricing_lookup or
+    # product_recommendation tool result (pricing.py/recommend.py), never
+    # from RAG/LLM text. Every field is a verbatim DB value already used to
+    # build `context` above; kept as structured JSON too so the frontend can
+    # render a rich card instead of (or alongside) prose. Empty for every
+    # other route.
+    product_cards: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def _format_pricing_context(data: Dict[str, Any]) -> str:
@@ -958,6 +992,17 @@ async def _route_events(
                     },
                     mode="dayjoy", answer_source="dayjoy_knowledge",
                     web_search_provider=None, used_web_search=False,
+                    product_cards=[{
+                        "product_id": pricing_data.get("product_id"),
+                        "product_name": pricing_data.get("product_name"),
+                        "price": {
+                            "mrp": pricing_data.get("mrp"),
+                            "dp": pricing_data.get("dp"),
+                            "bv": pricing_data.get("bv"),
+                            "pv": pricing_data.get("pv"),
+                            "currency": pricing_data.get("currency"),
+                        },
+                    }],
                 ),
             )
             return
@@ -1010,6 +1055,10 @@ async def _route_events(
                     },
                     mode="dayjoy", answer_source="dayjoy_knowledge",
                     web_search_provider=None, used_web_search=False,
+                    # rec["products"] is already the exact verified DB bundle
+                    # (see recommend.py's _bundle_product) — passed through
+                    # verbatim, capped the same way the UI caps card display.
+                    product_cards=rec["products"][:5],
                 ),
             )
             return
@@ -1151,6 +1200,8 @@ def _log_unified_trace(
     started_at: float = 0.0,
     final_status: str = "ok",
     stage_ms: Optional[Dict[str, float]] = None,
+    answer: Optional[str] = None,
+    verification_status: Optional[str] = None,
 ) -> None:
     """Phase 7 — the single per-request observability call site. Does NOT
     replace `_log_analytics` (writes to the `analytics` table an admin
@@ -1200,6 +1251,21 @@ def _log_unified_trace(
         else:
             verification_result = "passed"
 
+        quality_score = None
+        if answer is not None:
+            from backend.orchestrator.format_intent import FORMAT_ACTION_PLAN, detect_format
+            from backend.orchestrator.quality import score_answer
+
+            quality_score = score_answer(
+                query,
+                answer,
+                answer_source=(route.answer_source if route else "general_llm"),
+                verification_status=verification_status,
+                confidence=confidence,
+                sources=(route.sources if route else []),
+                intent_wants_action=detect_format(query) == FORMAT_ACTION_PLAN,
+            ).to_dict()
+
         emit_trace(
             TraceEvent(
                 request_id=request_id,
@@ -1226,6 +1292,7 @@ def _log_unified_trace(
                 fallback_reason=fallback_reason,
                 handoff_required=handoff_required,
                 final_status=final_status,
+                quality_score=quality_score,
             )
         )
     except Exception:
@@ -1372,7 +1439,22 @@ SYSTEM_PROMPT = (
     "(Hindi written in Latin letters). You can and must respond in whichever of these the user "
     "asks for — never say you are unable to reply in Hindi or Hinglish. Match the script the "
     "user's own message is written in when no language is explicitly requested.\n\n"
-    "Be concise, professional, and helpful. Cite source IDs/URLs where relevant."
+    "Be concise, professional, and helpful. Cite source IDs/URLs where relevant.\n\n"
+    "Formatting (optional, only when it genuinely helps): for a longer or multi-part answer, "
+    "you may open with exactly one line in the form \"**TL;DR:** <one-sentence summary>\" before "
+    "the full answer. When a specific point is unusually important, you may mark that one line "
+    "with exactly one of these labels — \"**💡 Key Insight:** ...\", \"**⚠️ Warning:** ...\", "
+    "\"**✅ Tip:** ...\", \"**🎯 Recommended:** ...\" — the app renders these as highlighted "
+    "callouts. Use at most one or two per answer, and only where it clearly earns the emphasis; "
+    "never on short/simple answers, and never as a substitute for the answer itself.\n\n"
+    "When (and ONLY when) the context below gives you 2+ numeric values that are genuinely "
+    "clearer as a small chart than as prose or a table (e.g. comparing MRP/DP/BV/PV across "
+    "products actually present in the context), you may ALSO include a fenced code block "
+    "labeled \"chart\" containing ONLY compact JSON in this exact shape: "
+    '{"type": "bar", "title": "<short title>", "data": [{"label": "<name>", "value": <number>}, '
+    '...]} (use "type": "line" instead of "bar" for a trend over time). Every value must come '
+    "directly from the context — never invent or estimate a number for a chart. Skip the chart "
+    "entirely if you're not certain every value is real."
 )
 
 # Appended to SYSTEM_PROMPT only for hybrid-mode requests (Dayjoy context
@@ -1829,6 +1911,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     fmt_directive = format_instruction(req.message)
     if fmt_directive:
         custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+    ex_directive = example_instruction(req.message)
+    if ex_directive:
+        custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -1920,7 +2005,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
         route=route, confidence=confidence, handoff_required=handoff_required,
         answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
-        stage_ms=stage_ms,
+        stage_ms=stage_ms, answer=answer, verification_status=verification_status,
     )
 
     handoff_msg = None
@@ -1934,6 +2019,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             "This answer could not be verified from approved Dayjoy documents. "
             "Please create a support ticket for a verified response."
         )
+
+    follow_ups = generate_followups(route.answer_source, category, req.message)
 
     return ChatResponse(
         answer=answer,
@@ -1949,6 +2036,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         answer_source=route.answer_source,
         web_search_provider=route.web_search_provider,
         ai_mode=ai_mode,
+        follow_ups=follow_ups,
+        products=route.product_cards,
+        structured=structure_answer(answer).to_dict(),
     )
 
 
@@ -2074,6 +2164,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         fmt_directive = format_instruction(req.message)
         if fmt_directive:
             custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+        ex_directive = example_instruction(req.message)
+        if ex_directive:
+            custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
@@ -2162,8 +2255,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
             route=route, confidence=confidence, handoff_required=handoff_required,
             answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
-            stage_ms=stage_ms,
+            stage_ms=stage_ms, answer=aggregated, verification_status=verification_status,
         )
+
+        follow_ups = generate_followups(route.answer_source, category, req.message)
 
         yield _sse({
             "done": True,
@@ -2179,6 +2274,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "answer_source": route.answer_source,
             "web_search_provider": route.web_search_provider,
             "ai_mode": ai_mode,
+            "follow_ups": follow_ups,
+            "products": route.product_cards,
+            "structured": structure_answer(aggregated).to_dict(),
         })
 
     return StreamingResponse(

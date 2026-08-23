@@ -49,6 +49,107 @@ def test_short_format_has_a_concrete_instruction():
 
 
 # ---------------------------------------------------------------------------
+# Action Plan format (Feature: Action Plan Generator)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Create an action plan to grow my downline.",
+        "Give me a 30-day plan to hit my sales target.",
+        "Build a strategy for reaching Gold rank.",
+        "What's a good roadmap for my first 90 days as a distributor?",
+    ],
+)
+def test_action_plan_cues_detected(message):
+    assert fi.detect_format(message) == fi.FORMAT_ACTION_PLAN
+
+
+def test_action_plan_instruction_has_structure():
+    instr = fi.format_instruction("Create an action plan to grow my downline.")
+    assert "Goal" in instr
+    assert "Steps" in instr
+
+
+def test_action_plan_checked_before_generic_steps_cue():
+    # "steps" alone would match FORMAT_STEPS, but "action plan" is the more
+    # specific/actionable signal and must win.
+    assert fi.detect_format("What are the steps in my 90-day action plan?") == fi.FORMAT_ACTION_PLAN
+
+
+# ---------------------------------------------------------------------------
+# Automatic Examples (additive — Feature: Automatic Examples)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "What does BV mean in the compensation plan?",
+        "How does the compensation plan work?",
+        "What's the difference between MRP and DP?",
+    ],
+)
+def test_example_cue_detected(message):
+    assert fi.example_instruction(message) != ""
+
+
+def test_example_instruction_absent_for_pricing_lookup():
+    # A plain price lookup shouldn't get an unsolicited "include an example"
+    # nudge — it's not a conceptual question.
+    assert fi.example_instruction("What is the DP of Dayjoy Turmeric?") == ""
+
+
+def test_example_instruction_stacks_with_a_format_directive():
+    # "How does the compensation plan work and what are the steps to qualify?"
+    # should get BOTH the steps instruction AND the example nudge — they're
+    # independent axes, not mutually exclusive.
+    message = "How does the compensation plan work?"
+    assert fi.format_instruction(message) == ""  # FORMAT_DEFAULT, no explicit format cue
+    assert fi.example_instruction(message) != ""
+
+
+# ---------------------------------------------------------------------------
+# Conservative complexity-based DETAILED inference (Feature: Adaptive Length)
+# ---------------------------------------------------------------------------
+
+
+def test_plain_short_question_still_gets_no_directive():
+    # Must never regress test_plain_question_has_no_format_directive below —
+    # length/complexity inference must not fire on an ordinary single
+    # question, however it's phrased.
+    assert fi.detect_format("What is Dayjoy's refund policy?") == fi.FORMAT_DEFAULT
+
+
+def test_compound_multi_part_question_infers_detailed():
+    # No earlier, more-specific cue (table/action-plan/steps/comparison/
+    # etc.) fires here, so this falls all the way through to the
+    # complexity-based fallback.
+    assert (
+        fi.detect_format("What is Dayjoy's refund policy and what is the shipping policy?")
+        == fi.FORMAT_DETAILED
+    )
+
+
+def test_compound_question_with_explicit_how_to_prefers_steps():
+    # A compound question that also matches a MORE specific cue (here,
+    # "how do I") keeps that more actionable instruction rather than the
+    # generic complexity-based DETAILED fallback.
+    assert (
+        fi.detect_format("What is Dayjoy's refund policy and how do I raise a claim?")
+        == fi.FORMAT_STEPS
+    )
+
+
+def test_multiple_question_marks_infers_detailed():
+    assert (
+        fi.detect_format("Is Dayjoy Spirulina safe? What about during pregnancy?")
+        == fi.FORMAT_DETAILED
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint-level: the directive actually reaches custom_guidance
 # ---------------------------------------------------------------------------
 
@@ -85,7 +186,7 @@ def test_short_answer_request_reaches_custom_guidance(authed_client, monkeypatch
 
     guidance_seen: list = []
 
-    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False):
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
         guidance_seen.append(custom_guidance)
         yield "canned"
 
@@ -108,7 +209,7 @@ def test_plain_question_has_no_format_directive(authed_client, monkeypatch):
 
     guidance_seen: list = []
 
-    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False):
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
         guidance_seen.append(custom_guidance)
         yield "canned"
 

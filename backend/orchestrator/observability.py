@@ -57,6 +57,11 @@ class TraceEvent:
     verification_result: Optional[str] = None  # "not_checked" | "passed" | "failed_retried" | "failed_handoff"
     fallback_reason: Optional[str] = None  # e.g. "no_llm_configured", "evidence_insufficient"
     handoff_required: Optional[bool] = None
+    # Deterministic per-request answer-quality rubric (orchestrator/
+    # quality.py) — relevance/grounding/completeness/clarity/actionability/
+    # citation_correctness/overall, all 0..1. Internal-only, same as every
+    # other field on this event: never included in an HTTP response body.
+    quality_score: Optional[Dict[str, float]] = None
 
 
 def emit_trace(event: TraceEvent) -> None:
@@ -67,7 +72,7 @@ def emit_trace(event: TraceEvent) -> None:
             "intent=%s entities=%s selected_tools=%s route=%s retrieval_sources=%s "
             "retrieved_chunk_ids=%s retrieved_scores=%s latency_ms=%s model=%s "
             "tool_errors=%s confidence=%s verification_result=%s fallback_reason=%s "
-            "handoff_required=%s final_status=%s",
+            "handoff_required=%s final_status=%s quality_score=%s",
             event.request_id,
             event.user_id,
             event.query,
@@ -87,6 +92,7 @@ def emit_trace(event: TraceEvent) -> None:
             event.fallback_reason,
             event.handoff_required,
             event.final_status,
+            event.quality_score,
         )
     except Exception:
         _logger.exception("observability emit_trace failed")
