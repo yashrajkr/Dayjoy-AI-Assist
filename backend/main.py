@@ -488,6 +488,11 @@ from backend.orchestrator.decompose import enrich_for_deep_research  # noqa: E40
 # Context Compression (Advanced Intelligence Layer capability 6).
 from backend.orchestrator.context_compress import ContextBlock, compress_context  # noqa: E402
 
+# LLM-backed query rewriting (Advanced Intelligence Layer capability 3) —
+# extends orchestrator/rewrite.py's free regex pass for short/Hinglish
+# queries the regex pass can't handle.
+from backend.orchestrator.rewrite_llm import llm_rewrite_for_retrieval, should_llm_rewrite  # noqa: E402
+
 # Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
 # Intelligence Layer capabilities 1-2).
 from backend.orchestrator.quality_router import route_query  # noqa: E402
@@ -1303,6 +1308,8 @@ def _log_unified_trace(
                 structure_answer(answer),
                 answer_source=answer_source_for_scoring,
                 sources=sources_for_scoring,
+                verification_status=verification_status,
+                answer_text=answer,
             ).to_dict()
 
         emit_trace(
@@ -1958,7 +1965,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
     ai_mode = normalize_ai_mode(req.ai_mode)
-    retrieval_query = enrich_for_deep_research(rewrite_query(req.message, history), ai_mode)
+    retrieval_query = rewrite_query(req.message, history)
+    if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
+        retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
+    retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
     route = await determine_route(token, retrieval_query, casual, ai_mode)
     t_after_routing = time.monotonic()
 
@@ -2205,7 +2215,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
-        retrieval_query = enrich_for_deep_research(rewrite_query(req.message, history), ai_mode)
+        retrieval_query = rewrite_query(req.message, history)
+        if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
+            retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
+        retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
         route: Optional[RouteResult] = None
         async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
             if kind == "status":

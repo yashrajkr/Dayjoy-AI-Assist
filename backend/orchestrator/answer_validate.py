@@ -25,8 +25,9 @@ repair path against.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, List
+from typing import Any, List, Optional
 
 from backend.orchestrator.answer_structure import StructuredAnswer
 
@@ -35,14 +36,64 @@ from backend.orchestrator.answer_structure import StructuredAnswer
 # web answer isn't a Dayjoy-knowledge claim needing a Dayjoy source.
 _NO_SOURCE_REQUIRED = {"casual", "general_llm", "web_search", "clarification", "unsafe"}
 
+# Grounding Gate 5-state classification (Advanced Intelligence Layer
+# capability 5's explicit "Verified / AI analysis / Recommendation /
+# Assumption / Unverified" distinction). Deliberately per-ANSWER, not
+# per-sentence — a genuine per-claim classifier needs an LLM call this
+# codebase doesn't have a live-verified pattern for yet (per-sentence
+# grounding is a materially harder problem than the per-answer relevance
+# check answer_verify.py already does); this maps the signals the pipeline
+# ALREADY computes (verification_status, sources, the structured callouts)
+# onto the five states deterministically rather than inventing a new
+# unverified LLM classifier under this pass's credential constraints.
+GROUNDING_VERIFIED = "verified"
+GROUNDING_AI_ANALYSIS = "ai_analysis"
+GROUNDING_RECOMMENDATION = "recommendation"
+GROUNDING_ASSUMPTION = "assumption"
+GROUNDING_UNVERIFIED = "unverified"
+
+_ASSUMPTION_CUE_RE = re.compile(
+    r"\b(assuming|if you'?re|if your|let'?s assume|presuming|it'?s likely that)\b", re.IGNORECASE
+)
+
 
 @dataclass
 class ValidationResult:
     valid: bool
     warnings: List[str] = field(default_factory=list)
+    grounding_state: str = GROUNDING_AI_ANALYSIS
 
     def to_dict(self) -> dict:
-        return {"valid": self.valid, "warnings": self.warnings}
+        return {"valid": self.valid, "warnings": self.warnings, "grounding_state": self.grounding_state}
+
+
+def classify_grounding_state(
+    structured: StructuredAnswer,
+    *,
+    answer_source: str,
+    verification_status: Optional[str],
+    sources: List[Any],
+    answer_text: str,
+) -> str:
+    """One of GROUNDING_* — checked in priority order: an explicitly
+    unverified/no-evidence answer is flagged first regardless of anything
+    else; a Recommended callout or assumption language is checked next
+    since those describe HOW the claim is framed, distinct from whether
+    it's backed by a source; a verified, sourced, non-casual answer is
+    "verified"; everything else (grounded reasoning without a specific
+    DB-verified fact, e.g. general_llm/web_search) is "ai_analysis"."""
+    needs_sources = answer_source not in _NO_SOURCE_REQUIRED
+    has_sources = bool(sources)
+
+    if verification_status == "unverified" or (needs_sources and not has_sources):
+        return GROUNDING_UNVERIFIED
+    if any(c.variant == "recommended" for c in structured.callouts):
+        return GROUNDING_RECOMMENDATION
+    if _ASSUMPTION_CUE_RE.search(answer_text):
+        return GROUNDING_ASSUMPTION
+    if verification_status == "verified" and has_sources:
+        return GROUNDING_VERIFIED
+    return GROUNDING_AI_ANALYSIS
 
 
 def validate_structured_answer(
@@ -50,6 +101,8 @@ def validate_structured_answer(
     *,
     answer_source: str,
     sources: List[Any],
+    verification_status: Optional[str] = None,
+    answer_text: str = "",
 ) -> ValidationResult:
     warnings: List[str] = []
     has_sources = bool(sources)
@@ -69,4 +122,12 @@ def validate_structured_answer(
         if first_section_len and len(structured.tldr) > first_section_len:
             warnings.append("tldr_longer_than_first_section")
 
-    return ValidationResult(valid=len(warnings) == 0, warnings=warnings)
+    grounding_state = classify_grounding_state(
+        structured,
+        answer_source=answer_source,
+        verification_status=verification_status,
+        sources=sources,
+        answer_text=answer_text,
+    )
+
+    return ValidationResult(valid=len(warnings) == 0, warnings=warnings, grounding_state=grounding_state)
