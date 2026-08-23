@@ -43,6 +43,10 @@ export type ChatMessage = {
   // Set on the client when the message rendered from a stream but its
   // Supabase persistence write failed — never sent to/from the backend.
   _unsaved?: boolean;
+  // Backend-computed contextual follow-up suggestions (orchestrator/
+  // followups.py) — transient, not persisted to chat_messages; only ever
+  // populated on the message just returned by the current request.
+  follow_ups?: string[] | null;
 };
 
 /** In-memory fallback when Supabase is unavailable. */

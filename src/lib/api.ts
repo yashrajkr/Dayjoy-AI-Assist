@@ -141,6 +141,8 @@ export type ChatResponse = {
   web_search_provider?: string | null;
   /** Which AI mode actually produced this answer (echoed back by the backend). */
   ai_mode?: string;
+  /** Contextual next-question suggestions computed by the backend (orchestrator/followups.py). */
+  follow_ups?: string[];
 };
 
 const API_BASE_URL: string =
@@ -440,6 +442,7 @@ export async function streamChatWithBackend(
       answer_source: finalMeta.answer_source,
       web_search_provider: finalMeta.web_search_provider,
       ai_mode: finalMeta.ai_mode ?? req.ai_mode,
+      follow_ups: finalMeta.follow_ups,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

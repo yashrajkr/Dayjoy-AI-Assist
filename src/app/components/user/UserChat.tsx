@@ -58,6 +58,9 @@ import {
   Volume2,
   VolumeX,
   AudioLines,
+  Lightbulb,
+  CheckCircle2,
+  Wand2,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -184,6 +187,133 @@ function generateFollowUps(answer: string, sources: unknown, answerSource?: stri
   }
 
   return Array.from(new Set(followUps)).slice(0, 3);
+}
+
+/**
+ * Structured answer blocks — parsed from the specific bold-labeled markers
+ * SYSTEM_PROMPT (backend/main.py) optionally asks the model to emit
+ * ("**TL;DR:** ...", "**💡 Key Insight:** ...", etc). Each marker is still
+ * valid Markdown on its own (a bold-prefixed line), so a message that never
+ * uses one just renders as a single markdown block exactly as before —
+ * this is additive, not a replacement rendering path.
+ */
+type AnswerBlock =
+  | { type: "markdown"; text: string }
+  | { type: "tldr"; text: string }
+  | { type: "callout"; variant: "insight" | "warning" | "tip" | "recommended"; text: string };
+
+const CALLOUT_DEFS: ReadonlyArray<{
+  variant: "insight" | "warning" | "tip" | "recommended";
+  re: RegExp;
+}> = [
+  { variant: "insight", re: /^\*\*💡\s*Key Insight:\*\*\s*(.+)$/i },
+  { variant: "warning", re: /^\*\*⚠️\s*Warning:\*\*\s*(.+)$/i },
+  { variant: "tip", re: /^\*\*✅\s*Tip:\*\*\s*(.+)$/i },
+  { variant: "recommended", re: /^\*\*🎯\s*Recommended:\*\*\s*(.+)$/i },
+];
+
+const TLDR_RE = /^\*\*TL;DR:\*\*\s*(.+)$/i;
+
+function parseAnswerBlocks(content: string): AnswerBlock[] {
+  const lines = content.split("\n");
+  const blocks: AnswerBlock[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const text = buffer.join("\n").trim();
+    if (text) blocks.push({ type: "markdown", text });
+    buffer = [];
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // Only the very first non-blank line can be the TL;DR — a mid-answer
+    // line that happens to start "**TL;DR:**" (unlikely, but possible in
+    // quoted/copied text) is left as plain markdown instead.
+    if (blocks.length === 0 && buffer.length === 0 && idx === lines.findIndex((l) => l.trim())) {
+      const tldrMatch = trimmed.match(TLDR_RE);
+      if (tldrMatch) {
+        blocks.push({ type: "tldr", text: tldrMatch[1].trim() });
+        return;
+      }
+    }
+
+    const calloutDef = CALLOUT_DEFS.find((d) => d.re.test(trimmed));
+    if (calloutDef) {
+      flush();
+      const match = trimmed.match(calloutDef.re);
+      blocks.push({ type: "callout", variant: calloutDef.variant, text: (match?.[1] ?? "").trim() });
+      return;
+    }
+
+    buffer.push(line);
+  });
+  flush();
+
+  return blocks;
+}
+
+const CALLOUT_STYLES: Record<
+  "insight" | "warning" | "tip" | "recommended",
+  { icon: typeof Lightbulb; label: string; cls: string }
+> = {
+  insight: { icon: Lightbulb, label: "Key Insight", cls: "border-primary/25 bg-primary/[0.06] text-primary" },
+  warning: {
+    icon: AlertTriangle,
+    label: "Warning",
+    cls: "border-destructive/25 bg-destructive/[0.06] text-destructive",
+  },
+  tip: { icon: CheckCircle2, label: "Tip", cls: "border-secondary/25 bg-secondary/[0.06] text-secondary" },
+  recommended: {
+    icon: Target,
+    label: "Recommended",
+    cls: "border-gold-accent/40 bg-gold-accent/[0.08] text-warning",
+  },
+};
+
+function AnswerCallout({ variant, text }: { variant: "insight" | "warning" | "tip" | "recommended"; text: string }) {
+  const { icon: Icon, label, cls } = CALLOUT_STYLES[variant];
+  return (
+    <div className={`flex gap-2 items-start rounded-xl border px-3 py-2 my-2 text-sm not-prose ${cls}`}>
+      <Icon className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{label}</div>
+        <div className="text-foreground/90 break-words">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+function AnswerTLDR({ text }: { text: string }) {
+  return (
+    <div className="flex gap-2 items-start rounded-xl border border-primary/20 bg-primary/[0.05] px-3 py-2 mb-2 text-sm not-prose">
+      <Sparkles className="w-4 h-4 mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/80">TL;DR</div>
+        <div className="text-foreground/90 break-words">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
+ * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
+function AnswerContent({ content }: { content: string }) {
+  const blocks = useMemo(() => parseAnswerBlocks(content), [content]);
+  return (
+    <>
+      {blocks.map((block, i) => {
+        if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
+        if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
+        return (
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+            {block.text}
+          </ReactMarkdown>
+        );
+      })}
+    </>
+  );
 }
 
 type Lang = "English" | "Hindi" | "Hinglish";
@@ -626,6 +756,7 @@ export function UserChat() {
         answer_source?: string | null;
         web_search_provider?: string | null;
         ai_mode?: string;
+        follow_ups?: string[] | null;
       } = {};
 
       try {
@@ -663,6 +794,7 @@ export function UserChat() {
           answer_source: res.answer_source,
           web_search_provider: res.web_search_provider,
           ai_mode: res.ai_mode ?? sentAiMode,
+          follow_ups: res.follow_ups,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -702,8 +834,8 @@ export function UserChat() {
         // failed (network blip, RLS, etc.) — fall back to a locally-built
         // message so the reply never silently vanishes after streaming.
         assistantId = assistantMsg?.id ?? null;
-        const displayedAssistantMsg: ChatMessage =
-          (assistantMsg as ChatMessage | null) ?? {
+        const displayedAssistantMsg: ChatMessage = {
+          ...((assistantMsg as ChatMessage | null) ?? {
             conversation_id: convId ?? undefined,
             role: "assistant",
             content: aggregated,
@@ -718,7 +850,12 @@ export function UserChat() {
             ai_mode: meta.ai_mode ?? sentAiMode,
             created_at: new Date().toISOString(),
             _unsaved: !assistantMsg && !isTemporary,
-          };
+          }),
+          // Not a DB column — attached client-side only, after the Supabase
+          // write (which spreads its input object verbatim into `.insert()`
+          // and would otherwise error on an unknown `follow_ups` column).
+          follow_ups: meta.follow_ups ?? null,
+        };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
         // Auto-speak the response only inside hands-free Voice mode — a
@@ -1065,6 +1202,24 @@ export function UserChat() {
       // ignore
     }
   }, []);
+
+  // ---- Transform a previous answer (Explain simpler / Make it actionable) ----
+  // Reuses the normal send pipeline (same as a follow-up chip) rather than a
+  // dedicated backend endpoint — the transform is just a differently-phrased
+  // question about the prior answer, and the existing orchestrator/RAG/
+  // grounding pipeline already handles "explain X simply" style requests.
+  const handleTransform = useCallback(
+    (kind: "simplify" | "actionable", text: string) => {
+      if (sendingRef.current) return;
+      const truncated = text.length > 3000 ? `${text.slice(0, 3000)}…` : text;
+      const prompt =
+        kind === "simplify"
+          ? `Explain this more simply, in plain everyday language:\n\n"""${truncated}"""`
+          : `Turn this into a clear, practical action plan — what to do, in what order:\n\n"""${truncated}"""`;
+      void handleSend(prompt);
+    },
+    [handleSend],
+  );
 
   // ---- Edit-and-resend a sent user message ----
   const handleStartEdit = useCallback((m: ChatMessage) => {
@@ -2103,6 +2258,7 @@ export function UserChat() {
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
+                      onTransform={m.role === "assistant" ? handleTransform : undefined}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -2119,9 +2275,17 @@ export function UserChat() {
                     reply, where nothing more specific applies until the user answers). */}
                 {(() => {
                   if (!lastAssistant || sending || streamingText) return null;
-                  const suggestions = generateFollowUps(
-                    lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
-                  );
+                  // Prefer the backend's context-aware suggestions
+                  // (orchestrator/followups.py — sees answer_source AND
+                  // category) over the local heuristic; fall back to the
+                  // heuristic only when the backend didn't return any
+                  // (older cached messages, or a route it doesn't cover yet).
+                  const suggestions =
+                    lastAssistant.follow_ups && lastAssistant.follow_ups.length > 0
+                      ? lastAssistant.follow_ups
+                      : generateFollowUps(
+                          lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
+                        );
                   if (suggestions.length === 0) return null;
                   return <FollowUpChips suggestions={suggestions} onSelect={handleSend} disabled={sending} />;
                 })()}
@@ -3420,6 +3584,7 @@ function MessageBubble({
   onSpeak,
   speakingId,
   onShare,
+  onTransform,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -3435,6 +3600,7 @@ function MessageBubble({
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
+  onTransform?: (kind: "simplify" | "actionable", text: string) => void;
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -3633,7 +3799,7 @@ function MessageBubble({
               : "border-border bg-card group-hover:border-primary/20"
           }`}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          <AnswerContent content={message.content} />
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
@@ -3689,6 +3855,22 @@ function MessageBubble({
             <ActionButton onClick={() => onShare(message.content, bubbleId)} label="Share">
               <Share2 className="w-3.5 h-3.5" aria-hidden="true" />
             </ActionButton>
+          ) : null}
+          {onTransform ? (
+            <>
+              <ActionButton
+                onClick={() => onTransform("simplify", message.content)}
+                label="Explain simpler"
+              >
+                <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+              <ActionButton
+                onClick={() => onTransform("actionable", message.content)}
+                label="Make it actionable"
+              >
+                <ScrollText className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+            </>
           ) : null}
         </div>
 

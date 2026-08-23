@@ -399,6 +399,9 @@ class ChatResponse(BaseModel):
     # AI Mode System — which mode (normal/thinking/deep_research/compare_products)
     # actually produced this answer, echoed back so the frontend can badge it.
     ai_mode: str = "normal"
+    # Contextual next-question suggestions (orchestrator/followups.py) — the
+    # frontend prefers these over its own local heuristic when non-empty.
+    follow_ups: List[str] = []
 
 
 class FeedbackRequest(BaseModel):
@@ -489,6 +492,15 @@ from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # 
 # Post-generation answer-relevance check — see module docstring for why this
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
+
+# Contextual follow-up suggestions — was fully built and tested
+# (backend/tests/ has no direct test file yet, but the module is pure/
+# deterministic) but never actually called from either chat endpoint; the
+# frontend independently reimplemented a cruder heuristic version instead
+# (see generateFollowUps in UserChat.tsx). Wiring the real one in here lets
+# the frontend prefer backend-computed suggestions, which react to more
+# signals (route.answer_source, category) than the frontend has access to.
+from backend.orchestrator.followups import generate_followups  # noqa: E402
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -1372,7 +1384,14 @@ SYSTEM_PROMPT = (
     "(Hindi written in Latin letters). You can and must respond in whichever of these the user "
     "asks for — never say you are unable to reply in Hindi or Hinglish. Match the script the "
     "user's own message is written in when no language is explicitly requested.\n\n"
-    "Be concise, professional, and helpful. Cite source IDs/URLs where relevant."
+    "Be concise, professional, and helpful. Cite source IDs/URLs where relevant.\n\n"
+    "Formatting (optional, only when it genuinely helps): for a longer or multi-part answer, "
+    "you may open with exactly one line in the form \"**TL;DR:** <one-sentence summary>\" before "
+    "the full answer. When a specific point is unusually important, you may mark that one line "
+    "with exactly one of these labels — \"**💡 Key Insight:** ...\", \"**⚠️ Warning:** ...\", "
+    "\"**✅ Tip:** ...\", \"**🎯 Recommended:** ...\" — the app renders these as highlighted "
+    "callouts. Use at most one or two per answer, and only where it clearly earns the emphasis; "
+    "never on short/simple answers, and never as a substitute for the answer itself."
 )
 
 # Appended to SYSTEM_PROMPT only for hybrid-mode requests (Dayjoy context
@@ -1935,6 +1954,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             "Please create a support ticket for a verified response."
         )
 
+    follow_ups = generate_followups(route.answer_source, category, req.message)
+
     return ChatResponse(
         answer=answer,
         category=category,
@@ -1949,6 +1970,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         answer_source=route.answer_source,
         web_search_provider=route.web_search_provider,
         ai_mode=ai_mode,
+        follow_ups=follow_ups,
     )
 
 
@@ -2165,6 +2187,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             stage_ms=stage_ms,
         )
 
+        follow_ups = generate_followups(route.answer_source, category, req.message)
+
         yield _sse({
             "done": True,
             "category": category,
@@ -2179,6 +2203,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "answer_source": route.answer_source,
             "web_search_provider": route.web_search_provider,
             "ai_mode": ai_mode,
+            "follow_ups": follow_ups,
         })
 
     return StreamingResponse(
