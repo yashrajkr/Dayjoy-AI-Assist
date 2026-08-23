@@ -120,6 +120,9 @@ async def test_successful_recommendation_returns_ranked_product(monkeypatch):
     assert top["matched_condition"] == "High Blood Pressure"
     assert top["price"]["dp"] == 750.0
     assert top["evidence_source"] == "dayjoy_health_condition_recommendation_chart.csv"
+    # Recommendation Strength (Capability 29) — approved + evidenced + no
+    # documented contraindication is the strongest available classification.
+    assert top["recommendation_strength"] == recommend.STRENGTH_STRONG
 
 
 @pytest.mark.asyncio
@@ -265,6 +268,31 @@ def test_ranking_deprioritizes_documented_contraindication_as_last_tiebreak():
     no_contra = {"verification_status": "approved", "evidence_source": "chart.csv", "contraindications": None}
     ranked = recommend._rank([has_contra, no_contra])
     assert ranked[0] is no_contra
+
+
+# ---------------------------------------------------------------------------
+# Recommendation Strength (Capability 29)
+# ---------------------------------------------------------------------------
+
+
+def test_strength_strong_when_verified_evidenced_and_no_contraindication():
+    c = {"verification_status": "approved", "evidence_source": "chart.csv", "contraindications": None}
+    assert recommend._classify_strength(c) == recommend.STRENGTH_STRONG
+
+
+def test_strength_good_when_verified_but_has_contraindication():
+    c = {"verification_status": "approved", "evidence_source": "chart.csv", "contraindications": "avoid if X"}
+    assert recommend._classify_strength(c) == recommend.STRENGTH_GOOD
+
+
+def test_strength_good_when_evidenced_but_not_verified():
+    c = {"verification_status": "pending", "evidence_source": "chart.csv", "contraindications": None}
+    assert recommend._classify_strength(c) == recommend.STRENGTH_GOOD
+
+
+def test_strength_possible_when_neither_verified_nor_evidenced():
+    c = {"verification_status": "pending", "evidence_source": None, "contraindications": None}
+    assert recommend._classify_strength(c) == recommend.STRENGTH_POSSIBLE
 
 
 # ---------------------------------------------------------------------------

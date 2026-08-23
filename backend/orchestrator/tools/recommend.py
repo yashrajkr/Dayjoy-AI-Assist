@@ -209,6 +209,28 @@ def _bundle_product(
     return bundle
 
 
+# Recommendation Strength (Capability 29) — classifies each candidate from
+# the SAME signals _rank already computes (verification_status, evidence
+# source, documented contraindications), never a fabricated numeric
+# confidence. "insufficient_evidence"/"needs_clarification" statuses are
+# handled entirely by the caller (no products are ever bundled for those),
+# so this only classifies within the "ok" case.
+STRENGTH_STRONG = "Strong recommendation"
+STRENGTH_GOOD = "Good option"
+STRENGTH_POSSIBLE = "Possible option"
+
+
+def _classify_strength(candidate: Dict[str, Any]) -> str:
+    verified = str(candidate.get("verification_status") or "").lower() == "approved"
+    has_evidence = bool(candidate.get("evidence_source"))
+    has_contraindication = bool(candidate.get("contraindications"))
+    if verified and has_evidence and not has_contraindication:
+        return STRENGTH_STRONG
+    if verified or has_evidence:
+        return STRENGTH_GOOD
+    return STRENGTH_POSSIBLE
+
+
 def _rank(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Ranking per the requirement's priority order, applied as tie-breaks
     since (1) explicit user goal and (3) authoritative recommendation rule
@@ -301,6 +323,8 @@ async def run(token: Optional[str], message: str, max_results: int = 3) -> Dict[
         ).__dict__
 
     ranked = _rank(candidates)[:max_results]
+    for c in ranked:
+        c["recommendation_strength"] = _classify_strength(c)
     return RecommendationResult(
         status="ok",
         products=ranked,

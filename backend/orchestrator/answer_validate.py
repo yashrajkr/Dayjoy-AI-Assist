@@ -85,13 +85,30 @@ def classify_grounding_state(
     needs_sources = answer_source not in _NO_SOURCE_REQUIRED
     has_sources = bool(sources)
 
-    if verification_status == "unverified" or (needs_sources and not has_sources):
+    # A structured pricing/recommendation hit (backend/main.py's
+    # `_route_events`) sets verification_status="verified" from an exact DB
+    # row match, but carries that evidence via RouteResult.product_cards,
+    # not `sources` — `sources` there is only ever the SUPPORTING kb_sources
+    # (often empty). Treating "sources empty" as automatically unverified
+    # was wrongly downgrading the single most-grounded answer type in the
+    # whole system to "unverified" — caught live via
+    # test_evidence_strength_unverified_when_no_sources /
+    # test_pricing_found_skips_rag_and_uses_structured_context. An explicit
+    # "verified" from upstream is trusted as-is; only the ABSENCE of an
+    # explicit verified signal falls back to requiring `sources`.
+    if verification_status == "unverified":
+        return GROUNDING_UNVERIFIED
+    if needs_sources and not has_sources and verification_status != "verified":
         return GROUNDING_UNVERIFIED
     if any(c.variant == "recommended" for c in structured.callouts):
         return GROUNDING_RECOMMENDATION
     if _ASSUMPTION_CUE_RE.search(answer_text):
         return GROUNDING_ASSUMPTION
-    if verification_status == "verified" and has_sources:
+    # Same reasoning as above: `has_sources` alone isn't the right gate for
+    # "verified" — a structured pricing/recommendation hit is verified via
+    # an exact DB row, not via `sources`. An explicit "verified" from
+    # upstream is trusted on its own.
+    if verification_status == "verified":
         return GROUNDING_VERIFIED
     return GROUNDING_AI_ANALYSIS
 

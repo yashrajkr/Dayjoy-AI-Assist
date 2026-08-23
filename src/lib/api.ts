@@ -25,6 +25,10 @@ export type ChatRequest = {
   is_temporary?: boolean;
   /** AI Mode System — "normal" | "thinking" | "deep_research" | "compare_products". */
   ai_mode?: string;
+  /** Multimodal Understanding (Capability 1/2/19/20) — a single attached
+   * image as a data: URL. When present, the backend answers from the image
+   * via a vision-capable model instead of the normal RAG pipeline. */
+  image_data_url?: string;
 };
 
 export type ChatSource = {
@@ -163,6 +167,11 @@ export type ChatResponse = {
    * a clarifying-question answer_source="clarification" reply. Each entry
    * is a complete follow-up message, not a bare label. */
   clarification_options?: string[];
+  /** Evidence Strength Indicator — qualitative label derived server-side
+   * from the existing 5-state grounding classification. Never a fabricated
+   * confidence percentage. One of "Strongly supported" | "Supported" |
+   * "Partially supported" | "Needs verification" | "Not verified". */
+  evidence_strength?: string | null;
 };
 
 export type ChatProductCard = {
@@ -174,6 +183,12 @@ export type ChatProductCard = {
   usage?: string | null;
   who_can_use?: string | null;
   safety_note?: string | null;
+  /** Recommendation Strength (Capability 29) — "Strong recommendation" |
+   * "Good option" | "Possible option", classified from verification status,
+   * evidence source, and documented contraindications. Never a fabricated
+   * numeric confidence score. Absent for a structured pricing card (only
+   * product_recommendation results carry this). */
+  recommendation_strength?: string | null;
   price?: {
     mrp?: number | null;
     dp?: number | null;
@@ -396,6 +411,35 @@ export async function generateConversationTitle(
  * endpoint. Best-effort: never blocks or surfaces an error to the user —
  * this is a background quality-of-life save, not a critical action.
  */
+export type MemoryItem = {
+  id: string;
+  source: string;
+  key: string | null;
+  value: string;
+  pinned: boolean;
+  updated_at: string | null;
+  relevance: number;
+};
+
+/** Reads this user's own saved memory/preferences (GET /memory). Used to
+ * seed the Response Style controls in Settings with the currently saved
+ * selection. Best-effort: returns [] on any failure. */
+export async function listUserMemory(): Promise<MemoryItem[]> {
+  try {
+    const token = await requireBearerToken();
+    if (!token) return [];
+    const res = await fetch(`${getApiBaseUrl()}/memory`, {
+      headers: { Authorization: `Bearer ${token}`, "X-Client": BRAND.shortName },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: MemoryItem[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function rememberPreference(key: string, value: string): Promise<boolean> {
   try {
     const token = await requireBearerToken();
@@ -516,6 +560,7 @@ export async function streamChatWithBackend(
       products: finalMeta.products,
       structured: finalMeta.structured,
       clarification_options: finalMeta.clarification_options,
+      evidence_strength: finalMeta.evidence_strength,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

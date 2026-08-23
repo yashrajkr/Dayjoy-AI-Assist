@@ -736,6 +736,19 @@ function ProductCard({ product, hideImage = false }: { product: ChatProductCard;
           {product.matched_condition ? (
             <div className="text-[11px] text-muted-foreground">Matched for: {product.matched_condition}</div>
           ) : null}
+          {product.recommendation_strength ? (
+            <span
+              className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                product.recommendation_strength === "Strong recommendation"
+                  ? "text-primary bg-primary/10"
+                  : product.recommendation_strength === "Good option"
+                    ? "text-secondary bg-secondary/10"
+                    : "text-muted-foreground bg-accent"
+              }`}
+            >
+              {product.recommendation_strength}
+            </span>
+          ) : null}
         </div>
         {price ? (
           <div className="text-right shrink-0">
@@ -790,6 +803,45 @@ export type TransformKind =
   | "hinglish"
   | "example"
   | "translate";
+
+/**
+ * Advanced Regeneration Controls — variants beyond a plain "try again",
+ * each appending a directive to the ORIGINAL question (not the previous
+ * answer, unlike TransformKind above) so the model regenerates from
+ * scratch with that constraint in mind, rather than editing prior output.
+ */
+export type RegenerateVariant =
+  | "accurate"
+  | "shorter"
+  | "detailed"
+  | "simpler"
+  | "professional"
+  | "actionable"
+  | "different";
+
+const REGENERATE_VARIANT_LABELS: Record<RegenerateVariant, string> = {
+  accurate: "More accurate",
+  shorter: "Shorter",
+  detailed: "More detailed",
+  simpler: "Simpler",
+  professional: "More professional",
+  actionable: "More actionable",
+  different: "Different approach",
+};
+
+const REGENERATE_VARIANT_DIRECTIVES: Record<RegenerateVariant, string> = {
+  accurate: "Please double-check accuracy and be more precise and factually careful than a typical answer.",
+  shorter: "Please answer more concisely than usual — keep only the essential point(s).",
+  detailed: "Please answer in more depth than usual, with the full reasoning and relevant specifics.",
+  simpler: "Please explain more simply, in plain everyday language.",
+  professional: "Please answer in a more polished, professional tone.",
+  actionable: "Please make the answer more actionable — concrete steps the user can act on.",
+  different: "Please answer from a different angle or approach than a typical first answer would.",
+};
+
+function buildRegeneratePrompt(variant: RegenerateVariant, originalQuestion: string): string {
+  return `${originalQuestion}\n\n(${REGENERATE_VARIANT_DIRECTIVES[variant]})`;
+}
 
 const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   simplify: (t) => `Explain this more simply, in plain everyday language:\n\n"""${t}"""`,
@@ -1290,7 +1342,14 @@ export function UserChat() {
         follow_ups?: string[] | null;
         products?: ChatProductCard[] | null;
         clarification_options?: string[] | null;
+        evidence_strength?: string | null;
       } = {};
+
+      // Multimodal Understanding (Capabilities 1/2/19/20) — the most
+      // recently attached image, if any, rides along with THIS message
+      // only (attachments themselves stay in the persistent per-conversation
+      // gallery below, unaffected by sending).
+      const imageForThisSend = attachments.length > 0 ? attachments[attachments.length - 1].dataUrl : undefined;
 
       try {
         const res = await streamChatWithBackend(
@@ -1301,6 +1360,7 @@ export function UserChat() {
             conversation_id: convId,
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
+            image_data_url: imageForThisSend,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1330,6 +1390,7 @@ export function UserChat() {
           follow_ups: res.follow_ups,
           products: res.products,
           clarification_options: res.clarification_options,
+          evidence_strength: res.evidence_strength,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1392,6 +1453,7 @@ export function UserChat() {
           follow_ups: meta.follow_ups ?? null,
           products: meta.products ?? null,
           clarification_options: meta.clarification_options ?? null,
+          evidence_strength: meta.evidence_strength ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -1481,7 +1543,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, attachments, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -1676,6 +1738,28 @@ export function UserChat() {
     setInput("");
     await handleSend(lastUserText);
   }, [activeConv, messages, handleSend]);
+
+  // ---- Advanced Regeneration Controls: same drop-trailing-then-resend
+  // shape as plain regenerate above, but resends a directive-augmented
+  // version of the ORIGINAL question rather than the verbatim text. ----
+  const handleRegenerateVariant = useCallback(
+    async (variant: RegenerateVariant) => {
+      if (!activeConv || messages.length === 0) return;
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      if (lastUserIdx === -1) return;
+      const lastUserText = messages[lastUserIdx].content;
+      setMessages((prev) => prev.slice(0, lastUserIdx + 1));
+      setInput("");
+      await handleSend(buildRegeneratePrompt(variant, lastUserText));
+    },
+    [activeConv, messages, handleSend],
+  );
 
   // ---- Feedback ----
   const handleFeedback = useCallback(
@@ -2889,6 +2973,11 @@ export function UserChat() {
                           ? handleRegenerate
                           : undefined
                       }
+                      onRegenerateVariant={
+                        m.role === "assistant" && m.id === lastAssistantId
+                          ? handleRegenerateVariant
+                          : undefined
+                      }
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
@@ -3527,6 +3616,43 @@ export function UserChat() {
                                 <div>
                                   <span className="text-muted-foreground">ID:</span>{" "}
                                   <span className="font-mono">{s.id}</span>
+                                </div>
+                              ) : null}
+                              {/* Source Preview System (Capability 6) — document name/
+                                  page/section/date, when the retrieval layer supplied them
+                                  (knowledge_chunks sources from document ingestion). These
+                                  fields already existed on ChatSource but were never
+                                  rendered anywhere in the UI. */}
+                              {isObj && s.document_name ? (
+                                <div>
+                                  <span className="text-muted-foreground">Document:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.document_name}
+                                    {s.document_version ? ` (v${s.document_version})` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && (s.section || s.page_number != null) ? (
+                                <div>
+                                  <span className="text-muted-foreground">Section:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.section ?? "—"}
+                                    {s.page_number != null ? ` · Page ${s.page_number}` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.document_updated_at ? (
+                                <div>
+                                  <span className="text-muted-foreground">Last updated:</span>{" "}
+                                  <span className="font-medium">
+                                    {new Date(s.document_updated_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.score != null ? (
+                                <div>
+                                  <span className="text-muted-foreground">Relevance:</span>{" "}
+                                  <span className="font-medium">{Math.round(s.score * 100)}%</span>
                                 </div>
                               ) : null}
                               {isObj && s.url ? (
@@ -4241,6 +4367,7 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  onRegenerateVariant,
   onSpeak,
   speakingId,
   onShare,
@@ -4262,6 +4389,7 @@ function MessageBubble({
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  onRegenerateVariant?: (variant: RegenerateVariant) => void;
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
@@ -4438,6 +4566,20 @@ function MessageBubble({
               </span>
             );
           })()}
+          {message.evidence_strength ? (
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                message.evidence_strength === "Strongly supported" || message.evidence_strength === "Supported"
+                  ? "text-primary bg-primary/8"
+                  : message.evidence_strength === "Not verified"
+                    ? "text-muted-foreground bg-accent"
+                    : "text-warning bg-gold-accent/15"
+              }`}
+              title="Evidence Strength — how well this answer is backed by verified DayJoy sources"
+            >
+              {message.evidence_strength}
+            </span>
+          ) : null}
           {message.ai_mode && message.ai_mode !== "normal" && AI_MODES[message.ai_mode as AiMode] ? (
             (() => {
               const modeConfig = AI_MODES[message.ai_mode as AiMode];
@@ -4517,9 +4659,32 @@ function MessageBubble({
             <ThumbsDown className="w-3.5 h-3.5" aria-hidden="true" />
           </ActionButton>
           {onRegenerate ? (
-            <ActionButton onClick={onRegenerate} label="Regenerate">
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-            </ActionButton>
+            <>
+              <ActionButton onClick={onRegenerate} label="Regenerate">
+                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+              {onRegenerateVariant ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="group/action relative inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-accent/60 text-muted-foreground transition-colors"
+                      aria-label="Regeneration options"
+                      title="Regenerate with a variant"
+                    >
+                      <ChevronUp className="w-3 h-3 rotate-180" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    {(Object.keys(REGENERATE_VARIANT_LABELS) as RegenerateVariant[]).map((variant) => (
+                      <DropdownMenuItem key={variant} onClick={() => onRegenerateVariant(variant)}>
+                        {REGENERATE_VARIANT_LABELS[variant]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </>
           ) : null}
           {onSpeak ? (
             <ActionButton

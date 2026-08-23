@@ -125,11 +125,28 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Multimodal Understanding (Capabilities 1/2/19/20) — vision-capable model.
+# Live-verified against this account's actual Groq API key (GET
+# https://api.groq.com/openai/v1/models): zero vision-capable models are
+# available on it today (only text models: gpt-oss-120b/20b, qwen3.6-27b,
+# whisper, etc.) — so this deliberately does NOT default to a Groq model.
+# gpt-4o-mini (OPENAI_MODEL's own default) IS vision-capable and is reused
+# here rather than introducing a second model env var; if OPENAI_API_KEY is
+# unset or the account has no credit, image understanding degrades to a
+# clear "not available right now" message (see stream_vision_response)
+# rather than a raw provider error.
+VISION_MODEL = os.getenv("VISION_MODEL", OPENAI_MODEL)
 # Web search API keys (TAVILY_API_KEY, BRAVE_API_KEY) are read directly by
 # their provider classes in backend/search_providers.py, not here.
 ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v2.sql
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
+# Multimodal Understanding (Capabilities 1/2/19/20) — max length of an
+# attached image's data: URL. ~6M chars ≈ 4.4MB decoded (base64 is ~1.37x
+# source size), loosely matching the frontend's own MAX_ATTACHMENT_BYTES=
+# 10_000_000 cap; enforced independently here since a request can reach
+# this endpoint without going through that UI at all.
+MAX_IMAGE_DATA_URL_CHARS = 6_000_000
 
 # AI Orchestrator (backend/orchestrator/) — Phase 1: intent classification +
 # query planning run alongside the existing `_route_events` router purely for
@@ -355,6 +372,12 @@ class ChatRequest(BaseModel):
     # values fall back to "normal" in ai_modes.get_mode_config rather than
     # raising, so a stale client sending an unrecognized mode still works.
     ai_mode: str = "normal"
+    # Multimodal Understanding (Capabilities 1/2/19/20) — a single attached
+    # image as a data: URL (the frontend already captures this via
+    # FileReader.readAsDataURL when a user attaches an image). Optional;
+    # when present, both /chat and /chat/stream answer from the image via
+    # stream_vision_response() instead of the normal RAG/routing pipeline.
+    image_data_url: Optional[str] = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)
 
 
 class TitleRequest(BaseModel):
@@ -378,6 +401,19 @@ class ChatSource(BaseModel):
     id: str
     title: Optional[str] = None
     url: Optional[str] = None
+
+
+# Evidence Strength Indicator — maps answer_validate.py's internal
+# GROUNDING_* states onto the exact qualitative labels the brief asks for.
+# Deliberately five discrete strings, never a numeric confidence score (the
+# brief explicitly prohibits fabricated confidence percentages).
+_EVIDENCE_STRENGTH_LABELS = {
+    "verified": "Strongly supported",
+    "recommendation": "Supported",
+    "ai_analysis": "Partially supported",
+    "assumption": "Needs verification",
+    "unverified": "Not verified",
+}
 
 
 class ChatResponse(BaseModel):
@@ -417,6 +453,13 @@ class ChatResponse(BaseModel):
     # clarifying-question answer (orchestrator/clarify.py). Empty for
     # every non-clarification route.
     clarification_options: List[str] = []
+    # Evidence Strength Indicator — a qualitative label derived from
+    # answer_validate.py's existing 5-state grounding classification
+    # (verified/ai_analysis/recommendation/assumption/unverified), which was
+    # previously computed only for internal observability logging and never
+    # returned to the client. Deliberately qualitative, never a fabricated
+    # confidence percentage — see _EVIDENCE_STRENGTH_LABELS below.
+    evidence_strength: Optional[str] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -545,6 +588,7 @@ from backend.orchestrator.followups import generate_followups  # noqa: E402
 # Structured Response JSON — parsed from the answer's own markdown (see
 # module docstring for why this is safer than asking the LLM for raw JSON).
 from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
+from backend.orchestrator.answer_validate import classify_grounding_state  # noqa: E402
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -1575,6 +1619,65 @@ async def _maybe_personalization_context(
     ).to_prompt_blocks()
 
 
+# Answer Personalization Controls (Capability 14) — recognized preference
+# keys, written either by Settings (see UserSettings.tsx's Response style
+# section) or by the existing User Preference Learning auto-save
+# (trackTransformUsage() in UserChat.tsx after repeated manual transform
+# use). Maps each key/value onto a plain-English system-prompt directive.
+_PERSONALIZATION_DIRECTIVES: Dict[str, Dict[str, str]] = {
+    "preferred_detail": {
+        "short": "Keep answers concise by default — only the essential point(s).",
+        "concise": "Keep answers concise by default — only the essential point(s).",
+        "balanced": "",  # default behavior — no directive needed
+        "detailed": "Prefer more detailed answers by default — include the full reasoning and relevant specifics.",
+    },
+    "preferred_explanation_level": {
+        "simple": "Explain things in plain, everyday language by default — avoid jargon unless the user uses it first.",
+    },
+    "preferred_response_style": {
+        "actionable": "Prefer actionable framing by default — concrete steps over pure explanation.",
+        "professional": "Use a polished, professional tone by default.",
+        "simple": "Use simple, plain language by default.",
+    },
+    "preferred_language": {
+        "Hindi": "Prefer responding in Hindi by default, unless the user writes in another language.",
+        "Hinglish": "Prefer responding in Hinglish (Hindi in Latin script mixed with English) by default, unless the user writes in another language.",
+    },
+}
+
+
+async def _personalization_style_addendum(token: Optional[str], user_id: Optional[str]) -> str:
+    """Turns the user's own saved preferences (Settings or auto-learned)
+    into an explicit system-prompt directive — previously these preference
+    keys were only ever surfaced as inert "known facts about the user" text
+    (via _maybe_personalization_context, itself gated to reference/
+    recommendation-shaped messages only), which an LLM has no reliable
+    reason to treat as a standing behavioral instruction. This runs on
+    every authenticated message, not conditionally, since a saved style
+    preference should apply everywhere, and is one cheap already-indexed
+    query (list_memory) reused, not a new one."""
+    if not token or not user_id:
+        return ""
+    try:
+        items = await list_memory(token, user_id, limit=20)
+    except Exception:
+        return ""
+    directives: List[str] = []
+    seen_keys = set()
+    for item in items:
+        if not item.key or item.key in seen_keys or item.key not in _PERSONALIZATION_DIRECTIVES:
+            continue
+        directive = _PERSONALIZATION_DIRECTIVES[item.key].get(item.value)
+        if directive:
+            directives.append(directive)
+        seen_keys.add(item.key)
+    if not directives:
+        return ""
+    return "User's saved preferences (apply by default, but always follow explicit in-message instructions first):\n" + "\n".join(
+        f"- {d}" for d in directives
+    )
+
+
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
     """Shared by /chat and /chat/stream — was previously duplicated inline in
     both (see git history), which is exactly how this endpoint pair drifted
@@ -1833,6 +1936,109 @@ async def stream_openai(
         yield tok
 
 
+_ALLOWED_IMAGE_MIME_PREFIXES = ("data:image/jpeg", "data:image/png", "data:image/webp", "data:image/gif")
+
+_vision_logger = logging.getLogger("dayjoy.vision")
+
+
+def validate_image_data_url(data_url: str) -> Optional[str]:
+    """Returns an error message if `data_url` is unsafe/malformed to send to
+    a vision model, else None. Defense in depth even though the frontend
+    already caps size/type at capture time — this endpoint must not trust
+    that any caller went through that UI path."""
+    if not data_url.startswith(_ALLOWED_IMAGE_MIME_PREFIXES):
+        return "Unsupported image type — please attach a JPEG, PNG, WEBP, or GIF."
+    if len(data_url) > MAX_IMAGE_DATA_URL_CHARS:
+        return "Image is too large — please attach a smaller image."
+    return None
+
+
+async def stream_vision_response(message: str, image_data_url: str, language: str) -> AsyncIterator[str]:
+    """Multimodal Understanding (Capabilities 1, 2, 19, 20) — answers a
+    question about an attached image. Deliberately its OWN path, not routed
+    through _stream_chat_completions/RAG: an image question isn't a Dayjoy-
+    knowledge lookup, and "never assume information that cannot be seen or
+    verified" (Capability 2's explicit requirement) means this must NOT mix
+    in RAG context that could bias the model toward describing something
+    that isn't actually in the image.
+
+    OpenAI-only: this Groq account has zero vision-capable models available
+    (live-verified against the actual API key — see VISION_MODEL's
+    definition above), so there is no Groq fallback leg here the way
+    stream_response() has for text. If OPENAI_API_KEY is unset, or the call
+    fails for any reason (including the account having no credit — a real,
+    observed condition in this deployment's OpenAI key as of this writing),
+    this yields one clear, honest sentence rather than a raw provider error
+    or a silently empty response.
+    """
+    if not OPENAI_API_KEY:
+        yield (
+            "Image understanding isn't available right now — please describe what's in the "
+            "image and I'll help from there, or contact Dayjoy support to attach it to a ticket."
+        )
+        return
+
+    system_prompt = (
+        "You are Dayjoy AI Assist. The user has attached an image. Describe and answer questions "
+        "about ONLY what is actually visible in the image — never invent details, brands, text, or "
+        "product identities you cannot actually see. If the image is unclear or you cannot make out "
+        "something the user asked about, say so plainly rather than guessing. If the user is asking "
+        "about a Dayjoy product shown in the image, describe what you see, but do not assert Dayjoy-"
+        "specific facts (pricing, ingredients, health claims) beyond what's visibly printed on the "
+        "product/packaging itself — for anything else, tell the user to ask as a follow-up so it can "
+        "be checked against approved Dayjoy knowledge."
+    )
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Language: {language}\n\nQuestion: {message}"},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            },
+        ],
+        "temperature": 0.2,
+        "stream": True,
+        "max_tokens": 800,
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    collected = ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST", "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread())[:300]
+                    _vision_logger.warning("vision request failed (%s): %s", resp.status_code, body)
+                else:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload_str = line[5:].strip()
+                        if payload_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                            if delta:
+                                collected += delta
+                                yield delta
+                        except Exception:
+                            continue
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        _vision_logger.warning("vision request network error: %s", e)
+
+    if not collected:
+        yield (
+            "I couldn't process that image right now — please try again in a moment, or describe "
+            "what's in it and I'll help from there."
+        )
+
+
 _SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
 _DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
 _LEGACY_TABLE_TAG_RE = re.compile(r"^\[\w+\]\s*")
@@ -2085,6 +2291,38 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             answer_source="unsafe",
         )
 
+    # Multimodal Understanding (Capabilities 1/2/19/20) — an attached image
+    # bypasses RAG/routing entirely (see stream_vision_response's docstring
+    # for why: mixing in Dayjoy KB context here risks biasing the model
+    # toward describing something not actually visible in the image).
+    if req.image_data_url:
+        image_error = validate_image_data_url(req.image_data_url)
+        if image_error:
+            raise HTTPException(status_code=422, detail=image_error)
+        conv_id = req.conversation_id
+        if token and user_id and not req.is_temporary and not conv_id:
+            conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+        vision_parts: List[str] = []
+        async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+            vision_parts.append(tok)
+        vision_answer = "".join(vision_parts).strip()
+        await _log_analytics(
+            token, user_id, req, "vision", [], 0.9, "vision",
+            ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return ChatResponse(
+            answer=vision_answer,
+            category="vision",
+            sources=[],
+            safety_status="safe",
+            handoff_required=False,
+            confidence=0.9 if OPENAI_API_KEY else None,
+            conversation_id=conv_id,
+            answer_source="vision",
+            ai_mode="normal",
+            structured=structure_answer(vision_answer).to_dict(),
+        )
+
     history: List[Dict[str, str]] = []
     conv_id = req.conversation_id
     if token and conv_id:
@@ -2116,6 +2354,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     ex_directive = example_instruction(req.message)
     if ex_directive:
         custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+    personalization_style = await _personalization_style_addendum(token, user_id)
+    if personalization_style:
+        custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -2259,6 +2500,16 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     follow_ups = generate_followups(route.answer_source, category, req.message)
 
+    structured_answer = structure_answer(answer)
+    grounding_state = classify_grounding_state(
+        structured_answer,
+        answer_source=route.answer_source,
+        verification_status=verification_status,
+        sources=sources,
+        answer_text=answer,
+    )
+    evidence_strength = _EVIDENCE_STRENGTH_LABELS.get(grounding_state)
+
     return ChatResponse(
         answer=answer,
         category=category,
@@ -2275,8 +2526,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         ai_mode=ai_mode,
         follow_ups=follow_ups,
         products=route.product_cards,
-        structured=structure_answer(answer).to_dict(),
+        structured=structured_answer.to_dict(),
         clarification_options=route.clarification_options,
+        evidence_strength=evidence_strength,
     )
 
 
@@ -2372,6 +2624,39 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # client's idle timeout.
         yield _sse({"status": "connected"})
 
+        # Multimodal Understanding (Capabilities 1/2/19/20) — same
+        # image-bypasses-RAG early return as /chat above, streamed.
+        if req.image_data_url:
+            image_error = validate_image_data_url(req.image_data_url)
+            if image_error:
+                yield _sse({"token": "", "done": True, "error": image_error})
+                return
+            conv_id = req.conversation_id
+            if token and user_id and not req.is_temporary and not conv_id:
+                conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+            vision_parts: List[str] = []
+            async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+                vision_parts.append(tok)
+                yield _sse({"token": tok})
+            vision_answer = "".join(vision_parts).strip()
+            await _log_analytics(
+                token, user_id, req, "vision", [], 0.9, "vision",
+                ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+            )
+            yield _sse({
+                "done": True,
+                "category": "vision",
+                "sources": [],
+                "safety_status": "safe",
+                "handoff_required": False,
+                "confidence": 0.9 if OPENAI_API_KEY else None,
+                "conversation_id": conv_id,
+                "answer_source": "vision",
+                "ai_mode": "normal",
+                "structured": structure_answer(vision_answer).to_dict(),
+            })
+            return
+
         history: List[Dict[str, str]] = []
         conv_id = req.conversation_id
         if token and conv_id:
@@ -2408,6 +2693,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         ex_directive = example_instruction(req.message)
         if ex_directive:
             custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+        personalization_style = await _personalization_style_addendum(token, user_id)
+        if personalization_style:
+            custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
@@ -2504,6 +2792,15 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         follow_ups = generate_followups(route.answer_source, category, req.message)
 
+        structured_answer = structure_answer(aggregated)
+        grounding_state = classify_grounding_state(
+            structured_answer,
+            answer_source=route.answer_source,
+            verification_status=verification_status,
+            sources=sources,
+            answer_text=aggregated,
+        )
+
         yield _sse({
             "done": True,
             "category": category,
@@ -2520,8 +2817,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "ai_mode": ai_mode,
             "follow_ups": follow_ups,
             "products": route.product_cards,
-            "structured": structure_answer(aggregated).to_dict(),
+            "structured": structured_answer.to_dict(),
             "clarification_options": route.clarification_options,
+            "evidence_strength": _EVIDENCE_STRENGTH_LABELS.get(grounding_state),
         })
 
     return StreamingResponse(
