@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useVisualViewportHeight } from "../../lib/useVisualViewportHeight";
 
 /**
  * Accessible modal dialog with a premium spring entrance.
@@ -44,6 +45,16 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  // `max-h-[90vh]` alone is computed against the *layout* viewport, which
+  // doesn't shrink when the on-screen keyboard opens (e.g. an autoFocus'd
+  // search input inside the modal) — so on mobile, content near the bottom
+  // of a tall modal (like the later entries in the mode selector list)
+  // rendered hidden behind the keyboard. visualViewport tracks the keyboard,
+  // so we clamp against it directly when available.
+  const visualViewportHeight = useVisualViewportHeight();
+  const maxHeightStyle =
+    visualViewportHeight != null ? { maxHeight: Math.round(visualViewportHeight * 0.9) } : undefined;
+
   const sizeClass = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -68,6 +79,7 @@ export function Modal({
         >
           <motion.div
             className={`w-full ${sizeClass} bg-card border border-border rounded-2xl shadow-2xl max-h-[90vh] flex flex-col`}
+            style={maxHeightStyle}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}

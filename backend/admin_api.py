@@ -190,6 +190,19 @@ class ProductUpdate(BaseModel):
     is_archived: Optional[bool] = None
 
 
+class ProductImageCreate(BaseModel):
+    image_url: str
+    alt_text: Optional[str] = None
+    is_primary: bool = False
+    display_order: int = 0
+
+
+class ProductImageUpdate(BaseModel):
+    alt_text: Optional[str] = None
+    is_primary: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
 class FAQCreate(BaseModel):
     question: str
     answer: str
@@ -769,6 +782,80 @@ async def admin_delete_product(product_id: str, request: Request) -> Dict[str, A
             raise HTTPException(status_code=502, detail=f"Delete failed: {resp.text}")
     await _log_audit(token, user_id, "PRODUCT_DELETE", "products", product_id, {})
     return {"status": "deleted", "product_id": product_id}
+
+
+# ---------------------------------------------------------------------------
+# Module 5b — Product images (the approved-media source for both Product
+# Discovery and the chat Product Visual Intelligence cards — see
+# backend/orchestrator/tools/product_media.py). Product Discovery and chat
+# have read this table since it was added in schema v7, but until now there
+# was no admin surface to actually populate it — every product photo had to
+# be inserted by hand via SQL. Audited via `PRODUCT_UPDATE` (no dedicated
+# audit action exists for image rows; treated as part of updating the
+# product's media, consistent with the existing check constraint).
+# ---------------------------------------------------------------------------
+@router.post("/products/{product_id}/images")
+async def admin_create_product_image(product_id: str, req: ProductImageCreate, request: Request) -> Dict[str, Any]:
+    claims = await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    user_id = claims.get("sub")
+
+    payload = req.model_dump()
+    payload["product_id"] = product_id
+    if not SUPABASE_URL:
+        return {"status": "noop", "image": payload}
+    url = f"{SUPABASE_URL}/rest/v1/product_images?select=*"
+    headers = _prefer_headers(token)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Create image failed: {resp.text}")
+        data = resp.json()
+    await _log_audit(token, user_id, "PRODUCT_UPDATE", "product_images", data[0].get("id") if data else None, payload)
+    return {"image": data[0] if data else None}
+
+
+@router.patch("/products/{product_id}/images/{image_id}")
+async def admin_update_product_image(
+    product_id: str, image_id: str, req: ProductImageUpdate, request: Request
+) -> Dict[str, Any]:
+    claims = await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    user_id = claims.get("sub")
+
+    payload = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not payload:
+        return {"status": "noop"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        if payload.get("is_primary") is True:
+            # Exactly one primary per product — see setProductImagePrimary()
+            # in src/app/lib/db.ts for why a stale second primary row is a
+            # real bug, not a harmless duplicate.
+            clear_url = f"{SUPABASE_URL}/rest/v1/product_images?product_id=eq.{product_id}"
+            await client.patch(clear_url, headers=_svc_headers(token, json_body=True), json={"is_primary": False})
+        url = f"{SUPABASE_URL}/rest/v1/product_images?id=eq.{image_id}&product_id=eq.{product_id}&select=*"
+        resp = await client.patch(url, headers=_prefer_headers(token), json=payload)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Update image failed: {resp.text}")
+        data = resp.json()
+    await _log_audit(token, user_id, "PRODUCT_UPDATE", "product_images", image_id, payload)
+    return {"image": data[0] if data else None}
+
+
+@router.delete("/products/{product_id}/images/{image_id}")
+async def admin_delete_product_image(product_id: str, image_id: str, request: Request) -> Dict[str, Any]:
+    claims = await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    user_id = claims.get("sub")
+
+    url = f"{SUPABASE_URL}/rest/v1/product_images?id=eq.{image_id}&product_id=eq.{product_id}"
+    headers = _svc_headers(token)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(url, headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Delete image failed: {resp.text}")
+    await _log_audit(token, user_id, "PRODUCT_UPDATE", "product_images", image_id, {"deleted": True})
+    return {"status": "deleted", "image_id": image_id}
 
 
 # ---------------------------------------------------------------------------

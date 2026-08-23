@@ -241,6 +241,61 @@ export async function getProducts(): Promise<Product[]> {
   return withImages.length ? withImages : mapDemoProducts();
 }
 
+/** Lists the raw `product_images` rows for one product (admin edit view) —
+ * unlike `getProducts()`, this returns every image, not just the flattened
+ * primary one, so an admin can see and manage the full set. */
+export async function getProductImages(productId: string): Promise<
+  { id: string; image_url: string; alt_text: string | null; is_primary: boolean | null; display_order: number | null }[]
+> {
+  if (isMissingSupabase() || !productId) return [];
+  try {
+    const { data, error } = await client()
+      .from("product_images")
+      .select("id, image_url, alt_text, is_primary, display_order")
+      .eq("product_id", productId)
+      .order("is_primary", { ascending: false })
+      .order("display_order", { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  } catch (err) {
+    fallbackWarn("getProductImages (db failed)", err);
+    return [];
+  }
+}
+
+/** Direct-Supabase fallback for adding a product image — mirrors the same
+ * "try the backend admin API first, fall back to direct Supabase" pattern
+ * `ProductDatabase.tsx`'s handleSave already uses for the product row
+ * itself. Relies on the "Staff can manage product images" RLS policy. */
+export async function addProductImage(
+  productId: string,
+  input: { image_url: string; alt_text?: string | null; is_primary?: boolean; display_order?: number },
+): Promise<void> {
+  const { error } = await client()
+    .from("product_images")
+    .insert([{ product_id: productId, ...input }]);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteProductImage(imageId: string): Promise<void> {
+  const { error } = await client().from("product_images").delete().eq("id", imageId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setProductImagePrimary(productId: string, imageId: string): Promise<void> {
+  // Unset any existing primary first so exactly one row stays primary —
+  // pickPrimaryImage() only tie-breaks on the first is_primary row it sees,
+  // so leaving a stale one set would make "which photo is primary" depend
+  // on row order rather than the admin's actual choice.
+  const { error: clearErr } = await client()
+    .from("product_images")
+    .update({ is_primary: false })
+    .eq("product_id", productId);
+  if (clearErr) throw new Error(clearErr.message);
+  const { error } = await client().from("product_images").update({ is_primary: true }).eq("id", imageId);
+  if (error) throw new Error(error.message);
+}
+
 export async function getAllProductsForAdmin(): Promise<Product[]> {
   if (isMissingSupabase()) return mapDemoProducts();
 

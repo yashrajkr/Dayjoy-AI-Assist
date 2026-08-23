@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Package, Plus, Search, Edit, Trash2, CheckCircle, Clock, Upload,
-  Archive, RotateCcw, Loader2, X, Save,
+  Archive, RotateCcw, Loader2, X, Save, Image as ImageIcon, Star,
 } from "lucide-react";
 import {
   type Product,
@@ -10,13 +10,25 @@ import {
   getAllProductsForAdmin,
   setProductApprovalStatus,
   updateProduct,
+  getProductImages,
+  addProductImage,
+  deleteProductImage,
+  setProductImagePrimary,
 } from "../../lib/db";
 import { Modal } from "../common/Modal";
 import { Input, Textarea } from "../ui/input";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
-import { adminCreateProduct, adminUpdateProduct, adminDeleteProduct } from "../../../lib/api";
+import {
+  adminCreateProduct,
+  adminUpdateProduct,
+  adminDeleteProduct,
+  adminCreateProductImage,
+  adminDeleteProductImage,
+  adminUpdateProductImage,
+} from "../../../lib/api";
+import { PRODUCT_CATEGORIES } from "../user/ProductDiscovery";
 
 function StatsCard({ label, value, sublabel }: { label: string; value: string; sublabel: string }) {
   return (
@@ -80,6 +92,27 @@ export function ProductDatabase() {
   const [form, setForm] = useState<ProductFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  // Product images — the approved-media source for both Product Discovery
+  // and the chat Product Visual Intelligence cards. Only manageable once a
+  // product exists (product_images.product_id is a real FK to products.id).
+  const [images, setImages] = useState<
+    { id: string; image_url: string; alt_text: string | null; is_primary: boolean | null; display_order: number | null }[]
+  >([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [newImageAlt, setNewImageAlt] = useState("");
+  const [imageSaving, setImageSaving] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  const loadImages = useCallback(async (productId: string) => {
+    setImagesLoading(true);
+    try {
+      setImages(await getProductImages(productId));
+    } finally {
+      setImagesLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -121,6 +154,10 @@ export function ProductDatabase() {
   const openCreate = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setImages([]);
+    setNewImageUrl("");
+    setNewImageAlt("");
+    setImageError(null);
     setModalOpen(true);
   };
 
@@ -140,7 +177,70 @@ export function ProductDatabase() {
       approval_status: (p.approval_status as "pending" | "approved" | "rejected") ?? "pending",
       is_archived: Boolean(p.is_archived),
     });
+    setNewImageUrl("");
+    setNewImageAlt("");
+    setImageError(null);
+    if (p.id) {
+      void loadImages(p.id);
+    } else {
+      setImages([]);
+    }
     setModalOpen(true);
+  };
+
+  const handleAddImage = async () => {
+    if (!editingId || !newImageUrl.trim()) return;
+    setImageSaving(true);
+    setImageError(null);
+    try {
+      const payload = {
+        image_url: newImageUrl.trim(),
+        alt_text: newImageAlt.trim() || undefined,
+        is_primary: images.length === 0, // first image on a product defaults to primary
+      };
+      try {
+        await adminCreateProductImage(editingId, payload);
+      } catch {
+        await addProductImage(editingId, payload);
+      }
+      setNewImageUrl("");
+      setNewImageAlt("");
+      await loadImages(editingId);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Failed to add image");
+    } finally {
+      setImageSaving(false);
+    }
+  };
+
+  const handleRemoveImage = async (imageId: string) => {
+    if (!editingId) return;
+    setImageError(null);
+    try {
+      try {
+        await adminDeleteProductImage(editingId, imageId);
+      } catch {
+        await deleteProductImage(imageId);
+      }
+      await loadImages(editingId);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Failed to remove image");
+    }
+  };
+
+  const handleSetPrimaryImage = async (imageId: string) => {
+    if (!editingId) return;
+    setImageError(null);
+    try {
+      try {
+        await adminUpdateProductImage(editingId, imageId, { is_primary: true });
+      } catch {
+        await setProductImagePrimary(editingId, imageId);
+      }
+      await loadImages(editingId);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Failed to set primary image");
+    }
   };
 
   const handleSave = async () => {
@@ -415,8 +515,22 @@ export function ProductDatabase() {
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
-              <Input type="text" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full px-3 py-2 h-auto rounded-lg" />
+              {/* A fixed select, not free text — Product Discovery's category
+                  chips filter by exact category value, so a free-typed
+                  category (different casing/spacing, a synonym) silently
+                  fell out of every chip except "All Products". */}
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="">Select a category…</option>
+                {PRODUCT_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Sub-Category</label>
@@ -464,6 +578,84 @@ export function ProductDatabase() {
             <input type="checkbox" checked={form.is_archived} onChange={(e) => setForm({ ...form, is_archived: e.target.checked })} className="rounded" />
             Archive this product (excluded from AI recommendations)
           </label>
+
+          {/* Product photos — the approved-media source for Product
+              Discovery cards and the chat Product Visual Intelligence
+              feature (product_images table). Only available once the
+              product itself has been created (save it first, then reopen
+              Edit to add photos). */}
+          <div className="pt-2 border-t border-border">
+            <label className="block text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+              <ImageIcon className="w-3.5 h-3.5" aria-hidden="true" /> Product Photos
+            </label>
+            {!editingId ? (
+              <p className="text-xs text-muted-foreground">Save this product first, then reopen Edit to add photos.</p>
+            ) : (
+              <>
+                {imageError ? <p className="text-xs text-destructive mb-2">{imageError}</p> : null}
+                {imagesLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading photos…</p>
+                ) : images.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+                    {images.map((img) => (
+                      <div key={img.id} className="relative group rounded-lg overflow-hidden border border-border aspect-square bg-accent/30">
+                        <img src={img.image_url} alt={img.alt_text ?? ""} className="w-full h-full object-cover" loading="lazy" />
+                        {img.is_primary ? (
+                          <span className="absolute top-1 left-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-medium">
+                            <Star className="w-2.5 h-2.5" aria-hidden="true" /> Primary
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void handleSetPrimaryImage(img.id)}
+                            className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-card/90 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            Set primary
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveImage(img.id)}
+                          aria-label="Remove photo"
+                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3 h-3" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground mb-2">No photos yet — customers see a placeholder until one is added.</p>
+                )}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="url"
+                    value={newImageUrl}
+                    onChange={(e) => setNewImageUrl(e.target.value)}
+                    placeholder="https://... image URL"
+                    className="flex-1 px-3 py-2 h-auto rounded-lg"
+                  />
+                  <Input
+                    type="text"
+                    value={newImageAlt}
+                    onChange={(e) => setNewImageAlt(e.target.value)}
+                    placeholder="Alt text (optional)"
+                    className="flex-1 px-3 py-2 h-auto rounded-lg"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!newImageUrl.trim() || imageSaving}
+                    onClick={() => void handleAddImage()}
+                    className="shrink-0"
+                  >
+                    {imageSaving ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Plus className="w-4 h-4" aria-hidden="true" />}
+                    Add
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </Modal>
     </div>

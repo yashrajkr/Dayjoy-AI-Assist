@@ -41,6 +41,16 @@ const categories: string[] = [
   "Lifestyle",
 ];
 
+/** The fixed, non-"All Products" category set — reused by the admin product
+ * editor's category selector so new products can't drift from these filter
+ * chips (see ProductDatabase.tsx). */
+export const PRODUCT_CATEGORIES = categories.slice(1);
+
+/** Trim + lowercase for tolerant category matching (see filteredProducts). */
+function normalizeCategory(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
 type SortKey = "newest" | "name_asc" | "name_desc";
 
 export function ProductDiscovery() {
@@ -110,9 +120,15 @@ export function ProductDiscovery() {
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const selectedCategoryNorm = normalizeCategory(selectedCategory);
     const filtered = products.filter((p) => {
+      // Normalized (trim + case-insensitive) comparison — the admin product
+      // editor stores category as free text, so a real product's category
+      // can differ from these fixed chip labels only in casing/whitespace
+      // (e.g. "agriculture" vs "Agriculture"), which a strict `===` check
+      // would silently exclude from every chip except "All Products".
       const matchesCategory =
-        selectedCategory === "All Products" ? true : p.category === selectedCategory;
+        selectedCategory === "All Products" ? true : normalizeCategory(p.category) === selectedCategoryNorm;
       if (!matchesCategory) return false;
       if (!q) return true;
       const tags = p.problem_tags ?? p.tags ?? null;
@@ -267,14 +283,39 @@ export function ProductDiscovery() {
             </p>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
-            <div className="flex flex-wrap gap-2">
+          {/* Category filter row — its own labeled strip instead of wrapping
+              inline with the sort control, so it reads as one clear control
+              bar instead of a dense, ad-hoc row of mixed elements. Chips
+              scroll horizontally on narrow screens rather than wrapping to
+              extra lines. */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Category
+              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label htmlFor="dj-product-sort" className="text-xs text-muted-foreground hidden sm:inline">
+                  Sort by
+                </label>
+                <select
+                  id="dj-product-sort"
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as SortKey)}
+                  className="text-xs sm:text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="name_asc">Name (A→Z)</option>
+                  <option value="name_desc">Name (Z→A)</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
               {categories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors ${
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors ${
                     selectedCategory === cat
                       ? "bg-primary text-primary-foreground"
                       : "bg-accent text-accent-foreground hover:bg-accent/70"
@@ -285,19 +326,6 @@ export function ProductDiscovery() {
                 </button>
               ))}
             </div>
-            <label htmlFor="dj-product-sort" className="sr-only">
-              Sort
-            </label>
-            <select
-              id="dj-product-sort"
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="text-xs sm:text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              <option value="newest">Sort: Newest</option>
-              <option value="name_asc">Sort: Name (A→Z)</option>
-              <option value="name_desc">Sort: Name (Z→A)</option>
-            </select>
           </div>
         </Card>
 
@@ -353,23 +381,27 @@ export function ProductDiscovery() {
                   <ProductCardImage src={p.image_url} name={p.product_name} />
 
                   <div className="p-4 flex flex-col flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <Badge variant="default">{p.category}</Badge>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <Badge variant="default" className="truncate max-w-[70%]">{p.category}</Badge>
                       <CheckCircle2
-                        className="w-5 h-5 text-primary"
+                        className="w-5 h-5 text-primary shrink-0"
                         aria-label="Approved"
                       />
                     </div>
 
-                    <h3 className="text-base font-semibold">{p.product_name}</h3>
+                    <h3 className="text-base font-semibold leading-snug">{p.product_name}</h3>
                     {p.brand ? (
-                      <p className="text-xs text-muted-foreground mb-2">{p.brand}</p>
-                    ) : null}
+                      <p className="text-xs text-muted-foreground mt-0.5 mb-2">{p.brand}</p>
+                    ) : (
+                      <div className="mb-2" />
+                    )}
                     {p.benefits ? (
-                      <p className="text-sm mb-3 line-clamp-2 text-muted-foreground">{p.benefits}</p>
-                    ) : null}
+                      <p className="text-sm mb-3 line-clamp-2 text-muted-foreground flex-1">{p.benefits}</p>
+                    ) : (
+                      <div className="flex-1" />
+                    )}
 
-                    <div className="flex gap-2 mt-auto">
+                    <div className="flex gap-2 mt-auto pt-1">
                       <Button type="button" onClick={() => openDetail(p)} className="flex-1 rounded-xl">
                         <Eye className="w-4 h-4" aria-hidden="true" /> Details
                       </Button>
@@ -445,7 +477,7 @@ export function ProductDiscovery() {
               <img
                 src={detail.image_url}
                 alt={detail.product_name}
-                className="w-full h-40 object-cover rounded-xl border border-border"
+                className="w-full aspect-[4/3] object-cover rounded-xl border border-border"
                 loading="lazy"
               />
             ) : null}
@@ -471,6 +503,18 @@ export function ProductDiscovery() {
                 <p className="text-sm">{detail.safety_note}</p>
               </div>
             ) : null}
+            {/* Distinct from safety_note above — warnings covers stronger
+                contraindication-style callouts (e.g. "not for pregnant
+                women"), previously stored on every product but never shown
+                anywhere in the UI. */}
+            {detail.warnings ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-xs font-semibold text-destructive uppercase tracking-wide mb-1">
+                  Warnings
+                </p>
+                <p className="text-sm">{detail.warnings}</p>
+              </div>
+            ) : null}
             {detail.problem_tags?.length ? (
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Tags</p>
@@ -481,6 +525,13 @@ export function ProductDiscovery() {
                     </Badge>
                   ))}
                 </div>
+              </div>
+            ) : null}
+            <ProductFaqs faqsJson={detail.faqs_json} />
+            {(detail.sku || detail.source) ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-border text-[11px] text-muted-foreground">
+                {detail.sku ? <span>SKU: {detail.sku}</span> : null}
+                {detail.source ? <span>Source: {detail.source}</span> : null}
               </div>
             ) : null}
           </div>
@@ -569,9 +620,13 @@ export function ProductDiscovery() {
 function ProductCardImage({ src, name }: { src?: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
 
+  // A fixed 4:3 aspect-ratio box (not a flat fixed height) keeps every card
+  // the same shape regardless of the source photo's dimensions, so the grid
+  // stays visually aligned instead of cards cropping tall images awkwardly
+  // or leaving letterboxed gaps around short ones.
   if (!src || failed) {
     return (
-      <div className="h-28 bg-gradient-to-br from-accent to-card-beige flex items-center justify-center px-4">
+      <div className="aspect-[4/3] bg-gradient-to-br from-accent to-card-beige flex items-center justify-center px-4">
         <span
           className="text-xl font-semibold text-primary text-center leading-tight"
           style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
@@ -583,7 +638,7 @@ function ProductCardImage({ src, name }: { src?: string | null; name: string }) 
   }
 
   return (
-    <div className="h-28 bg-accent/30 flex items-center justify-center overflow-hidden">
+    <div className="aspect-[4/3] bg-accent/30 flex items-center justify-center overflow-hidden">
       <img
         src={src}
         alt={name}
@@ -600,6 +655,37 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
       <p>{value}</p>
+    </div>
+  );
+}
+
+/** Renders `Product.faqs_json` (previously stored but never shown anywhere
+ * in the product Details view). Shape isn't strictly typed on the product
+ * record, so this tolerates the two forms it's realistically stored in: an
+ * array of {question, answer} pairs, or a plain {question: answer} map. */
+function ProductFaqs({ faqsJson }: { faqsJson?: Record<string, unknown> | null }) {
+  if (!faqsJson) return null;
+
+  const entries: { question: string; answer: string }[] = Array.isArray(faqsJson)
+    ? (faqsJson as unknown[])
+        .filter((e): e is { question?: unknown; answer?: unknown } => !!e && typeof e === "object")
+        .map((e) => ({ question: String(e.question ?? ""), answer: String(e.answer ?? "") }))
+        .filter((e) => e.question && e.answer)
+    : Object.entries(faqsJson).map(([q, a]) => ({ question: q, answer: String(a) }));
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">FAQs</p>
+      <div className="space-y-2">
+        {entries.map((e, i) => (
+          <div key={i} className="rounded-lg border border-border bg-accent/20 p-3">
+            <p className="text-sm font-medium">{e.question}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{e.answer}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

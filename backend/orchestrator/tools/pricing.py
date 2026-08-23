@@ -21,6 +21,8 @@ import re
 from datetime import date
 from typing import Any, Dict, Optional
 
+from .product_media import PRODUCT_IMAGES_EMBED, pick_primary_image
+
 # Rows whose verification_status doesn't start with "verified" are treated
 # as untrustworthy for a structured lookup — mirrors the same defensive
 # pattern main.py's SEARCH_TABLES uses for compensation_rules (excluding
@@ -41,7 +43,7 @@ async def _best_matching_product(token: Optional[str], message: str) -> Optional
     rows = await backend_main.supabase_select(
         token,
         "products",
-        columns="product_id,product_name,category",
+        columns=f"id,product_id,product_name,category,{PRODUCT_IMAGES_EMBED}",
         filters={"approval_status": "approved"},
         limit=1000,
     )
@@ -94,6 +96,7 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
 
     trusted.sort(key=lambda r: str(r.get("effective_from") or ""), reverse=True)
     top = trusted[0]
+    image = pick_primary_image(product.get("product_images"))
     return {
         "found": True,
         "product_name": product.get("product_name"),
@@ -104,4 +107,6 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
         "pv": top.get("pv"),
         "currency": top.get("currency"),
         "effective_from": top.get("effective_from"),
+        "image_url": image["image_url"] if image else None,
+        "image_alt": image["alt_text"] if image else None,
     }

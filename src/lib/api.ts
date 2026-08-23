@@ -177,6 +177,11 @@ export type ChatProductCard = {
     pv?: number | null;
     currency?: string | null;
   } | null;
+  /** Approved primary photo, resolved server-side from the `product_images`
+   * table (see backend/orchestrator/tools/product_media.py) — null when the
+   * product has none. Never a client- or LLM-supplied URL. */
+  image_url?: string | null;
+  image_alt?: string | null;
 };
 
 const API_BASE_URL: string =
@@ -1106,6 +1111,46 @@ export async function adminDeleteProduct(productId: string): Promise<{ status: s
   const headers = await ragHeaders();
   const res = await fetch(`${getApiBaseUrl()}/admin/products/${productId}`, { method: "DELETE", headers });
   if (!res.ok) throw new Error(`Delete product failed (${res.status})`);
+  return await res.json();
+}
+
+/** A single product photo row (product_images table) — the approved-media
+ * source for both Product Discovery and the chat Product Visual
+ * Intelligence cards (see backend/orchestrator/tools/product_media.py). */
+export type AdminProductImage = {
+  id: string;
+  product_id: string;
+  image_url: string;
+  alt_text?: string | null;
+  is_primary?: boolean | null;
+  display_order?: number | null;
+};
+
+/** Product images — add. */
+export async function adminCreateProductImage(
+  productId: string,
+  payload: { image_url: string; alt_text?: string; is_primary?: boolean; display_order?: number },
+): Promise<{ image: AdminProductImage | null }> {
+  return adminJson("POST", `/admin/products/${productId}/images`, payload);
+}
+
+/** Product images — update (e.g. set as primary). */
+export async function adminUpdateProductImage(
+  productId: string,
+  imageId: string,
+  payload: Partial<{ alt_text: string; is_primary: boolean; display_order: number }>,
+): Promise<{ image: AdminProductImage | null }> {
+  return adminJson("PATCH", `/admin/products/${productId}/images/${imageId}`, payload);
+}
+
+/** Product images — remove. */
+export async function adminDeleteProductImage(productId: string, imageId: string): Promise<{ status: string }> {
+  const headers = await ragHeaders();
+  const res = await fetch(`${getApiBaseUrl()}/admin/products/${productId}/images/${imageId}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (!res.ok) throw new Error(`Delete product image failed (${res.status})`);
   return await res.json();
 }
 

@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Dict, List, Optional, Set
 
+from .product_media import PRODUCT_IMAGES_EMBED, pick_primary_image
+
 _TRUSTED_PRICE_STATUS_PREFIX = "verified"
 _MIN_CONDITION_MATCH_SCORE = 1  # at least 1 overlapping non-stopword token — many real
 # condition entries are a single word ("Anxiety", "Aging"), so requiring 2+ would make
@@ -191,6 +193,9 @@ def _bundle_product(
         "alternative_product_ids": relationships.get("alternative_product_ids", []),
         "complementary_product_ids": relationships.get("complementary_product_ids", []),
     }
+    image = pick_primary_image(product_row.get("product_images"))
+    bundle["image_url"] = image["image_url"] if image else None
+    bundle["image_alt"] = image["alt_text"] if image else None
     if price_row:
         bundle["price"] = {
             "mrp": price_row.get("mrp"),
@@ -273,9 +278,9 @@ async def run(token: Optional[str], message: str, max_results: int = 3) -> Dict[
             token,
             "products",
             columns=(
-                "product_id,product_name,category,benefits,problem_tags,usage,dosage,"
+                "id,product_id,product_name,category,benefits,problem_tags,usage,dosage,"
                 "who_can_use,contraindications,safety_note,verification_status,"
-                "last_verified,source_document,approval_status"
+                f"last_verified,source_document,approval_status,{PRODUCT_IMAGES_EMBED}"
             ),
             filters={"product_id": product_id, "approval_status": "approved"},
             limit=1,

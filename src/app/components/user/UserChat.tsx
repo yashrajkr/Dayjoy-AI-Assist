@@ -92,6 +92,7 @@ import {
   setMessageFeedback,
   deriveTitle,
   hasDefaultTitle,
+  sortConversations,
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
@@ -638,14 +639,44 @@ function AnswerContent({ content }: { content: string }) {
  * product_cards), never from RAG/LLM text, so every field here is safe to
  * show as fact rather than AI-generated content.
  */
-function ProductCard({ product }: { product: ChatProductCard }) {
+/**
+ * Product photo slot for a chat ProductCard — the approved image resolved
+ * server-side (product.image_url, from product_images via
+ * backend/orchestrator/tools/product_media.py), falling back to the generic
+ * package icon when there's no image or it fails to load. Never shows a
+ * broken-image icon, and never substitutes a non-approved image.
+ */
+function ProductCardPhoto({ src, alt }: { src?: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-primary/10 text-primary shrink-0">
+        <Package className="w-4 h-4" aria-hidden="true" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-11 h-11 rounded-lg overflow-hidden border border-border shrink-0 bg-accent/40">
+      <img
+        src={src}
+        alt={alt}
+        className="w-full h-full object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
+function ProductCard({ product, hideImage = false }: { product: ChatProductCard; hideImage?: boolean }) {
   const price = product.price;
   return (
     <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
       <div className="flex items-start gap-2">
-        <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 text-primary shrink-0">
-          <Package className="w-3.5 h-3.5" aria-hidden="true" />
-        </div>
+        <ProductCardPhoto
+          src={hideImage ? null : product.image_url}
+          alt={product.image_alt || product.product_name || "Dayjoy product"}
+        />
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-foreground truncate">{product.product_name ?? "Dayjoy product"}</div>
           {product.matched_condition ? (
@@ -1093,7 +1124,7 @@ export function UserChat() {
 
         conv = createdConv;
         convId = createdConv.id;
-        setConversations((prev) => [createdConv, ...prev]);
+        setConversations((prev) => sortConversations([createdConv, ...prev]));
         setActiveConv(createdConv);
         navigate(`/chat/${createdConv.id}`);
       }
@@ -1793,7 +1824,7 @@ export function UserChat() {
   const handlePin = useCallback(async (id: string, pinned: boolean) => {
     await pinConversation(id, pinned);
     setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, pinned } : c)),
+      sortConversations(prev.map((c) => (c.id === id ? { ...c, pinned } : c))),
     );
   }, []);
 
@@ -2689,12 +2720,32 @@ export function UserChat() {
               </div>
             ) : (
               <>
-                {messages.map((m) => {
+                {messages.map((m, idx) => {
                   const key = m.id ?? `${m.role}-${m.created_at}`;
+                  // De-dup: if the immediately preceding assistant message
+                  // already showed a product's image, an immediate follow-up
+                  // about the same product ("what are its benefits?") skips
+                  // re-showing that image — text-only is enough on a direct
+                  // follow-up, avoiding an image-per-message wall for a
+                  // multi-turn conversation about one product.
+                  let prevProductIds: Set<string> | undefined;
+                  if (m.role === "assistant") {
+                    for (let j = idx - 1; j >= 0; j--) {
+                      const prev = messages[j];
+                      if (prev.role !== "assistant") continue;
+                      if (prev.products && prev.products.length > 0) {
+                        prevProductIds = new Set(
+                          prev.products.map((p) => p.product_id).filter((id): id is string => !!id),
+                        );
+                      }
+                      break;
+                    }
+                  }
                   return (
                     <MessageBubble
                       key={key}
                       message={m}
+                      dedupeProductIds={prevProductIds}
                       onFeedback={handleFeedback}
                       onCopy={handleCopy}
                       copiedId={copiedId}
@@ -3114,19 +3165,25 @@ export function UserChat() {
                   )}
                 </div>
               </div>
-              {/* Attachments preview row */}
+              {/* Attachments preview row — scroll-snap so it settles on a
+                  whole thumbnail instead of stopping mid-crop, plus a bit
+                  more breathing room than the previous raw overflow strip. */}
               {attachments.length > 0 ? (
-                <div className="flex gap-2 px-3 pb-2 overflow-x-auto">
+                <div
+                  className="flex gap-2.5 px-3 pb-2.5 overflow-x-auto scrollbar-thin"
+                  style={{ scrollSnapType: "x proximity" }}
+                >
                   {attachments.map((att, idx) => (
                     <div
                       key={`${att.name}-${idx}`}
-                      className="relative w-14 h-14 rounded-lg overflow-hidden border border-border shrink-0 group"
+                      className="relative w-16 h-16 rounded-xl overflow-hidden border border-border shrink-0 group shadow-sm"
+                      style={{ scrollSnapAlign: "start" }}
                     >
                       <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
-                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity"
                         aria-label={`Remove ${att.name}`}
                       >
                         <Trash2 className="w-3 h-3" aria-hidden="true" />
@@ -3682,7 +3739,10 @@ export function UserChat() {
               onChange={(e) => setModeSearch(e.target.value)}
               placeholder="Search modes..."
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-              autoFocus
+              // Autofocus opens the on-screen keyboard on mobile, shrinking
+              // the visible area before the user has even seen the mode
+              // list — desktop keeps it since there's no keyboard to fight.
+              autoFocus={!isMobile}
             />
           </div>
           <div className="space-y-1" role="listbox" aria-label="AI modes">
@@ -4051,6 +4111,7 @@ function MessageBubble({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
+  dedupeProductIds,
 }: {
   message: ChatMessage;
   onFeedback: (id: string | undefined, rating: "up" | "down") => void;
@@ -4071,6 +4132,10 @@ function MessageBubble({
   onStartEdit?: (message: ChatMessage) => void;
   onSaveEdit?: (message: ChatMessage) => void;
   onCancelEdit?: () => void;
+  /** product_ids already shown with an image in the immediately preceding
+   * assistant message — see the de-dup comment at the messages.map call
+   * site. */
+  dedupeProductIds?: Set<string>;
 }) {
   const isUser = message.role === "user";
   const bubbleId = message.id ?? `temp-${message.created_at}`;
@@ -4266,7 +4331,11 @@ function MessageBubble({
           {message.products && message.products.length > 0 ? (
             <div className="not-prose mb-2 flex flex-col gap-2">
               {message.products.map((p, i) => (
-                <ProductCard key={p.product_id ?? i} product={p} />
+                <ProductCard
+                  key={p.product_id ?? i}
+                  product={p}
+                  hideImage={!!p.product_id && !!dedupeProductIds?.has(p.product_id)}
+                />
               ))}
             </div>
           ) : null}

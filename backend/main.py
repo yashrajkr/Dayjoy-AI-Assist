@@ -1031,6 +1031,11 @@ async def _route_events(
                             "pv": pricing_data.get("pv"),
                             "currency": pricing_data.get("currency"),
                         },
+                        # Approved primary photo from product_images, resolved
+                        # by tools/pricing.py — None when the product has no
+                        # image, never fabricated (see product_media.py).
+                        "image_url": pricing_data.get("image_url"),
+                        "image_alt": pricing_data.get("image_alt"),
                     }],
                 ),
             )

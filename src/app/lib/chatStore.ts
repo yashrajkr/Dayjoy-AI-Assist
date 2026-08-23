@@ -58,6 +58,23 @@ const memoryConversations: Conversation[] = [];
 const memoryMessages: ChatMessage[] = [];
 
 /**
+ * Canonical client-side ordering for conversation lists — pinned first, then
+ * most-recently-updated. Mirrors the server-side `.order("pinned")
+ * .order("updated_at")` in `listConversations` below. Re-run this after
+ * *any* local mutation of a conversations array (pin/unpin, new-conversation
+ * unshift, title update) — skipping it is what let a freshly-created chat
+ * jump above a pinned one until the next refetch re-sorted things.
+ */
+export function sortConversations(list: Conversation[]): Conversation[] {
+  return [...list].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    const at = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+    const bt = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    return bt - at;
+  });
+}
+
+/**
  * Lists a user's conversations, excluding archived ones by default (archive
  * only had a client-side effect for the rest of the session — after a
  * reload, archived conversations reappeared here since nothing filtered

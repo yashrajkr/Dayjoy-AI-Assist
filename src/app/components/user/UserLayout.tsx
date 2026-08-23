@@ -50,7 +50,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
-import { listConversations, pinConversation, archiveConversation, deleteConversation, type Conversation } from "../../lib/chatStore";
+import { listConversations, pinConversation, archiveConversation, deleteConversation, sortConversations, type Conversation } from "../../lib/chatStore";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -125,7 +125,7 @@ export function UserLayout() {
   }, [currentUser?.id, location.pathname]);
 
   const handlePinChat = async (id: string, pinned: boolean) => {
-    setRecentChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned } : c)));
+    setRecentChats((prev) => sortConversations(prev.map((c) => (c.id === id ? { ...c, pinned } : c))));
     await pinConversation(id, pinned);
   };
 
@@ -225,7 +225,7 @@ export function UserLayout() {
             out, ...) on mobile, since Business Hub's own drawer only lists
             its sections. */}
         {!useChatOwnHeader ? (
-          <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border">
+          <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between px-4 glass border-b border-border shadow-sm">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
@@ -551,7 +551,13 @@ export function UserLayout() {
   );
 }
 
-/** Buckets conversations into Today / Yesterday / Previous 7 days / Older groups. */
+/**
+ * Buckets conversations into Pinned / Today / Yesterday / Previous 7 days /
+ * Older groups. Pinned chats get their own leading bucket instead of being
+ * mixed into whichever date group they happen to fall into — otherwise a
+ * pinned chat from yesterday could still render below today's chats, even
+ * though the pin icon and the sidebar's whole point is to keep it on top.
+ */
 function groupChatsByDate(chats: Conversation[]): { label: string; items: Conversation[] }[] {
   const now = new Date();
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -560,6 +566,7 @@ function groupChatsByDate(chats: Conversation[]): { label: string; items: Conver
   const weekAgo = today - 7 * 86400000;
 
   const buckets: Record<string, Conversation[]> = {
+    Pinned: [],
     Today: [],
     Yesterday: [],
     "Previous 7 days": [],
@@ -567,6 +574,10 @@ function groupChatsByDate(chats: Conversation[]): { label: string; items: Conver
   };
 
   for (const c of chats) {
+    if (c.pinned) {
+      buckets.Pinned.push(c);
+      continue;
+    }
     const ts = c.updated_at ?? c.created_at;
     const day = ts ? startOfDay(new Date(ts)) : today;
     if (day >= today) buckets.Today.push(c);

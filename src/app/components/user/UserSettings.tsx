@@ -17,6 +17,7 @@ import {
   Flag,
   Info,
   LogOut,
+  Download,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/AuthContext";
@@ -28,6 +29,7 @@ import { AccountMenuItems } from "../common/AccountMenu";
 import { DropdownMenu, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
 import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
+import { useInstallPrompt } from "../../lib/useInstallPrompt";
 import { SettingsSection, SettingsRow } from "./settings/SettingsUI";
 
 type Language = "English" | "Hindi" | "Hinglish";
@@ -41,6 +43,7 @@ export function UserSettings() {
   const { currentUser, role, logout } = useAuth();
   const { theme } = useTheme();
   const { mode: chatExperienceMode } = useChatExperience();
+  const { canInstall, installed, promptInstall } = useInstallPrompt();
 
   const displayName = currentUser?.user_metadata?.full_name
     ? String(currentUser.user_metadata.full_name)
@@ -177,6 +180,22 @@ export function UserSettings() {
             <SettingsRow icon={ShieldCheck} label="Data controls" onClick={() => navigate("/settings/privacy")} />
             <SettingsRow icon={KeyRound} label="Security & login" onClick={() => navigate("/settings/security")} />
           </SettingsSection>
+
+          {/* Only shown when the browser actually supports install-on-demand
+              and it isn't already installed — otherwise this row would be
+              dead weight (desktop Safari, or an already-installed PWA).
+              Full install details still live on the About page below. */}
+          {canInstall && !installed ? (
+            <SettingsSection label="App">
+              <SettingsRow
+                icon={Download}
+                label={`Install ${BRAND.shortName}`}
+                description="Add to your home screen for faster, full-screen access"
+                onClick={() => void promptInstall()}
+                chevron={false}
+              />
+            </SettingsSection>
+          ) : null}
 
           <SettingsSection label="Support">
             <SettingsRow icon={LifeBuoy} label="Help & Support" onClick={() => navigate("/support")} />
