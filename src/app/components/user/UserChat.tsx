@@ -56,6 +56,8 @@ import {
   Ghost,
   Mic,
   Pencil,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -386,6 +388,7 @@ export function UserChat() {
   const [findQuery, setFindQuery] = useState("");
   const [findMatchIndex, setFindMatchIndex] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
@@ -1013,6 +1016,44 @@ export function UserChat() {
     }
   }, []);
 
+  // ---- Read a single assistant reply aloud (independent of hands-free Voice mode) ----
+  const handleSpeakMessage = useCallback(
+    (text: string, id: string) => {
+      if (speakingId === id) {
+        voice.stopSpeaking();
+        setSpeakingId(null);
+        return;
+      }
+      voice.stopSpeaking();
+      setSpeakingId(id);
+      voice.speak(text);
+    },
+    [speakingId, voice],
+  );
+
+  useEffect(() => {
+    if (!voice.speaking && speakingId) setSpeakingId(null);
+  }, [voice.speaking, speakingId]);
+
+  // ---- Share a single assistant reply (native share sheet, falling back to clipboard) ----
+  const handleShareMessage = useCallback(async (text: string, id: string) => {
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text, title: `${BRAND.shortName} answer` });
+        return;
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // ---- Edit-and-resend a sent user message ----
   const handleStartEdit = useCallback((m: ChatMessage) => {
     setEditingMessageKey(m.id ?? `${m.role}-${m.created_at}`);
@@ -1393,7 +1434,14 @@ export function UserChat() {
             />
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin" aria-label="Conversations">
+        {filteredConversations.length > 0 ? (
+          <div className="px-4 pt-3 pb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">
+              Recent
+            </span>
+          </div>
+        ) : null}
+        <nav className="flex-1 overflow-y-auto p-2 pt-1 space-y-1 scrollbar-thin" aria-label="Conversations">
           {filteredConversations.length === 0 ? (
             <div className="text-center py-10 px-4">
               <div className="inline-flex w-10 h-10 rounded-xl bg-accent/60 items-center justify-center mb-2">
@@ -1432,9 +1480,9 @@ export function UserChat() {
                       <Pin className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" aria-hidden="true" />
                     ) : null}
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium truncate">{c.title}</span>
+                      <span className="block text-sm font-medium text-foreground truncate">{c.title}</span>
                       {c.updated_at ? (
-                        <span className="block text-[11px] text-muted-foreground">
+                        <span className="block text-[11px] text-foreground/55">
                           {formatTimestamp(c.updated_at)}
                         </span>
                       ) : null}
@@ -2040,6 +2088,9 @@ export function UserChat() {
                           ? handleRegenerate
                           : undefined
                       }
+                      onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
+                      speakingId={speakingId}
+                      onShare={handleShareMessage}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -2171,7 +2222,7 @@ export function UserChat() {
                 rows={1}
                 maxLength={4000}
                 disabled={sending}
-                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-base focus:outline-none disabled:opacity-60"
+                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-base placeholder:text-muted-foreground/80 placeholder:font-normal focus:outline-none disabled:opacity-60"
                 aria-label={`Ask ${BRAND.shortName} about Dayjoy products, policies, or training`}
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
@@ -3235,6 +3286,9 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  onSpeak,
+  speakingId,
+  onShare,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -3247,6 +3301,9 @@ function MessageBubble({
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  onSpeak?: (text: string, id: string) => void;
+  speakingId?: string | null;
+  onShare?: (text: string, id: string) => void;
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -3464,6 +3521,25 @@ function MessageBubble({
           {onRegenerate ? (
             <ActionButton onClick={onRegenerate} label="Regenerate">
               <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+            </ActionButton>
+          ) : null}
+          {onSpeak ? (
+            <ActionButton
+              onClick={() => onSpeak(message.content, bubbleId)}
+              label={speakingId === bubbleId ? "Stop" : "Read aloud"}
+              active={speakingId === bubbleId}
+              activeColor="primary"
+            >
+              {speakingId === bubbleId ? (
+                <VolumeX className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+            </ActionButton>
+          ) : null}
+          {onShare ? (
+            <ActionButton onClick={() => onShare(message.content, bubbleId)} label="Share">
+              <Share2 className="w-3.5 h-3.5" aria-hidden="true" />
             </ActionButton>
           ) : null}
         </div>

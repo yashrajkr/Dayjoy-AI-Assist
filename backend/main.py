@@ -1336,6 +1336,11 @@ SYSTEM_PROMPT = (
     "Answer naturally and directly — do NOT add meta-commentary about where the information came "
     "from (e.g. \"this is based on a web search\", \"according to my search results\"). The "
     "application shows source attribution to the user separately; your job is just the answer.\n\n"
+    "The context below is raw retrieved material — it may contain several separate FAQ/product "
+    "entries, some in a literal \"Q: ... A: ...\" shorthand. NEVER paste multiple retrieved "
+    "entries back as your answer, and never keep the \"Q:\"/\"A:\" labels — pick only what's "
+    "relevant to THIS question and rewrite it as one short, natural, conversational answer, the "
+    "way a knowledgeable person would say it out loud.\n\n"
     "Language: you are fully fluent in English, Hindi (Devanagari script), and Hinglish "
     "(Hindi written in Latin letters). You can and must respond in whichever of these the user "
     "asks for — never say you are unable to reply in Hindi or Hinglish. Match the script the "
@@ -1637,8 +1642,15 @@ async def stream_response(
         bool(GROQ_API_KEY), bool(OPENAI_API_KEY),
     )
     if already_grounded and context:
+        # Structured lookups (pricing/recommendation) can still concatenate
+        # several product blocks (see _format_recommendation_context) when
+        # more than one match was found — only the first is the direct
+        # answer to a single-item question, so cap this branch to one block
+        # the same way the lexical-scoring path below does, instead of
+        # dumping every block verbatim.
         cleaned = _BRACKET_HEADER_LINE_RE.sub(r"\1", context).strip()
-        yield f"{cleaned}\n\nFor a more specific answer, please contact Dayjoy support."
+        first_block = re.split(r"\n\s*---\s*\n", cleaned, maxsplit=1)[0].strip()
+        yield f"{first_block}\n\nFor a more specific answer, please contact Dayjoy support."
         return
     best_block = _best_matching_block(context, message) if context else None
     if best_block:

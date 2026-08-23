@@ -97,6 +97,30 @@ numeric/version order (`scripts/run_migrations.sh`).
   image-processing package in this project). `public/favicon.png` is a pre-baked static
   copy of the same processed image for the browser-tab icon / PWA manifest, since those
   load before any app JS runs and can't use the runtime hook.
+- **If chat answers ever come back as raw "Q: ... A: ..." blocks concatenated together**
+  (looks like a dumped FAQ table instead of one written answer), that's the no-LLM-available
+  degraded fallback in `stream_response()` (`backend/main.py`) being hit in production —
+  meaning both `GROQ_API_KEY` and `OPENAI_API_KEY` failed or are unset in that deployment.
+  Check server logs for `"Both Groq and OpenAI unavailable"` (logged at `_llm_logger.error`)
+  before assuming it's a prompt/UI bug. `SYSTEM_PROMPT` already has an explicit instruction
+  against pasting raw retrieved Q&A entries verbatim, as a second line of defense for when the
+  LLM *is* reachable — retrieved knowledge-base source documents are themselves authored in a
+  literal "Q: ... A: ..." shorthand (see `backend/tests/test_adversarial_wrong_context.py`),
+  so that's expected in the raw context and must be synthesized away, not blocked upstream.
+- Conversation titles start as a truncated first message (`deriveTitle` in `chatStore.ts`)
+  and are upgraded to an AI-generated summary shortly after via `generateConversationTitle()`
+  (`/chat/title`) — if titles are staying as the raw first message forever, that's the same
+  LLM-unavailable condition above, not a bug in the retitle logic itself.
+- Per-message action bar on assistant replies (`MessageBubble` in `UserChat.tsx`) has Copy,
+  Helpful/Not helpful, Regenerate (last message only), Read aloud (`onSpeak`, gated on
+  `voice.ttsSupported`), and Share (`onShare`, native share sheet → clipboard fallback). User
+  messages have hover-revealed Edit (resends from that point, dropping the tail) and Copy.
+  Add new per-message actions here, following the existing `ActionButton` pattern, rather than
+  building a separate action surface.
+- Two separate conversation-list surfaces exist and were both tuned for text contrast
+  together — keep them in sync if you touch one: the drawer's recent-chats list grouped by
+  date (`groupChatsByDate`/`NavGroup` in `UserLayout.tsx`) and the in-chat History panel's
+  conversation nav (`aria-label="Conversations"` in `UserChat.tsx`).
 
 ## Where to look for existing docs
 
