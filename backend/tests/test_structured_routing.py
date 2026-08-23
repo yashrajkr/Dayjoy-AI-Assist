@@ -496,3 +496,26 @@ def test_ambiguous_which_product_is_best_asks_before_any_lookup(authed_client, m
     assert pricing_calls == []
     assert recommend_calls == []
     assert rag_calls == []
+
+
+def test_refinement_loop_does_not_fire_without_retrieved_evidence(authed_client, monkeypatch):
+    """Feature: Answer Refinement Loop — must never fire when route.context
+    is empty (no evidence retrieved), even if the answer scores low on the
+    deterministic quality heuristic. Regression test for a real bug caught
+    during development: a thin/short mocked answer with empty context was
+    triggering a second (unwanted) stream_response call."""
+    monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context("", category="general"))
+
+    call_count = {"n": 0}
+
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
+        call_count["n"] += 1
+        yield "short"
+
+    monkeypatch.setattr(backend_main, "stream_response", _spy)
+
+    res = authed_client.post(
+        "/chat", json={"message": "Tell me about Dayjoy.", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    assert call_count["n"] == 1  # no refinement retry — no evidence to refine against

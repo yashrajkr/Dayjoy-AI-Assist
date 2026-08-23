@@ -493,6 +493,13 @@ from backend.orchestrator.context_compress import ContextBlock, compress_context
 # queries the regex pass can't handle.
 from backend.orchestrator.rewrite_llm import llm_rewrite_for_retrieval, should_llm_rewrite  # noqa: E402
 
+# Conversation Continuity Engine (Advanced Intelligence Layer capability 7).
+from backend.orchestrator.conversation_state import build_conversation_state  # noqa: E402
+
+# Answer Refinement Loop (Advanced Intelligence Layer capability 10).
+from backend.orchestrator.quality import score_answer  # noqa: E402
+from backend.orchestrator.refinement import build_refinement_instruction, needs_refinement  # noqa: E402
+
 # Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
 # Intelligence Layer capabilities 1-2).
 from backend.orchestrator.quality_router import route_query  # noqa: E402
@@ -549,7 +556,12 @@ from backend.orchestrator.tools.memory import list_memory  # noqa: E402
 # Adaptive response formatting — "answer in short" / "give me steps" /
 # "compare X and Y" get a matching structural instruction instead of the
 # model always answering in one fixed shape regardless of what was asked.
-from backend.orchestrator.format_intent import example_instruction, format_instruction  # noqa: E402
+from backend.orchestrator.format_intent import (  # noqa: E402
+    FORMAT_ACTION_PLAN,
+    detect_format,
+    example_instruction,
+    format_instruction,
+)
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -1434,7 +1446,14 @@ async def _maybe_personalization_context(
     if role == "distributor" and wants_business_data(message):
         business_snapshot = await _fetch_business_snapshot(token, user_id)
 
-    if not memory_items and not business_snapshot:
+    # Conversation Continuity Engine (orchestrator/conversation_state.py) —
+    # fills the conversation_summary field context_builder.py already had a
+    # rendering path for but nothing ever computed. Cheap/pure over the same
+    # `history` already in scope, so it's fine to compute even when memory/
+    # business data end up empty — it alone can justify returning a block.
+    conversation_summary = build_conversation_state(history).to_summary() or None
+
+    if not memory_items and not business_snapshot and not conversation_summary:
         return ""
     # Top 3 memory items by the tool's own recency+pinned score — not the
     # full 20-item cap `list_memory` allows, per "don't inject all memory
@@ -1442,6 +1461,7 @@ async def _maybe_personalization_context(
     return build_context(
         user_memory_items=(memory_items or [])[:3],
         business_data=business_snapshot,
+        conversation_summary=conversation_summary,
     ).to_prompt_blocks()
 
 
@@ -2040,6 +2060,38 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                         answer_mismatch = True
                 else:
                     answer_mismatch = True
+                already_retried = True
+            else:
+                already_retried = False
+        else:
+            already_retried = False
+
+        # Answer Refinement Loop (orchestrator/refinement.py) — a SEPARATE,
+        # bounded-to-one check from the relevance-mismatch retry above;
+        # `already_retried` ensures a response is never regenerated twice.
+        # Also requires `route.context` (real retrieved evidence) — with no
+        # evidence, refining can't improve anything (the model has nothing
+        # more to draw from; the existing evidence_insufficient/handoff
+        # logic already covers that case) — and, just as importantly,
+        # avoids treating a deliberately short, correct answer (e.g. the
+        # user explicitly asked for FORMAT_SHORT) as "too thin" just
+        # because the completeness heuristic is length-based.
+        if not already_retried and answer and route.context:
+            draft_score = score_answer(
+                req.message, answer, answer_source=route.answer_source,
+                sources=route.sources, intent_wants_action=detect_format(req.message) == FORMAT_ACTION_PLAN,
+            )
+            if needs_refinement(draft_score, route.answer_source, already_retried):
+                refine_context = full_context + "\n\n" + build_refinement_instruction(draft_score)
+                refine_parts: List[str] = []
+                async for tok in stream_response(
+                    req.message, history, refine_context, req.language, route.mode, custom_guidance,
+                    ai_mode=ai_mode,
+                ):
+                    refine_parts.append(tok)
+                refined = "".join(refine_parts).strip()
+                if refined:
+                    answer = refined
     t_after_verification = time.monotonic()
 
     confidence, verification_status = _compute_confidence(casual, route)
