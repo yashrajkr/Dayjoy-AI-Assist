@@ -85,7 +85,7 @@ def test_short_answer_request_reaches_custom_guidance(authed_client, monkeypatch
 
     guidance_seen: list = []
 
-    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False):
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
         guidance_seen.append(custom_guidance)
         yield "canned"
 
@@ -108,7 +108,7 @@ def test_plain_question_has_no_format_directive(authed_client, monkeypatch):
 
     guidance_seen: list = []
 
-    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False):
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
         guidance_seen.append(custom_guidance)
         yield "canned"
 

@@ -50,7 +50,7 @@ def _stub_history(monkeypatch, history):
 
 
 def _stub_stream_response_spy(monkeypatch, contexts_seen: list):
-    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False):
+    async def _spy(message, history, context, language, mode="dayjoy", custom_guidance="", already_grounded=False, ai_mode="normal"):
         contexts_seen.append(context)
         yield "canned answer"
 

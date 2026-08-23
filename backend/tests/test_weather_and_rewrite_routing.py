@@ -59,7 +59,7 @@ def stub_web_search_multi(
 
 
 def test_weather_query_routes_to_weather_tool_not_general_llm(authed_client, monkeypatch):
-    async def _stub_retrieve_context(token, message, limit_per_table=3):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
         raise AssertionError("RAG retrieval should be skipped entirely for a weather query")
 
     async def _stub_weather_run(message: str):
@@ -94,7 +94,7 @@ def test_weather_query_with_no_resolvable_place_falls_through_to_normal_routing(
 ):
     calls = []
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
         calls.append(message)
         return "", [], "general", None
 
@@ -123,7 +123,7 @@ def test_weak_evidence_context_falls_back_to_web_search_not_dayjoy_knowledge(
     from its own general knowledge. Weak evidence must be treated like no
     context for routing purposes."""
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
         return (
             "Q: Who should use Asthprash? A: It is suitable for all age groups...",
             [],
@@ -150,7 +150,7 @@ def test_strong_evidence_still_routes_to_dayjoy_knowledge(authed_client, monkeyp
     match must still route as dayjoy_knowledge without touching web search."""
     calls = []
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
         return (
             "[products] Dayjoy Spirulina\nRich in protein.",
             [],
@@ -182,7 +182,7 @@ def test_followup_reference_is_resolved_before_retrieval(authed_client, monkeypa
     generation call still sees the user's original wording via `history`."""
     captured_queries = []
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
         captured_queries.append(message)
         return "", [], "general", None
 
