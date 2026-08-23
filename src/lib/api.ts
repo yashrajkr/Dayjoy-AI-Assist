@@ -159,6 +159,10 @@ export type ChatResponse = {
     has_table: boolean;
     has_chart: boolean;
   } | null;
+  /** Feature: Clarification Intelligence — selectable options accompanying
+   * a clarifying-question answer_source="clarification" reply. Each entry
+   * is a complete follow-up message, not a bare label. */
+  clarification_options?: string[];
 };
 
 export type ChatProductCard = {
@@ -386,6 +390,33 @@ export async function generateConversationTitle(
 }
 
 /**
+ * Feature: User Preference Learning — saves a response-style preference
+ * (e.g. `preferred_explanation_level=simple`) to the user's own memory
+ * (POST /memory, RLS-scoped to auth.uid()) via the EXISTING remember_fact
+ * endpoint. Best-effort: never blocks or surfaces an error to the user —
+ * this is a background quality-of-life save, not a critical action.
+ */
+export async function rememberPreference(key: string, value: string): Promise<boolean> {
+  try {
+    const token = await requireBearerToken();
+    if (!token) return false;
+    const res = await fetch(`${getApiBaseUrl()}/memory`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-Client": BRAND.shortName,
+      },
+      body: JSON.stringify({ key, value, pinned: false }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Streaming chat — opens an SSE connection to `/chat/stream` and invokes
  * `onToken` for each token chunk. Returns the final aggregated response.
  *
@@ -484,6 +515,7 @@ export async function streamChatWithBackend(
       follow_ups: finalMeta.follow_ups,
       products: finalMeta.products,
       structured: finalMeta.structured,
+      clarification_options: finalMeta.clarification_options,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

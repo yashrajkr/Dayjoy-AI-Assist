@@ -77,6 +77,10 @@ import {
   Wand2,
   ListChecks,
   BookmarkPlus,
+  MoreHorizontal,
+  Minimize2,
+  Maximize,
+  Languages,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -100,6 +104,7 @@ import {
   streamChatWithBackend,
   generateConversationTitle,
   SessionExpiredError,
+  rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
   type ArtifactType,
@@ -613,6 +618,59 @@ function AnswerTLDR({ text }: { text: string }) {
   );
 }
 
+/** Progressive Disclosure: long answers stay short by default — the reader
+ * sees the TL;DR/callouts plus a preview of the detail, with a "Show more"
+ * toggle for the rest, instead of a long scroll they have to work through
+ * to find out whether the extra detail is worth reading. Only kicks in past
+ * PROGRESSIVE_DISCLOSURE_THRESHOLD chars so short answers render exactly as
+ * before (no collapse chrome for a two-sentence answer). */
+const PROGRESSIVE_DISCLOSURE_THRESHOLD = 900;
+const PROGRESSIVE_DISCLOSURE_PREVIEW = 420;
+
+function DetailMarkdown({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > PROGRESSIVE_DISCLOSURE_THRESHOLD;
+  if (!isLong || expanded) {
+    return (
+      <>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+          {text}
+        </ReactMarkdown>
+        {isLong ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="not-prose flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-1"
+          >
+            <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+            Show less
+          </button>
+        ) : null}
+      </>
+    );
+  }
+  // Cut on a paragraph/sentence boundary near the preview length so the
+  // truncated text doesn't end mid-word.
+  const cutAt = text.indexOf("\n\n", PROGRESSIVE_DISCLOSURE_PREVIEW);
+  const previewEnd = cutAt > 0 && cutAt < PROGRESSIVE_DISCLOSURE_PREVIEW + 200 ? cutAt : PROGRESSIVE_DISCLOSURE_PREVIEW;
+  const preview = text.slice(0, previewEnd);
+  return (
+    <>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+        {preview}
+      </ReactMarkdown>
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="not-prose flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-1"
+      >
+        <ChevronUp className="w-3.5 h-3.5 rotate-180" aria-hidden="true" />
+        Show more
+      </button>
+    </>
+  );
+}
+
 /** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
  * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
 function AnswerContent({ content }: { content: string }) {
@@ -622,11 +680,7 @@ function AnswerContent({ content }: { content: string }) {
       {blocks.map((block, i) => {
         if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
         if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
-        return (
-          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-            {block.text}
-          </ReactMarkdown>
-        );
+        return <DetailMarkdown key={i} text={block.text} />;
       })}
     </>
   );
@@ -717,6 +771,75 @@ const CAN_SAVE_FOLLOW_UPS = new Set(["distributor", "management", "admin", "supe
 function looksActionable(content: string, aiMode?: string | null): boolean {
   if (aiMode === "create") return true;
   return /(^|\n)\s*\d+\.\s/.test(content);
+}
+
+/**
+ * Answer Transformation Controls — reuses the normal send pipeline (same as
+ * a follow-up chip) rather than a dedicated backend endpoint: each transform
+ * is just a differently-phrased follow-up question about the prior answer,
+ * and the existing orchestrator/RAG/grounding pipeline already handles
+ * "explain X simply" style requests correctly.
+ */
+export type TransformKind =
+  | "simplify"
+  | "actionable"
+  | "shorter"
+  | "detail"
+  | "checklist"
+  | "compare"
+  | "hinglish"
+  | "example"
+  | "translate";
+
+const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
+  simplify: (t) => `Explain this more simply, in plain everyday language:\n\n"""${t}"""`,
+  actionable: (t) => `Turn this into a clear, practical action plan — what to do, in what order:\n\n"""${t}"""`,
+  shorter: (t) => `Make this significantly shorter — keep only the essential point(s), nothing else:\n\n"""${t}"""`,
+  detail: (t) => `Explain this in more detail — the full reasoning and relevant specifics:\n\n"""${t}"""`,
+  checklist: (t) => `Turn this into a short, practical checklist:\n\n"""${t}"""`,
+  compare: (t) => `Compare the options mentioned here side by side, with a clear verdict:\n\n"""${t}"""`,
+  hinglish: (t) => `Rewrite this in Hinglish (Hindi in Latin script, mixed with English the way it's commonly spoken):\n\n"""${t}"""`,
+  example: (t) => `Give a concrete, realistic example that illustrates this:\n\n"""${t}"""`,
+  translate: (t) => `Translate this into Hindi:\n\n"""${t}"""`,
+};
+
+function buildTransformPrompt(kind: TransformKind, text: string): string {
+  return TRANSFORM_PROMPTS[kind](text);
+}
+
+/**
+ * Feature: User Preference Learning. After a user repeatedly requests the
+ * same transform, save it as a standing preference via the EXISTING memory
+ * system (POST /memory) so future answers can already be tuned to it rather
+ * than the user needing to ask every time. A lightweight client-side
+ * counter (localStorage, per browser) — not a new backend table, and only
+ * ever saves once per preference (never re-writes it on every later use).
+ */
+const TRANSFORM_PREFERENCE_MAP: Partial<Record<TransformKind, { key: string; value: string }>> = {
+  simplify: { key: "preferred_explanation_level", value: "simple" },
+  actionable: { key: "preferred_response_style", value: "actionable" },
+  detail: { key: "preferred_detail", value: "detailed" },
+  shorter: { key: "preferred_detail", value: "short" },
+};
+const TRANSFORM_USAGE_THRESHOLD = 3;
+
+function trackTransformUsage(kind: TransformKind) {
+  const mapping = TRANSFORM_PREFERENCE_MAP[kind];
+  if (!mapping) return;
+  try {
+    const countKey = `dayjoy_transform_count_${kind}`;
+    const savedKey = `dayjoy_transform_saved_${mapping.key}`;
+    if (localStorage.getItem(savedKey) === "1") return; // already learned this preference
+    const count = Number(localStorage.getItem(countKey) || "0") + 1;
+    localStorage.setItem(countKey, String(count));
+    if (count >= TRANSFORM_USAGE_THRESHOLD) {
+      localStorage.setItem(savedKey, "1");
+      void rememberPreference(mapping.key, mapping.value);
+    }
+  } catch {
+    // localStorage unavailable (private browsing, etc.) — skip silently;
+    // this is a quality-of-life save, never a critical action.
+  }
 }
 
 type Lang = "English" | "Hindi" | "Hinglish";
@@ -1166,6 +1289,7 @@ export function UserChat() {
         ai_mode?: string;
         follow_ups?: string[] | null;
         products?: ChatProductCard[] | null;
+        clarification_options?: string[] | null;
       } = {};
 
       try {
@@ -1205,6 +1329,7 @@ export function UserChat() {
           ai_mode: res.ai_mode ?? sentAiMode,
           follow_ups: res.follow_ups,
           products: res.products,
+          clarification_options: res.clarification_options,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1266,6 +1391,7 @@ export function UserChat() {
           // and would otherwise error on an unknown `follow_ups` column).
           follow_ups: meta.follow_ups ?? null,
           products: meta.products ?? null,
+          clarification_options: meta.clarification_options ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -1620,13 +1746,11 @@ export function UserChat() {
   // question about the prior answer, and the existing orchestrator/RAG/
   // grounding pipeline already handles "explain X simply" style requests.
   const handleTransform = useCallback(
-    (kind: "simplify" | "actionable", text: string) => {
+    (kind: TransformKind, text: string) => {
       if (sendingRef.current) return;
       const truncated = text.length > 3000 ? `${text.slice(0, 3000)}…` : text;
-      const prompt =
-        kind === "simplify"
-          ? `Explain this more simply, in plain everyday language:\n\n"""${truncated}"""`
-          : `Turn this into a clear, practical action plan — what to do, in what order:\n\n"""${truncated}"""`;
+      const prompt = buildTransformPrompt(kind, truncated);
+      trackTransformUsage(kind);
       void handleSend(prompt);
     },
     [handleSend],
@@ -2782,6 +2906,15 @@ export function UserChat() {
                     reply, where nothing more specific applies until the user answers). */}
                 {(() => {
                   if (!lastAssistant || sending || streamingText) return null;
+                  // Feature: Clarification Intelligence — when the last
+                  // reply IS a clarifying question, selectable options take
+                  // priority over generic follow-ups (there's nothing more
+                  // specific to suggest until the user answers).
+                  if (lastAssistant.answer_source === "clarification") {
+                    const options = lastAssistant.clarification_options ?? [];
+                    if (options.length === 0) return null;
+                    return <FollowUpChips suggestions={options} onSelect={handleSend} disabled={sending} />;
+                  }
                   // Prefer the backend's context-aware suggestions
                   // (orchestrator/followups.py — sees answer_source AND
                   // category) over the local heuristic; fall back to the
@@ -4121,7 +4254,7 @@ function MessageBubble({
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
-  onTransform?: (kind: "simplify" | "actionable", text: string) => void;
+  onTransform?: (kind: TransformKind, text: string) => void;
   onSaveFollowUp?: (message: ChatMessage) => void;
   followUpSaveState?: "saving" | "saved" | "error";
   onSaveArtifact?: (message: ChatMessage) => void;
@@ -4410,6 +4543,41 @@ function MessageBubble({
               >
                 <ScrollText className="w-3.5 h-3.5" aria-hidden="true" />
               </ActionButton>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="group/action relative inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-accent/60 text-muted-foreground transition-colors"
+                    aria-label="More ways to transform this answer"
+                    title="More"
+                  >
+                    <MoreHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuItem onClick={() => onTransform("shorter", message.content)}>
+                    <Minimize2 className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Shorter
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("detail", message.content)}>
+                    <Maximize className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> More detail
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("checklist", message.content)}>
+                    <ListChecks className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Create checklist
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("compare", message.content)}>
+                    <GitCompare className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Compare
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("example", message.content)}>
+                    <Lightbulb className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Give example
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("translate", message.content)}>
+                    <Globe className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Translate to Hindi
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("hinglish", message.content)}>
+                    <Languages className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Hinglish
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : null}
           {onSaveFollowUp && looksActionable(message.content, message.ai_mode) ? (
