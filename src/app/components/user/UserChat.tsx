@@ -2331,15 +2331,19 @@ export function UserChat() {
                   {/* Mic and Send swap for each other, matching ChatGPT's
                       composer: an empty composer shows Mic (tapping it goes
                       to the dedicated Voice Assistant page, not an inline
-                      dictation/hands-free mode — a second, different voice
-                      entry point would be confusing here); as soon as
-                      there's text to send, Mic is replaced by Send. Hidden
-                      entirely when voice is turned off in Settings or the
-                      browser has no STT support. */}
+                      dictation/hands-free mode — a second, separate voice
+                      control here reintroduces exactly the "two voice
+                      buttons" confusion this design deliberately avoids);
+                      as soon as there's text to send, Mic is replaced by
+                      Send. autoStart tells the Voice Assistant page to open
+                      the mic immediately on arrival, since this click IS
+                      the user gesture. Hidden entirely when voice is
+                      turned off in Settings or the browser has no STT
+                      support. */}
                   {!input.trim() && !sending && isVoiceRepliesEnabled() && voice.sttSupported ? (
                     <motion.button
                       type="button"
-                      onClick={() => navigate("/voice")}
+                      onClick={() => navigate("/voice", { state: { autoStart: true } })}
                       whileTap={{ scale: 0.95 }}
                       whileHover={{ scale: 1.05 }}
                       className="relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
