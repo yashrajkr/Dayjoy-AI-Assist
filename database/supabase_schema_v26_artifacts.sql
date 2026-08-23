@@ -55,7 +55,18 @@ exception when duplicate_object then null; end $$;
 -- Latest version per lineage — the root of a chain (parent_artifact_id is
 -- null) plus every artifact that is nobody else's parent is, by
 -- construction, a chain's newest tip.
-create or replace view artifacts_current as
+--
+-- security_invoker = true is required here: a plain CREATE VIEW on
+-- Postgres 15+ defaults to running with the VIEW OWNER's privileges (the
+-- role that applies this migration, typically a superuser/service role),
+-- which would make the view bypass the `artifacts` table's RLS policy
+-- entirely — any authenticated user querying artifacts_current would see
+-- every user's artifacts, not just their own. Confirmed via Supabase's own
+-- security advisor (security_definer_view, ERROR level) on the live
+-- project after this migration was first applied without this option, and
+-- confirmed clear after adding it.
+create or replace view artifacts_current
+  with (security_invoker = true) as
 select a.*
 from artifacts a
 where not exists (
