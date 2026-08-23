@@ -23,6 +23,8 @@ export type ChatRequest = {
   conversation_id?: string;
   /** Temporary Chat: tells the backend not to auto-create/persist a conversation. */
   is_temporary?: boolean;
+  /** AI Mode System — "normal" | "thinking" | "deep_research" | "compare_products". */
+  ai_mode?: string;
 };
 
 export type ChatSource = {
@@ -137,6 +139,8 @@ export type ChatResponse = {
   answer_source?: "dayjoy_knowledge" | "web_search" | "general_llm" | "hybrid" | "casual" | "unsafe" | "live_data" | null;
   /** Which web search provider served results, when answer_source involved web search. */
   web_search_provider?: string | null;
+  /** Which AI mode actually produced this answer (echoed back by the backend). */
+  ai_mode?: string;
 };
 
 const API_BASE_URL: string =
@@ -351,6 +355,7 @@ export async function streamChatWithBackend(
   req: ChatRequest,
   onToken: (chunk: string) => void,
   signal?: AbortSignal,
+  onStatus?: (status: string) => void,
 ): Promise<ChatResponse> {
   const apiBaseUrl = getApiBaseUrl();
   const streamUrl = `${apiBaseUrl}/chat/stream`;
@@ -404,6 +409,9 @@ export async function streamChatWithBackend(
           if (!payload || payload === "[DONE]") continue;
           try {
             const evt = JSON.parse(payload);
+            if (evt.status) {
+              onStatus?.(evt.status);
+            }
             if (evt.token) {
               aggregated += evt.token;
               onToken(evt.token);
@@ -431,6 +439,7 @@ export async function streamChatWithBackend(
       rag_metadata: finalMeta.rag_metadata,
       answer_source: finalMeta.answer_source,
       web_search_provider: finalMeta.web_search_provider,
+      ai_mode: finalMeta.ai_mode ?? req.ai_mode,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

@@ -8,6 +8,7 @@ import { AppShellFallback } from "./components/common/AppShellFallback";
 import { InstallAppPrompt } from "./components/common/InstallAppPrompt";
 import { ThemeProvider } from "./components/common/ThemeProvider";
 import { ChatExperienceProvider } from "./lib/ChatExperienceContext";
+import { ChatModeProvider } from "./lib/ChatModeContext";
 import { I18nProvider } from "./lib/i18n/I18nContext";
 import { subscribeToNotificationClicks } from "./lib/pushNotifications";
 
@@ -277,6 +278,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <ThemeProvider>
       <ChatExperienceProvider>
+      <ChatModeProvider>
       <I18nProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -962,6 +964,7 @@ export default function App() {
           </AuthProvider>
         </BrowserRouter>
       </I18nProvider>
+      </ChatModeProvider>
       </ChatExperienceProvider>
     </ThemeProvider>
     </MotionConfig>
