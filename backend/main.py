@@ -485,6 +485,14 @@ from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 # (see module docstring for why this is safer than multi-call + merge).
 from backend.orchestrator.decompose import enrich_for_deep_research  # noqa: E402
 
+# Context Compression (Advanced Intelligence Layer capability 6).
+from backend.orchestrator.context_compress import ContextBlock, compress_context  # noqa: E402
+
+# Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
+# Intelligence Layer capabilities 1-2).
+from backend.orchestrator.quality_router import route_query  # noqa: E402
+from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
+
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
 # document chunk), so a match here skips RAG entirely for that turn rather
@@ -1076,6 +1084,22 @@ async def _route_events(
                 yield event
             return
 
+    # Answer Quality Router (orchestrator/quality_router.py) — a narrow,
+    # deterministic check for a broad business/strategy question (the only
+    # strategy this route actually diverts on; every other strategy value
+    # just documents what the code below already does). Isolated early
+    # return: run_reasoning_pipeline builds and merges its OWN evidence set
+    # across sub-questions rather than depending on the single-call
+    # assumptions the rest of this function is built around — see that
+    # module's docstring for why that isolation is what makes this safe to
+    # wire in as one branch instead of a riskier rewrite of the shared path.
+    quality_decision = route_query(message, plan.intent, plan)
+    if quality_decision.use_reasoning:
+        yield ("status", "analyzing")
+        route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
+        yield ("result", route_result)
+        return
+
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(
         token, message, top_k=top_k_for(ai_mode)
@@ -1344,6 +1368,27 @@ async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Option
         f"Team size: {len(team)} ({active_team} active). "
         f"Business volume (last 30 days): {month_bv:.0f} BV."
     )
+
+
+def _assemble_compressed_context(
+    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str
+) -> str:
+    """Context Compression (orchestrator/context_compress.py) — replaces the
+    previous plain "\\n\\n".join() of these four blocks with dedup +
+    priority-budgeted assembly. Dayjoy knowledge/current time are the
+    highest-priority (never dropped except under extreme budget pressure);
+    web results are lowest, since they're supplementary even in hybrid mode
+    (HYBRID_MODE_ADDENDUM already tells the model Dayjoy context wins on any
+    conflict)."""
+    blocks = [
+        ContextBlock(label="Current date/time", text=time_context, priority=1) if time_context else None,
+        ContextBlock(label="Approved Dayjoy knowledge", text=dayjoy_context, priority=1) if dayjoy_context else None,
+        ContextBlock(label="Personalization", text=personalization_context, priority=2)
+        if personalization_context
+        else None,
+        ContextBlock(label="Web", text=web_context, priority=3) if web_context else None,
+    ]
+    return compress_context([b for b in blocks if b is not None])
 
 
 async def _maybe_personalization_context(
@@ -1921,8 +1966,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         token, user_id, req.message, history, casual, req.role
     )
     t_after_personalization = time.monotonic()
-    full_context = "\n\n".join(
-        p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+    full_context = _assemble_compressed_context(
+        current_time_context(), personalization_context, route.context, route.web_context
     )
     custom_guidance = await load_ai_custom_guidance()
     fmt_directive = format_instruction(req.message)
@@ -2174,8 +2219,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             token, user_id, req.message, history, casual, req.role
         )
         t_after_personalization = time.monotonic()
-        full_context = "\n\n".join(
-            p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+        full_context = _assemble_compressed_context(
+            current_time_context(), personalization_context, route.context, route.web_context
         )
         custom_guidance = await load_ai_custom_guidance()
         fmt_directive = format_instruction(req.message)
