@@ -507,6 +507,7 @@ from backend.orchestrator.refinement import build_refinement_instruction, needs_
 # Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
 # Intelligence Layer capabilities 1-2).
 from backend.orchestrator.quality_router import route_query  # noqa: E402
+from backend.orchestrator.user_goal import analyze_user_goal  # noqa: E402
 from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
 
 # Structured-intent short-circuits — checked in `_route_events` before RAG
@@ -1122,6 +1123,16 @@ async def _route_events(
     # module's docstring for why that isolation is what makes this safe to
     # wire in as one branch instead of a riskier rewrite of the shared path.
     quality_decision = route_query(message, plan.intent, plan)
+    # User Goal Analyzer — internal-only structured representation of what
+    # the user actually wants, assembled from signals already computed
+    # above (intent + routing decision), never re-classified with an extra
+    # LLM call. Logged for observability only; never sent to the client or
+    # used to gate behaviour, so a bad guess here can't break an answer.
+    try:
+        goal_profile = analyze_user_goal(message, plan.intent, quality_decision)
+        _llm_logger.debug("user_goal_profile=%s", goal_profile.to_dict())
+    except Exception:
+        pass
     if quality_decision.use_reasoning:
         yield ("status", "analyzing")
         route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
