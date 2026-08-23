@@ -481,6 +481,10 @@ from backend.orchestrator.tools import weather as weather_tool  # noqa: E402
 # generation call still sees the user's own original wording via `history`.
 from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 
+# Deep Research query decomposition — augments the retrieval query text only
+# (see module docstring for why this is safer than multi-call + merge).
+from backend.orchestrator.decompose import enrich_for_deep_research  # noqa: E402
+
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
 # document chunk), so a match here skips RAG entirely for that turn rather
@@ -1908,8 +1912,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
-    retrieval_query = rewrite_query(req.message, history)
     ai_mode = normalize_ai_mode(req.ai_mode)
+    retrieval_query = enrich_for_deep_research(rewrite_query(req.message, history), ai_mode)
     route = await determine_route(token, retrieval_query, casual, ai_mode)
     t_after_routing = time.monotonic()
 
@@ -2156,7 +2160,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
-        retrieval_query = rewrite_query(req.message, history)
+        retrieval_query = enrich_for_deep_research(rewrite_query(req.message, history), ai_mode)
         route: Optional[RouteResult] = None
         async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
             if kind == "status":
