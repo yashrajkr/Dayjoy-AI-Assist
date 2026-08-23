@@ -760,6 +760,45 @@ export type TransformKind =
   | "example"
   | "translate";
 
+/**
+ * Advanced Regeneration Controls — variants beyond a plain "try again",
+ * each appending a directive to the ORIGINAL question (not the previous
+ * answer, unlike TransformKind above) so the model regenerates from
+ * scratch with that constraint in mind, rather than editing prior output.
+ */
+export type RegenerateVariant =
+  | "accurate"
+  | "shorter"
+  | "detailed"
+  | "simpler"
+  | "professional"
+  | "actionable"
+  | "different";
+
+const REGENERATE_VARIANT_LABELS: Record<RegenerateVariant, string> = {
+  accurate: "More accurate",
+  shorter: "Shorter",
+  detailed: "More detailed",
+  simpler: "Simpler",
+  professional: "More professional",
+  actionable: "More actionable",
+  different: "Different approach",
+};
+
+const REGENERATE_VARIANT_DIRECTIVES: Record<RegenerateVariant, string> = {
+  accurate: "Please double-check accuracy and be more precise and factually careful than a typical answer.",
+  shorter: "Please answer more concisely than usual — keep only the essential point(s).",
+  detailed: "Please answer in more depth than usual, with the full reasoning and relevant specifics.",
+  simpler: "Please explain more simply, in plain everyday language.",
+  professional: "Please answer in a more polished, professional tone.",
+  actionable: "Please make the answer more actionable — concrete steps the user can act on.",
+  different: "Please answer from a different angle or approach than a typical first answer would.",
+};
+
+function buildRegeneratePrompt(variant: RegenerateVariant, originalQuestion: string): string {
+  return `${originalQuestion}\n\n(${REGENERATE_VARIANT_DIRECTIVES[variant]})`;
+}
+
 const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   simplify: (t) => `Explain this more simply, in plain everyday language:\n\n"""${t}"""`,
   actionable: (t) => `Turn this into a clear, practical action plan — what to do, in what order:\n\n"""${t}"""`,
@@ -1648,6 +1687,28 @@ export function UserChat() {
     setInput("");
     await handleSend(lastUserText);
   }, [activeConv, messages, handleSend]);
+
+  // ---- Advanced Regeneration Controls: same drop-trailing-then-resend
+  // shape as plain regenerate above, but resends a directive-augmented
+  // version of the ORIGINAL question rather than the verbatim text. ----
+  const handleRegenerateVariant = useCallback(
+    async (variant: RegenerateVariant) => {
+      if (!activeConv || messages.length === 0) return;
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      if (lastUserIdx === -1) return;
+      const lastUserText = messages[lastUserIdx].content;
+      setMessages((prev) => prev.slice(0, lastUserIdx + 1));
+      setInput("");
+      await handleSend(buildRegeneratePrompt(variant, lastUserText));
+    },
+    [activeConv, messages, handleSend],
+  );
 
   // ---- Feedback ----
   const handleFeedback = useCallback(
@@ -2828,6 +2889,11 @@ export function UserChat() {
                       onRegenerate={
                         m.role === "assistant" && m.id === lastAssistantId
                           ? handleRegenerate
+                          : undefined
+                      }
+                      onRegenerateVariant={
+                        m.role === "assistant" && m.id === lastAssistantId
+                          ? handleRegenerateVariant
                           : undefined
                       }
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
@@ -4173,6 +4239,7 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  onRegenerateVariant,
   onSpeak,
   speakingId,
   onShare,
@@ -4193,6 +4260,7 @@ function MessageBubble({
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  onRegenerateVariant?: (variant: RegenerateVariant) => void;
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
@@ -4454,9 +4522,32 @@ function MessageBubble({
             <ThumbsDown className="w-3.5 h-3.5" aria-hidden="true" />
           </ActionButton>
           {onRegenerate ? (
-            <ActionButton onClick={onRegenerate} label="Regenerate">
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-            </ActionButton>
+            <>
+              <ActionButton onClick={onRegenerate} label="Regenerate">
+                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+              {onRegenerateVariant ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="group/action relative inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-accent/60 text-muted-foreground transition-colors"
+                      aria-label="Regeneration options"
+                      title="Regenerate with a variant"
+                    >
+                      <ChevronUp className="w-3 h-3 rotate-180" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    {(Object.keys(REGENERATE_VARIANT_LABELS) as RegenerateVariant[]).map((variant) => (
+                      <DropdownMenuItem key={variant} onClick={() => onRegenerateVariant(variant)}>
+                        {REGENERATE_VARIANT_LABELS[variant]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </>
           ) : null}
           {onSpeak ? (
             <ActionButton
