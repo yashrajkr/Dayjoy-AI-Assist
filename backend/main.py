@@ -3591,6 +3591,17 @@ except Exception as _dist_router_err:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Advanced Intelligence Layer — Artifacts (capabilities 14-16)
+# ---------------------------------------------------------------------------
+try:
+    from backend.artifacts_api import router as artifacts_router
+    app.include_router(artifacts_router)
+except Exception as _artifacts_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load artifacts router: %s", _artifacts_router_err)
+
+
+# ---------------------------------------------------------------------------
 # Business Intelligence — AI Business Operating System dashboard router
 # ---------------------------------------------------------------------------
 try:

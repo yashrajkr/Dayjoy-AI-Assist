@@ -1477,6 +1477,62 @@ export async function distributorDeleteFollowUp(fuId: string): Promise<{ status:
   return distDelete(`/distributor/follow-ups/${fuId}`);
 }
 
+// ---------------------------------------------------------------------------
+// Artifacts (Advanced Intelligence Layer capabilities 14-16: Artifact
+// Generation, Task Continuation, Response Versioning) — backend/artifacts_api.py
+// ---------------------------------------------------------------------------
+
+export type ArtifactType =
+  | "action_plan" | "report" | "checklist" | "training_plan"
+  | "sales_plan" | "summary" | "business_document" | "guide";
+
+export type Artifact = {
+  id: string;
+  user_id?: string;
+  conversation_id?: string | null;
+  artifact_type: ArtifactType;
+  title: string;
+  content: string;
+  content_structured?: Record<string, unknown> | null;
+  version: number;
+  parent_artifact_id?: string | null;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export async function createArtifact(payload: {
+  artifact_type: ArtifactType;
+  title: string;
+  content: string;
+  content_structured?: Record<string, unknown> | null;
+  conversation_id?: string | null;
+}): Promise<Artifact> {
+  return distJson("POST", "/artifacts", payload);
+}
+
+export async function listArtifacts(artifactType?: ArtifactType): Promise<{ artifacts: Artifact[]; total: number }> {
+  const qs = artifactType ? `?artifact_type=${artifactType}` : "";
+  return distGet(`/artifacts${qs}`);
+}
+
+export async function listArtifactVersions(artifactId: string): Promise<{ versions: Artifact[]; total: number }> {
+  return distGet(`/artifacts/${artifactId}/versions`);
+}
+
+export async function editArtifact(
+  artifactId: string,
+  payload: { artifact_type: ArtifactType; title: string; content: string; content_structured?: Record<string, unknown> | null },
+): Promise<Artifact> {
+  return distJson("PATCH", `/artifacts/${artifactId}`, payload);
+}
+
+/** Task Continuation — AI-assisted edit ("make week 2 more aggressive")
+ * against an existing artifact, creating a new version. */
+export async function continueArtifact(artifactId: string, instruction: string): Promise<Artifact> {
+  return distJson("POST", `/artifacts/${artifactId}/continue`, { instruction });
+}
+
 /** Content — generate. */
 export async function distributorGenerateContent(payload: {
   content_type: string;

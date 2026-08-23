@@ -76,6 +76,7 @@ import {
   CheckCircle2,
   Wand2,
   ListChecks,
+  BookmarkPlus,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -99,6 +100,8 @@ import {
   generateConversationTitle,
   SessionExpiredError,
   distributorCreateFollowUp,
+  createArtifact,
+  type ArtifactType,
   type ChatSource,
   type ChatProductCard,
 } from "../../../lib/api";
@@ -894,6 +897,8 @@ export function UserChat() {
   // "Save as follow-up task" — id of the message currently showing a
   // saved/saving/error confirmation on its action button.
   const [followUpSaveState, setFollowUpSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
+  // "Save as artifact" — same transient per-message save-state pattern.
+  const [artifactSaveState, setArtifactSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -1631,6 +1636,37 @@ export function UserChat() {
       }
     },
     [],
+  );
+
+  // ---- Save an assistant answer as a reusable Artifact ----
+  // Feature: Artifact Generation. Available to every role (unlike the
+  // distributor-only follow-up task) since an artifact is a personal saved
+  // document, not a business-workflow record.
+  const handleSaveArtifact = useCallback(
+    async (message: ChatMessage) => {
+      const key = message.id ?? `${message.role}-${message.created_at}`;
+      setArtifactSaveState((prev) => ({ ...prev, [key]: "saving" }));
+      try {
+        const artifactType: ArtifactType = /(^|\n)\s*\d+\.\s/.test(message.content) ? "action_plan" : "summary";
+        await createArtifact({
+          artifact_type: artifactType,
+          title: deriveTitle(message.content, 60),
+          content: message.content,
+          conversation_id: activeConv?.id ?? null,
+        });
+        setArtifactSaveState((prev) => ({ ...prev, [key]: "saved" }));
+      } catch {
+        setArtifactSaveState((prev) => ({ ...prev, [key]: "error" }));
+        setTimeout(() => {
+          setArtifactSaveState((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        }, 2500);
+      }
+    },
+    [activeConv],
   );
 
   // ---- Edit-and-resend a sent user message ----
@@ -2677,6 +2713,8 @@ export function UserChat() {
                           : undefined
                       }
                       followUpSaveState={followUpSaveState[key]}
+                      onSaveArtifact={m.role === "assistant" ? handleSaveArtifact : undefined}
+                      artifactSaveState={artifactSaveState[key]}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -4005,6 +4043,8 @@ function MessageBubble({
   onTransform,
   onSaveFollowUp,
   followUpSaveState,
+  onSaveArtifact,
+  artifactSaveState,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -4023,6 +4063,8 @@ function MessageBubble({
   onTransform?: (kind: "simplify" | "actionable", text: string) => void;
   onSaveFollowUp?: (message: ChatMessage) => void;
   followUpSaveState?: "saving" | "saved" | "error";
+  onSaveArtifact?: (message: ChatMessage) => void;
+  artifactSaveState?: "saving" | "saved" | "error";
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -4318,6 +4360,26 @@ function MessageBubble({
                 <Check className="w-3.5 h-3.5" aria-hidden="true" />
               ) : (
                 <ListChecks className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+            </ActionButton>
+          ) : null}
+          {onSaveArtifact && looksActionable(message.content, message.ai_mode) ? (
+            <ActionButton
+              onClick={() => onSaveArtifact(message)}
+              label={
+                artifactSaveState === "saved"
+                  ? "Saved as artifact"
+                  : artifactSaveState === "error"
+                    ? "Couldn't save — try again"
+                    : "Save as artifact"
+              }
+              active={artifactSaveState === "saved"}
+              activeColor="primary"
+            >
+              {artifactSaveState === "saved" ? (
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <BookmarkPlus className="w-3.5 h-3.5" aria-hidden="true" />
               )}
             </ActionButton>
           ) : null}
