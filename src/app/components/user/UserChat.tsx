@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useNavigate, useParams, useOutletContext } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -84,6 +84,7 @@ import {
   generateConversationTitle,
   SessionExpiredError,
   type ChatSource,
+  type ChatProductCard,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -197,6 +198,110 @@ function generateFollowUps(answer: string, sources: unknown, answerSource?: stri
  * uses one just renders as a single markdown block exactly as before —
  * this is additive, not a replacement rendering path.
  */
+/**
+ * ChartBlock — renders a small bar/line chart from a fenced ```chart code
+ * block's JSON payload (see MARKDOWN_COMPONENTS' `code` override below).
+ * Self-contained inline SVG — no charting library dependency. Only renders
+ * for a fenced block whose language is literally "chart" and whose content
+ * parses as valid JSON matching ChartSpec; anything else (including a
+ * genuine ```json or code sample) falls through to normal code rendering.
+ */
+type ChartSpec = {
+  type?: "bar" | "line";
+  title?: string;
+  data: Array<{ label: string; value: number }>;
+};
+
+function isChartSpec(v: unknown): v is ChartSpec {
+  if (!v || typeof v !== "object") return false;
+  const data = (v as { data?: unknown }).data;
+  return (
+    Array.isArray(data) &&
+    data.length > 0 &&
+    data.every((d) => d && typeof d === "object" && "label" in d && "value" in d && typeof (d as { value: unknown }).value === "number")
+  );
+}
+
+function ChartBlock({ spec }: { spec: ChartSpec }) {
+  const width = 320;
+  const height = 140;
+  const padding = 24;
+  const chartW = width - padding * 2;
+  const chartH = height - padding * 2;
+  const values = spec.data.map((d) => d.value);
+  const max = Math.max(...values, 1);
+  const isLine = spec.type === "line";
+
+  return (
+    <div className="not-prose rounded-xl border border-border bg-card px-3 py-3 my-2">
+      {spec.title ? <div className="text-xs font-semibold text-foreground mb-2">{spec.title}</div> : null}
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img" aria-label={spec.title || "Chart"}>
+        {isLine ? (
+          <polyline
+            fill="none"
+            stroke="rgb(var(--primary-rgb))"
+            strokeWidth={2}
+            points={spec.data
+              .map((d, i) => {
+                const x = padding + (i / Math.max(spec.data.length - 1, 1)) * chartW;
+                const y = padding + chartH - (d.value / max) * chartH;
+                return `${x},${y}`;
+              })
+              .join(" ")}
+          />
+        ) : (
+          spec.data.map((d, i) => {
+            const slot = chartW / spec.data.length;
+            const barW = Math.max(slot - 8, 4);
+            const x = padding + i * slot + 4;
+            const barH = (d.value / max) * chartH;
+            const y = padding + chartH - barH;
+            return <rect key={i} x={x} y={y} width={barW} height={barH} rx={3} fill="rgb(var(--primary-rgb))" opacity={0.85} />;
+          })
+        )}
+      </svg>
+      <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+        {spec.data.map((d, i) => (
+          <span key={i} className="truncate px-0.5" style={{ maxWidth: `${100 / spec.data.length}%` }} title={d.label}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wraps every markdown table in a horizontally-scrollable container — a wide
+ * comparison table (common in Compare mode's answers) would otherwise force
+ * the whole chat column wider than the viewport on mobile instead of
+ * scrolling within its own box.
+ */
+const MARKDOWN_COMPONENTS: Components = {
+  table: ({ children, ...props }) => (
+    <div className="overflow-x-auto">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+  code: ({ className, children, ...props }) => {
+    if (/language-chart/.test(className || "")) {
+      const raw = String(children).replace(/\n$/, "");
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (isChartSpec(parsed)) return <ChartBlock spec={parsed} />;
+      } catch {
+        // Invalid JSON in a ```chart block — fall through to plain code
+        // rendering below rather than silently dropping the content.
+      }
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
+};
+
 type AnswerBlock =
   | { type: "markdown"; text: string }
   | { type: "tldr"; text: string }
@@ -307,12 +412,55 @@ function AnswerContent({ content }: { content: string }) {
         if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
         if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
         return (
-          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
             {block.text}
           </ReactMarkdown>
         );
       })}
     </>
+  );
+}
+
+/**
+ * ProductCard — renders structured product data (ChatResponse.products).
+ * Only ever populated from a verified DB row (pricing_lookup /
+ * product_recommendation tool result — see backend/main.py's RouteResult.
+ * product_cards), never from RAG/LLM text, so every field here is safe to
+ * show as fact rather than AI-generated content.
+ */
+function ProductCard({ product }: { product: ChatProductCard }) {
+  const price = product.price;
+  return (
+    <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
+      <div className="flex items-start gap-2">
+        <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 text-primary shrink-0">
+          <Package className="w-3.5 h-3.5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground truncate">{product.product_name ?? "Dayjoy product"}</div>
+          {product.matched_condition ? (
+            <div className="text-[11px] text-muted-foreground">Matched for: {product.matched_condition}</div>
+          ) : null}
+        </div>
+        {price ? (
+          <div className="text-right shrink-0">
+            <div className="font-semibold text-foreground">
+              {price.currency ?? "INR"} {price.dp ?? price.mrp}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {price.dp != null ? "DP" : "MRP"}
+              {price.bv != null ? ` · BV ${price.bv}` : ""}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {product.benefits ? (
+        <p className="mt-1.5 text-foreground/80 line-clamp-2">{product.benefits}</p>
+      ) : null}
+      {product.safety_note ? (
+        <p className="mt-1 text-[11px] text-warning">⚠ {product.safety_note}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -757,6 +905,7 @@ export function UserChat() {
         web_search_provider?: string | null;
         ai_mode?: string;
         follow_ups?: string[] | null;
+        products?: ChatProductCard[] | null;
       } = {};
 
       try {
@@ -795,6 +944,7 @@ export function UserChat() {
           web_search_provider: res.web_search_provider,
           ai_mode: res.ai_mode ?? sentAiMode,
           follow_ups: res.follow_ups,
+          products: res.products,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -855,6 +1005,7 @@ export function UserChat() {
           // write (which spreads its input object verbatim into `.insert()`
           // and would otherwise error on an unknown `follow_ups` column).
           follow_ups: meta.follow_ups ?? null,
+          products: meta.products ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -2354,7 +2505,7 @@ export function UserChat() {
                       transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
                       aria-hidden="true"
                     />
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
                       {streamingText + " ▌"}
                     </ReactMarkdown>
                   </div>
@@ -3799,6 +3950,13 @@ function MessageBubble({
               : "border-border bg-card group-hover:border-primary/20"
           }`}
         >
+          {message.products && message.products.length > 0 ? (
+            <div className="not-prose mb-2 flex flex-col gap-2">
+              {message.products.map((p, i) => (
+                <ProductCard key={p.product_id ?? i} product={p} />
+              ))}
+            </div>
+          ) : null}
           <AnswerContent content={message.content} />
         </div>
 

@@ -26,7 +26,7 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
@@ -402,6 +402,11 @@ class ChatResponse(BaseModel):
     # Contextual next-question suggestions (orchestrator/followups.py) — the
     # frontend prefers these over its own local heuristic when non-empty.
     follow_ups: List[str] = []
+    # Structured product data (RouteResult.product_cards) — only ever
+    # populated from a verified DB row (pricing_lookup/product_recommendation
+    # tool result), never fabricated from RAG/LLM text. Empty for every
+    # route that isn't a structured pricing/recommendation match.
+    products: List[Dict[str, Any]] = []
 
 
 class FeedbackRequest(BaseModel):
@@ -517,7 +522,7 @@ from backend.orchestrator.tools.memory import list_memory  # noqa: E402
 # Adaptive response formatting — "answer in short" / "give me steps" /
 # "compare X and Y" get a matching structural instruction instead of the
 # model always answering in one fixed shape regardless of what was asked.
-from backend.orchestrator.format_intent import format_instruction  # noqa: E402
+from backend.orchestrator.format_intent import example_instruction, format_instruction  # noqa: E402
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -774,6 +779,13 @@ class RouteResult:
     # entirely rather than handed to the LLM. Defaulted so every existing
     # positional RouteResult(...) construction in this file keeps working.
     direct_answer: Optional[str] = None
+    # Product Cards — populated ONLY from a structured pricing_lookup or
+    # product_recommendation tool result (pricing.py/recommend.py), never
+    # from RAG/LLM text. Every field is a verbatim DB value already used to
+    # build `context` above; kept as structured JSON too so the frontend can
+    # render a rich card instead of (or alongside) prose. Empty for every
+    # other route.
+    product_cards: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def _format_pricing_context(data: Dict[str, Any]) -> str:
@@ -970,6 +982,17 @@ async def _route_events(
                     },
                     mode="dayjoy", answer_source="dayjoy_knowledge",
                     web_search_provider=None, used_web_search=False,
+                    product_cards=[{
+                        "product_id": pricing_data.get("product_id"),
+                        "product_name": pricing_data.get("product_name"),
+                        "price": {
+                            "mrp": pricing_data.get("mrp"),
+                            "dp": pricing_data.get("dp"),
+                            "bv": pricing_data.get("bv"),
+                            "pv": pricing_data.get("pv"),
+                            "currency": pricing_data.get("currency"),
+                        },
+                    }],
                 ),
             )
             return
@@ -1022,6 +1045,10 @@ async def _route_events(
                     },
                     mode="dayjoy", answer_source="dayjoy_knowledge",
                     web_search_provider=None, used_web_search=False,
+                    # rec["products"] is already the exact verified DB bundle
+                    # (see recommend.py's _bundle_product) — passed through
+                    # verbatim, capped the same way the UI caps card display.
+                    product_cards=rec["products"][:5],
                 ),
             )
             return
@@ -1391,7 +1418,15 @@ SYSTEM_PROMPT = (
     "with exactly one of these labels — \"**💡 Key Insight:** ...\", \"**⚠️ Warning:** ...\", "
     "\"**✅ Tip:** ...\", \"**🎯 Recommended:** ...\" — the app renders these as highlighted "
     "callouts. Use at most one or two per answer, and only where it clearly earns the emphasis; "
-    "never on short/simple answers, and never as a substitute for the answer itself."
+    "never on short/simple answers, and never as a substitute for the answer itself.\n\n"
+    "When (and ONLY when) the context below gives you 2+ numeric values that are genuinely "
+    "clearer as a small chart than as prose or a table (e.g. comparing MRP/DP/BV/PV across "
+    "products actually present in the context), you may ALSO include a fenced code block "
+    "labeled \"chart\" containing ONLY compact JSON in this exact shape: "
+    '{"type": "bar", "title": "<short title>", "data": [{"label": "<name>", "value": <number>}, '
+    '...]} (use "type": "line" instead of "bar" for a trend over time). Every value must come '
+    "directly from the context — never invent or estimate a number for a chart. Skip the chart "
+    "entirely if you're not certain every value is real."
 )
 
 # Appended to SYSTEM_PROMPT only for hybrid-mode requests (Dayjoy context
@@ -1848,6 +1883,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     fmt_directive = format_instruction(req.message)
     if fmt_directive:
         custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+    ex_directive = example_instruction(req.message)
+    if ex_directive:
+        custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -1971,6 +2009,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         web_search_provider=route.web_search_provider,
         ai_mode=ai_mode,
         follow_ups=follow_ups,
+        products=route.product_cards,
     )
 
 
@@ -2096,6 +2135,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         fmt_directive = format_instruction(req.message)
         if fmt_directive:
             custom_guidance = f"{custom_guidance}\n\n{fmt_directive}".strip()
+        ex_directive = example_instruction(req.message)
+        if ex_directive:
+            custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
@@ -2204,6 +2246,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "web_search_provider": route.web_search_provider,
             "ai_mode": ai_mode,
             "follow_ups": follow_ups,
+            "products": route.product_cards,
         })
 
     return StreamingResponse(

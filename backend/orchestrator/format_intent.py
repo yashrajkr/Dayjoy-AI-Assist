@@ -24,6 +24,7 @@ FORMAT_TABLE = "table"
 FORMAT_LIST = "list"
 FORMAT_COMPARISON = "comparison"
 FORMAT_RECOMMENDATION = "recommendation_with_reasoning"
+FORMAT_ACTION_PLAN = "action_plan"
 FORMAT_DEFAULT = "default"
 
 _TABLE_RE = re.compile(r"\b(table|tabular|side[\s-]by[\s-]side)\b", re.IGNORECASE)
@@ -49,6 +50,26 @@ _SHORT_RE = re.compile(
 )
 _DETAILED_RE = re.compile(
     r"\b(in detail|explain in detail|detailed explanation|elaborate|deep dive|thorough\w*|comprehensive\w*)\b",
+    re.IGNORECASE,
+)
+_ACTION_PLAN_RE = re.compile(
+    r"\b(action plan|create a plan|build a plan|make a plan|\d+[\s-]day (plan|strategy)|"
+    r"game plan|roadmap|strategy for|plan to (achieve|reach|grow|increase|improve))\b",
+    re.IGNORECASE,
+)
+# Additive to whichever FORMAT_* instruction (if any) is chosen above — a
+# conceptual/definitional question benefits from a concrete example
+# regardless of whether it also asked for a table, steps, etc. Deliberately
+# narrow: bare "what is X" is intentionally EXCLUDED — it matches almost any
+# question (including a plain policy/product lookup like "what is Dayjoy's
+# refund policy", which must get no unsolicited addition — see
+# test_plain_question_has_no_format_directive) and gave no reliable signal
+# that X is actually an abstract/jargon TERM rather than a named policy or
+# product. Only phrasing that's specifically about a term's meaning or a
+# mechanism's workings qualifies.
+_EXAMPLE_CUE_RE = re.compile(
+    r"\b(what does .+ mean|explain (the )?(concept|meaning) of|how does .+ work|"
+    r"what'?s the difference between)\b",
     re.IGNORECASE,
 )
 
@@ -80,7 +101,26 @@ _INSTRUCTIONS = {
         "The user asked for a detailed explanation — use a structured, "
         "thorough answer with clear sections, not a one-line reply."
     ),
+    FORMAT_ACTION_PLAN: (
+        "The user wants an action plan — structure the answer as: a one-line Goal, then "
+        "numbered concrete Steps (each one thing to actually do, not generic advice), then a "
+        "short Expected Outcome line. Every step must be something the user can act on this "
+        "week, not a vague principle."
+    ),
 }
+
+
+def _implies_multi_part_question(message: str) -> bool:
+    """Very conservative complexity signal — only true for a message that
+    clearly bundles more than one question (2+ question marks, or an
+    explicit "X and how/what/why Y" construction). Deliberately does NOT
+    key off message length alone: an ordinary single-topic question, however
+    long, still gets FORMAT_DEFAULT (no directive) — see
+    test_plain_question_has_no_format_directive, which locks in that a
+    single plain question must never get an unsolicited directive."""
+    if message.count("?") >= 2:
+        return True
+    return bool(re.search(r"\band\b.{0,40}\b(how|what|why|when|where|which)\b", message, re.IGNORECASE))
 
 
 def detect_format(message: str) -> str:
@@ -89,6 +129,8 @@ def detect_format(message: str) -> str:
     both "compare" and "table" gets the table instruction)."""
     if _TABLE_RE.search(message):
         return FORMAT_TABLE
+    if _ACTION_PLAN_RE.search(message):
+        return FORMAT_ACTION_PLAN
     if _STEPS_RE.search(message):
         return FORMAT_STEPS
     if _RECOMMENDATION_REASON_RE.search(message):
@@ -101,6 +143,8 @@ def detect_format(message: str) -> str:
         return FORMAT_SHORT
     if _DETAILED_RE.search(message):
         return FORMAT_DETAILED
+    if _implies_multi_part_question(message):
+        return FORMAT_DETAILED
     return FORMAT_DEFAULT
 
 
@@ -109,3 +153,17 @@ def format_instruction(message: str) -> str:
     "" for FORMAT_DEFAULT (no addendum needed — the base system prompt's
     style stands)."""
     return _INSTRUCTIONS.get(detect_format(message), "")
+
+
+def example_instruction(message: str) -> str:
+    """Additive to format_instruction() above (Feature: Automatic Examples)
+    — a conceptual/definitional question benefits from a concrete example
+    regardless of which FORMAT_* (if any) was also detected, so this is a
+    separate function the caller appends independently rather than another
+    branch in detect_format's single-select chain."""
+    if _EXAMPLE_CUE_RE.search(message):
+        return (
+            "If a concrete example would make this clearer, include one short, clearly-labeled "
+            "example (e.g. \"Example: ...\") — but only if it adds real clarity, not for its own sake."
+        )
+    return ""

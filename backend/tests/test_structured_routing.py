@@ -95,6 +95,13 @@ def test_pricing_found_skips_rag_and_uses_structured_context(authed_client, monk
     assert body["rag_metadata"]["evidence_sufficient"] is True
     # RAG never ran — the structured lookup was authoritative on its own.
     assert rag_calls == []
+    # Product Cards — verbatim structured pricing data, for the frontend to
+    # render a rich card instead of parsing it back out of prose.
+    assert len(body["products"]) == 1
+    card = body["products"][0]
+    assert card["product_id"] == "P-1"
+    assert card["product_name"] == "Dayjoy Turmeric"
+    assert card["price"] == {"mrp": 999, "dp": 799, "bv": 50, "pv": 50, "currency": "INR"}
 
 
 def test_pricing_compound_question_merges_kb_context_in_parallel(authed_client, monkeypatch):
@@ -201,6 +208,11 @@ def test_recommendation_ok_skips_rag_and_uses_structured_context(authed_client, 
     assert body["answer_source"] == "dayjoy_knowledge"
     assert body["rag_metadata"]["source"] == "structured_recommendation"
     assert kb_calls == ["Suggest something good for anxiety."]  # ran, but contributed nothing (empty stub)
+    # Product Cards — the exact recommend.py bundle passed through verbatim.
+    assert len(body["products"]) == 1
+    assert body["products"][0]["product_id"] == "P-2"
+    assert body["products"][0]["product_name"] == "Dayjoy Ashwagandha"
+    assert body["products"][0]["price"]["dp"] == 499
 
 
 def test_recommendation_ok_merges_supporting_kb_context(authed_client, monkeypatch):

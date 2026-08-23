@@ -143,6 +143,27 @@ export type ChatResponse = {
   ai_mode?: string;
   /** Contextual next-question suggestions computed by the backend (orchestrator/followups.py). */
   follow_ups?: string[];
+  /** Structured product data — only ever populated from a verified DB row
+   * (pricing_lookup/product_recommendation), never fabricated. */
+  products?: ChatProductCard[];
+};
+
+export type ChatProductCard = {
+  product_id?: string | null;
+  product_name?: string | null;
+  category?: string | null;
+  matched_condition?: string | null;
+  benefits?: string | null;
+  usage?: string | null;
+  who_can_use?: string | null;
+  safety_note?: string | null;
+  price?: {
+    mrp?: number | null;
+    dp?: number | null;
+    bv?: number | null;
+    pv?: number | null;
+    currency?: string | null;
+  } | null;
 };
 
 const API_BASE_URL: string =
@@ -443,6 +464,7 @@ export async function streamChatWithBackend(
       web_search_provider: finalMeta.web_search_provider,
       ai_mode: finalMeta.ai_mode ?? req.ai_mode,
       follow_ups: finalMeta.follow_ups,
+      products: finalMeta.products,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather
