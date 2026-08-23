@@ -251,6 +251,9 @@ const WellnessJourney = lazy(() =>
 const KnowledgeCenter = lazy(() =>
   import("./components/user/KnowledgeCenter").then((m) => ({ default: m.KnowledgeCenter })),
 );
+const SavedWork = lazy(() =>
+  import("./components/user/SavedWork").then((m) => ({ default: m.SavedWork })),
+);
 const ExecutiveDashboard = lazy(() =>
   import("./components/admin/ExecutiveDashboard").then((m) => ({ default: m.ExecutiveDashboard })),
 );
@@ -512,6 +515,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <KnowledgeCenter />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="saved"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <SavedWork />
                   </Suspense>
                 </ProtectedRoute>
               }
