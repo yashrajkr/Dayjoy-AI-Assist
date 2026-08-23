@@ -1095,6 +1095,84 @@ async def admin_feedback_summary(request: Request, limit: int = 500) -> Dict[str
     }
 
 
+@router.get("/analytics/observability")
+async def admin_observability(request: Request, days: int = 7, limit: int = 2000) -> Dict[str, Any]:
+    """Feature: Observability Dashboard. Aggregates the EXISTING `analytics`
+    table (backend/main.py's `_log_analytics`, called on every /chat and
+    /chat/stream request) — not a new/duplicate metrics store. `confidence`/
+    `ai_mode`/`latency_ms` (database/supabase_schema_v27_analytics_
+    observability.sql) are optional: `_has_column` detects whether that
+    migration has been applied to this environment yet and the response's
+    `migration_applied` flag tells the caller whether latency/confidence/
+    mode breakdowns are actually populated, rather than silently returning
+    zeros that look like real data. Privacy-safe: never returns the raw
+    `query` text field, only aggregate counts/averages."""
+    await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    migration_applied = await _has_column("analytics", "confidence")
+
+    since = _days_ago(days)
+    columns = "category,answer_route,safety_status,role,created_at"
+    if migration_applied:
+        columns += ",confidence,ai_mode,latency_ms"
+    url = f"{SUPABASE_URL}/rest/v1/analytics?select={columns}&created_at=gte.{since}&order=created_at.desc&limit={limit}"
+    headers = _svc_headers(token)
+    rows: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code < 400:
+                rows = resp.json()
+    except Exception:
+        pass
+
+    total = len(rows)
+    blocked = sum(1 for r in rows if r.get("safety_status") == "blocked")
+
+    by_category: Dict[str, int] = {}
+    by_answer_route: Dict[str, int] = {}
+    by_ai_mode: Dict[str, int] = {}
+    confidences: List[float] = []
+    latencies: List[float] = []
+
+    for r in rows:
+        cat = r.get("category") or "unknown"
+        by_category[cat] = by_category.get(cat, 0) + 1
+        route = r.get("answer_route") or "unknown"
+        by_answer_route[route] = by_answer_route.get(route, 0) + 1
+        if migration_applied:
+            mode = r.get("ai_mode") or "normal"
+            by_ai_mode[mode] = by_ai_mode.get(mode, 0) + 1
+            if isinstance(r.get("confidence"), (int, float)):
+                confidences.append(r["confidence"])
+            if isinstance(r.get("latency_ms"), (int, float)):
+                latencies.append(r["latency_ms"])
+
+    def _avg(values: List[float]) -> Optional[float]:
+        return round(sum(values) / len(values), 3) if values else None
+
+    def _p95(values: List[float]) -> Optional[float]:
+        if not values:
+            return None
+        sorted_vals = sorted(values)
+        idx = min(len(sorted_vals) - 1, int(len(sorted_vals) * 0.95))
+        return round(sorted_vals[idx], 1)
+
+    return {
+        "migration_applied": migration_applied,
+        "window_days": days,
+        "total_requests": total,
+        "blocked_requests": blocked,
+        "safety_block_rate": round(blocked / total, 3) if total else None,
+        "by_category": by_category,
+        "by_answer_route": by_answer_route,
+        "by_ai_mode": by_ai_mode if migration_applied else None,
+        "avg_confidence": _avg(confidences) if migration_applied else None,
+        "avg_latency_ms": _avg(latencies) if migration_applied else None,
+        "p95_latency_ms": _p95(latencies) if migration_applied else None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Module 11 — Audit logs
 # ---------------------------------------------------------------------------

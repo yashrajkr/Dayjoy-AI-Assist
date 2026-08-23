@@ -62,6 +62,10 @@ class TraceEvent:
     # citation_correctness/overall, all 0..1. Internal-only, same as every
     # other field on this event: never included in an HTTP response body.
     quality_score: Optional[Dict[str, float]] = None
+    # Response Validator (orchestrator/answer_validate.py) — non-blocking
+    # structural warnings (e.g. a table with no cited sources). Same
+    # internal-only treatment as every other field on this event.
+    validation: Optional[Dict[str, Any]] = None
 
 
 def emit_trace(event: TraceEvent) -> None:
@@ -72,7 +76,7 @@ def emit_trace(event: TraceEvent) -> None:
             "intent=%s entities=%s selected_tools=%s route=%s retrieval_sources=%s "
             "retrieved_chunk_ids=%s retrieved_scores=%s latency_ms=%s model=%s "
             "tool_errors=%s confidence=%s verification_result=%s fallback_reason=%s "
-            "handoff_required=%s final_status=%s quality_score=%s",
+            "handoff_required=%s final_status=%s quality_score=%s validation=%s",
             event.request_id,
             event.user_id,
             event.query,
@@ -93,6 +97,7 @@ def emit_trace(event: TraceEvent) -> None:
             event.handoff_required,
             event.final_status,
             event.quality_score,
+            event.validation,
         )
     except Exception:
         _logger.exception("observability emit_trace failed")

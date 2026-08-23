@@ -1,4 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+  Children,
+  isValidElement,
+  type ReactNode,
+  type ReactElement,
+  type ComponentPropsWithoutRef,
+  type ThHTMLAttributes,
+} from "react";
 import { useNavigate, useParams, useOutletContext } from "react-router-dom";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -62,6 +76,7 @@ import {
   CheckCircle2,
   Wand2,
   ListChecks,
+  BookmarkPlus,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -85,6 +100,8 @@ import {
   generateConversationTitle,
   SessionExpiredError,
   distributorCreateFollowUp,
+  createArtifact,
+  type ArtifactType,
   type ChatSource,
   type ChatProductCard,
 } from "../../../lib/api";
@@ -209,7 +226,7 @@ function generateFollowUps(answer: string, sources: unknown, answerSource?: stri
  * genuine ```json or code sample) falls through to normal code rendering.
  */
 type ChartSpec = {
-  type?: "bar" | "line";
+  type?: "bar" | "line" | "pie" | "donut";
   title?: string;
   data: Array<{ label: string; value: number }>;
 };
@@ -224,7 +241,83 @@ function isChartSpec(v: unknown): v is ChartSpec {
   );
 }
 
+/** Categorical palette for pie/donut segments — the first slot reuses the
+ * app's own primary brand color, the rest are fixed hex values (inline SVG
+ * needs real color values, not Tailwind utility classes) chosen to stay
+ * visually distinct from each other and from the primary accent. */
+const DONUT_COLORS = [
+  "rgb(var(--primary-rgb))",
+  "#6366f1",
+  "#a855f7",
+  "#10b981",
+  "#f59e0b",
+  "#14b8a6",
+  "#f43f5e",
+];
+
+function DonutChart({ spec }: { spec: ChartSpec }) {
+  const size = 140;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 50;
+  const strokeWidth = 22;
+  const circumference = 2 * Math.PI * r;
+  const total = spec.data.reduce((s, d) => s + Math.max(d.value, 0), 0) || 1;
+  let offsetAcc = 0;
+
+  return (
+    <div className="not-prose rounded-xl border border-border bg-card px-3 py-3 my-2">
+      {spec.title ? <div className="text-xs font-semibold text-foreground mb-2">{spec.title}</div> : null}
+      <div className="flex items-center gap-4">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0" role="img" aria-label={spec.title || "Chart"}>
+          <g transform={`rotate(-90 ${cx} ${cy})`}>
+            {spec.data.map((d, i) => {
+              const value = Math.max(d.value, 0);
+              const fraction = value / total;
+              const dash = fraction * circumference;
+              const dashoffset = -offsetAcc;
+              offsetAcc += dash;
+              return (
+                <circle
+                  key={i}
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill="none"
+                  stroke={DONUT_COLORS[i % DONUT_COLORS.length]}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={`${dash} ${circumference - dash}`}
+                  strokeDashoffset={dashoffset}
+                />
+              );
+            })}
+          </g>
+        </svg>
+        <div className="flex flex-col gap-1 text-[11px] min-w-0">
+          {spec.data.map((d, i) => (
+            <div key={i} className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }}
+                aria-hidden="true"
+              />
+              <span className="truncate text-muted-foreground">{d.label}</span>
+              <span className="text-foreground font-medium ml-auto shrink-0">
+                {Math.round((Math.max(d.value, 0) / total) * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChartBlock({ spec }: { spec: ChartSpec }) {
+  if (spec.type === "pie" || spec.type === "donut") {
+    return <DonutChart spec={spec} />;
+  }
+
   const width = 320;
   const height = 140;
   const padding = 24;
@@ -279,12 +372,127 @@ function ChartBlock({ spec }: { spec: ChartSpec }) {
  * the whole chat column wider than the viewport on mobile instead of
  * scrolling within its own box.
  */
-const MARKDOWN_COMPONENTS: Components = {
-  table: ({ children, ...props }) => (
+/** Recursively flattens a React node tree to its rendered text — used to
+ * read a table cell's content for sorting without touching the DOM. */
+function extractNodeText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractNodeText).join("");
+  if (isValidElement(node)) {
+    const props = node.props as { children?: ReactNode };
+    return extractNodeText(props.children);
+  }
+  return "";
+}
+
+/** Interactive Tables (Feature 20) — a markdown table's header cells become
+ * clickable to sort the rows, purely client-side. Falls back to a plain
+ * (still horizontally-scrollable) table whenever the children don't match
+ * the exact thead/tr + tbody/tr shape remark-gfm always produces for a
+ * table — never throws, worst case is "not sortable", not a crash. */
+function SortableTable(props: ComponentPropsWithoutRef<"table">) {
+  const { children, ...rest } = props;
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const childArray = Children.toArray(children);
+  const thead = childArray.find(
+    (c): c is ReactElement<{ children?: ReactNode }> => isValidElement(c) && c.type === "thead",
+  );
+  const tbody = childArray.find(
+    (c): c is ReactElement<{ children?: ReactNode }> => isValidElement(c) && c.type === "tbody",
+  );
+  const headerRow = thead
+    ? (Children.toArray(thead.props.children).find(
+        (c): c is ReactElement<{ children?: ReactNode }> => isValidElement(c),
+      ) ?? null)
+    : null;
+  const headerCells = headerRow ? Children.toArray(headerRow.props.children) : [];
+  const bodyRows = tbody
+    ? Children.toArray(tbody.props.children).filter(
+        (c): c is ReactElement<{ children?: ReactNode }> => isValidElement(c),
+      )
+    : [];
+
+  // Anything other than the standard shape (unexpected nesting, a table
+  // with no header, etc.) — render exactly as before, just not sortable.
+  if (!thead || !tbody || headerCells.length === 0) {
+    return (
+      <div className="overflow-x-auto">
+        <table {...rest}>{children}</table>
+      </div>
+    );
+  }
+
+  const sortedRows = (() => {
+    if (sortCol === null) return bodyRows;
+    const withText = bodyRows.map((row) => {
+      const cells = Children.toArray(row.props.children);
+      const cell = cells[sortCol];
+      const text = isValidElement(cell) ? extractNodeText((cell.props as { children?: ReactNode }).children) : "";
+      return { row, text: text.trim() };
+    });
+    // `Number("")` is 0, not NaN — stripping a purely-alphabetic cell like
+    // "Turmeric" down to non-digit characters leaves "", which this naive
+    // check would have called "numeric" and compared as 0 === 0 for every
+    // row (a silent no-op sort instead of the expected alphabetic one).
+    // Require at least one actual digit in the original text first.
+    const numeric = withText.every(
+      (w) => w.text === "" || (/\d/.test(w.text) && !Number.isNaN(Number(w.text.replace(/[^0-9.-]/g, "")))),
+    );
+    const sorted = [...withText].sort((a, b) => {
+      const cmp = numeric
+        ? Number(a.text.replace(/[^0-9.-]/g, "") || 0) - Number(b.text.replace(/[^0-9.-]/g, "") || 0)
+        : a.text.localeCompare(b.text);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted.map((w) => w.row);
+  })();
+
+  return (
     <div className="overflow-x-auto">
-      <table {...props}>{children}</table>
+      <table {...rest}>
+        <thead>
+          <tr>
+            {headerCells.map((cell, i) => {
+              if (!isValidElement(cell)) return null;
+              const cellProps = cell.props as ThHTMLAttributes<HTMLTableCellElement>;
+              return (
+                <th
+                  {...cellProps}
+                  key={i}
+                  className={`${cellProps.className ?? ""} cursor-pointer select-none hover:opacity-70 transition-opacity`}
+                  onClick={() => {
+                    if (sortCol === i) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                    else {
+                      setSortCol(i);
+                      setSortDir("asc");
+                    }
+                  }}
+                  role="columnheader"
+                  aria-sort={sortCol === i ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {cellProps.children}
+                    {sortCol === i ? (
+                      <span aria-hidden="true" className="text-[10px]">
+                        {sortDir === "asc" ? "▲" : "▼"}
+                      </span>
+                    ) : null}
+                  </span>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>{sortedRows}</tbody>
+      </table>
     </div>
-  ),
+  );
+}
+
+const MARKDOWN_COMPONENTS: Components = {
+  table: (props) => <SortableTable {...props} />,
   code: ({ className, children, ...props }) => {
     if (/language-chart/.test(className || "")) {
       const raw = String(children).replace(/\n$/, "");
@@ -689,6 +897,8 @@ export function UserChat() {
   // "Save as follow-up task" — id of the message currently showing a
   // saved/saving/error confirmation on its action button.
   const [followUpSaveState, setFollowUpSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
+  // "Save as artifact" — same transient per-message save-state pattern.
+  const [artifactSaveState, setArtifactSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -1426,6 +1636,37 @@ export function UserChat() {
       }
     },
     [],
+  );
+
+  // ---- Save an assistant answer as a reusable Artifact ----
+  // Feature: Artifact Generation. Available to every role (unlike the
+  // distributor-only follow-up task) since an artifact is a personal saved
+  // document, not a business-workflow record.
+  const handleSaveArtifact = useCallback(
+    async (message: ChatMessage) => {
+      const key = message.id ?? `${message.role}-${message.created_at}`;
+      setArtifactSaveState((prev) => ({ ...prev, [key]: "saving" }));
+      try {
+        const artifactType: ArtifactType = /(^|\n)\s*\d+\.\s/.test(message.content) ? "action_plan" : "summary";
+        await createArtifact({
+          artifact_type: artifactType,
+          title: deriveTitle(message.content, 60),
+          content: message.content,
+          conversation_id: activeConv?.id ?? null,
+        });
+        setArtifactSaveState((prev) => ({ ...prev, [key]: "saved" }));
+      } catch {
+        setArtifactSaveState((prev) => ({ ...prev, [key]: "error" }));
+        setTimeout(() => {
+          setArtifactSaveState((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        }, 2500);
+      }
+    },
+    [activeConv],
   );
 
   // ---- Edit-and-resend a sent user message ----
@@ -2472,6 +2713,8 @@ export function UserChat() {
                           : undefined
                       }
                       followUpSaveState={followUpSaveState[key]}
+                      onSaveArtifact={m.role === "assistant" ? handleSaveArtifact : undefined}
+                      artifactSaveState={artifactSaveState[key]}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -3800,6 +4043,8 @@ function MessageBubble({
   onTransform,
   onSaveFollowUp,
   followUpSaveState,
+  onSaveArtifact,
+  artifactSaveState,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -3818,6 +4063,8 @@ function MessageBubble({
   onTransform?: (kind: "simplify" | "actionable", text: string) => void;
   onSaveFollowUp?: (message: ChatMessage) => void;
   followUpSaveState?: "saving" | "saved" | "error";
+  onSaveArtifact?: (message: ChatMessage) => void;
+  artifactSaveState?: "saving" | "saved" | "error";
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -4113,6 +4360,26 @@ function MessageBubble({
                 <Check className="w-3.5 h-3.5" aria-hidden="true" />
               ) : (
                 <ListChecks className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+            </ActionButton>
+          ) : null}
+          {onSaveArtifact && looksActionable(message.content, message.ai_mode) ? (
+            <ActionButton
+              onClick={() => onSaveArtifact(message)}
+              label={
+                artifactSaveState === "saved"
+                  ? "Saved as artifact"
+                  : artifactSaveState === "error"
+                    ? "Couldn't save — try again"
+                    : "Save as artifact"
+              }
+              active={artifactSaveState === "saved"}
+              activeColor="primary"
+            >
+              {artifactSaveState === "saved" ? (
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <BookmarkPlus className="w-3.5 h-3.5" aria-hidden="true" />
               )}
             </ActionButton>
           ) : null}

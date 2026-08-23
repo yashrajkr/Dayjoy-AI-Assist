@@ -210,3 +210,58 @@ def test_followup_reference_is_resolved_before_retrieval(authed_client, monkeypa
     rewritten = captured_queries[0]
     assert "what about its price?" in rewritten
     assert "Dayjoy Spirulina tablets" in rewritten
+
+
+def test_deep_research_compound_question_enriches_retrieval_query(authed_client, monkeypatch):
+    """Feature: Structured Research Mode — a compound question in
+    deep_research mode gets its *retrieval* query enumerated into parts
+    (orchestrator/decompose.py) so each sub-topic's own words are present
+    for the retriever to match against, while the original wording is still
+    the LLM's generation input unchanged (see stream_response's own args,
+    which always use req.message, never retrieval_query)."""
+    captured_queries = []
+
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
+        captured_queries.append(message)
+        return "", [], "general", None
+
+    monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)
+    monkeypatch.setattr(backend_main, "web_search_multi", stub_web_search_multi([], None, False))
+
+    resp = authed_client.post(
+        "/chat",
+        json={
+            "message": "What is Dayjoy's refund policy and how do I raise a claim?",
+            "language": "English",
+            "ai_mode": "deep_research",
+        },
+        headers={"Authorization": "Bearer fake-test-token"},
+    )
+    assert resp.status_code == 200
+    assert len(captured_queries) == 1
+    enriched = captured_queries[0]
+    assert enriched.startswith("What is Dayjoy's refund policy and how do I raise a claim?")
+    assert "1." in enriched and "2." in enriched
+    assert "raise a claim" in enriched
+
+
+def test_normal_mode_compound_question_is_not_enriched(authed_client, monkeypatch):
+    """The enrichment is deep_research-only — the same compound question in
+    normal mode reaches retrieve_context completely unchanged."""
+    captured_queries = []
+
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
+        captured_queries.append(message)
+        return "", [], "general", None
+
+    monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)
+    monkeypatch.setattr(backend_main, "web_search_multi", stub_web_search_multi([], None, False))
+
+    message = "What is Dayjoy's refund policy and how do I raise a claim?"
+    resp = authed_client.post(
+        "/chat",
+        json={"message": message, "language": "English", "ai_mode": "normal"},
+        headers={"Authorization": "Bearer fake-test-token"},
+    )
+    assert resp.status_code == 200
+    assert captured_queries == [message]

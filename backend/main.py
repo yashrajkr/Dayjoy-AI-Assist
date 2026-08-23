@@ -481,6 +481,30 @@ from backend.orchestrator.tools import weather as weather_tool  # noqa: E402
 # generation call still sees the user's own original wording via `history`.
 from backend.orchestrator.rewrite import rewrite_query  # noqa: E402
 
+# Deep Research query decomposition — augments the retrieval query text only
+# (see module docstring for why this is safer than multi-call + merge).
+from backend.orchestrator.decompose import enrich_for_deep_research  # noqa: E402
+
+# Context Compression (Advanced Intelligence Layer capability 6).
+from backend.orchestrator.context_compress import ContextBlock, compress_context  # noqa: E402
+
+# LLM-backed query rewriting (Advanced Intelligence Layer capability 3) —
+# extends orchestrator/rewrite.py's free regex pass for short/Hinglish
+# queries the regex pass can't handle.
+from backend.orchestrator.rewrite_llm import llm_rewrite_for_retrieval, should_llm_rewrite  # noqa: E402
+
+# Conversation Continuity Engine (Advanced Intelligence Layer capability 7).
+from backend.orchestrator.conversation_state import build_conversation_state  # noqa: E402
+
+# Answer Refinement Loop (Advanced Intelligence Layer capability 10).
+from backend.orchestrator.quality import score_answer  # noqa: E402
+from backend.orchestrator.refinement import build_refinement_instruction, needs_refinement  # noqa: E402
+
+# Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
+# Intelligence Layer capabilities 1-2).
+from backend.orchestrator.quality_router import route_query  # noqa: E402
+from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
+
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
 # document chunk), so a match here skips RAG entirely for that turn rather
@@ -532,7 +556,12 @@ from backend.orchestrator.tools.memory import list_memory  # noqa: E402
 # Adaptive response formatting — "answer in short" / "give me steps" /
 # "compare X and Y" get a matching structural instruction instead of the
 # model always answering in one fixed shape regardless of what was asked.
-from backend.orchestrator.format_intent import example_instruction, format_instruction  # noqa: E402
+from backend.orchestrator.format_intent import (  # noqa: E402
+    FORMAT_ACTION_PLAN,
+    detect_format,
+    example_instruction,
+    format_instruction,
+)
 
 
 def run_safety_check(message: str, rules: List[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
@@ -1072,6 +1101,22 @@ async def _route_events(
                 yield event
             return
 
+    # Answer Quality Router (orchestrator/quality_router.py) — a narrow,
+    # deterministic check for a broad business/strategy question (the only
+    # strategy this route actually diverts on; every other strategy value
+    # just documents what the code below already does). Isolated early
+    # return: run_reasoning_pipeline builds and merges its OWN evidence set
+    # across sub-questions rather than depending on the single-call
+    # assumptions the rest of this function is built around — see that
+    # module's docstring for why that isolation is what makes this safe to
+    # wire in as one branch instead of a riskier rewrite of the shared path.
+    quality_decision = route_query(message, plan.intent, plan)
+    if quality_decision.use_reasoning:
+        yield ("status", "analyzing")
+        route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
+        yield ("result", route_result)
+        return
+
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(
         token, message, top_k=top_k_for(ai_mode)
@@ -1252,18 +1297,31 @@ def _log_unified_trace(
             verification_result = "passed"
 
         quality_score = None
+        validation = None
         if answer is not None:
             from backend.orchestrator.format_intent import FORMAT_ACTION_PLAN, detect_format
             from backend.orchestrator.quality import score_answer
+            from backend.orchestrator.answer_structure import structure_answer
+            from backend.orchestrator.answer_validate import validate_structured_answer
+
+            answer_source_for_scoring = route.answer_source if route else "general_llm"
+            sources_for_scoring = route.sources if route else []
 
             quality_score = score_answer(
                 query,
                 answer,
-                answer_source=(route.answer_source if route else "general_llm"),
+                answer_source=answer_source_for_scoring,
                 verification_status=verification_status,
                 confidence=confidence,
-                sources=(route.sources if route else []),
+                sources=sources_for_scoring,
                 intent_wants_action=detect_format(query) == FORMAT_ACTION_PLAN,
+            ).to_dict()
+            validation = validate_structured_answer(
+                structure_answer(answer),
+                answer_source=answer_source_for_scoring,
+                sources=sources_for_scoring,
+                verification_status=verification_status,
+                answer_text=answer,
             ).to_dict()
 
         emit_trace(
@@ -1293,6 +1351,7 @@ def _log_unified_trace(
                 handoff_required=handoff_required,
                 final_status=final_status,
                 quality_score=quality_score,
+                validation=validation,
             )
         )
     except Exception:
@@ -1328,6 +1387,27 @@ async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Option
         f"Team size: {len(team)} ({active_team} active). "
         f"Business volume (last 30 days): {month_bv:.0f} BV."
     )
+
+
+def _assemble_compressed_context(
+    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str
+) -> str:
+    """Context Compression (orchestrator/context_compress.py) — replaces the
+    previous plain "\\n\\n".join() of these four blocks with dedup +
+    priority-budgeted assembly. Dayjoy knowledge/current time are the
+    highest-priority (never dropped except under extreme budget pressure);
+    web results are lowest, since they're supplementary even in hybrid mode
+    (HYBRID_MODE_ADDENDUM already tells the model Dayjoy context wins on any
+    conflict)."""
+    blocks = [
+        ContextBlock(label="Current date/time", text=time_context, priority=1) if time_context else None,
+        ContextBlock(label="Approved Dayjoy knowledge", text=dayjoy_context, priority=1) if dayjoy_context else None,
+        ContextBlock(label="Personalization", text=personalization_context, priority=2)
+        if personalization_context
+        else None,
+        ContextBlock(label="Web", text=web_context, priority=3) if web_context else None,
+    ]
+    return compress_context([b for b in blocks if b is not None])
 
 
 async def _maybe_personalization_context(
@@ -1366,7 +1446,14 @@ async def _maybe_personalization_context(
     if role == "distributor" and wants_business_data(message):
         business_snapshot = await _fetch_business_snapshot(token, user_id)
 
-    if not memory_items and not business_snapshot:
+    # Conversation Continuity Engine (orchestrator/conversation_state.py) —
+    # fills the conversation_summary field context_builder.py already had a
+    # rendering path for but nothing ever computed. Cheap/pure over the same
+    # `history` already in scope, so it's fine to compute even when memory/
+    # business data end up empty — it alone can justify returning a block.
+    conversation_summary = build_conversation_state(history).to_summary() or None
+
+    if not memory_items and not business_snapshot and not conversation_summary:
         return ""
     # Top 3 memory items by the tool's own recency+pinned score — not the
     # full 20-item cap `list_memory` allows, per "don't inject all memory
@@ -1374,6 +1461,7 @@ async def _maybe_personalization_context(
     return build_context(
         user_memory_items=(memory_items or [])[:3],
         business_data=business_snapshot,
+        conversation_summary=conversation_summary,
     ).to_prompt_blocks()
 
 
@@ -1452,7 +1540,8 @@ SYSTEM_PROMPT = (
     "products actually present in the context), you may ALSO include a fenced code block "
     "labeled \"chart\" containing ONLY compact JSON in this exact shape: "
     '{"type": "bar", "title": "<short title>", "data": [{"label": "<name>", "value": <number>}, '
-    '...]} (use "type": "line" instead of "bar" for a trend over time). Every value must come '
+    '...]} (use "type": "line" for a trend over time, or "type": "donut" for a share-of-total '
+    "breakdown instead of a bar-by-bar comparison). Every value must come "
     "directly from the context — never invent or estimate a number for a chart. Skip the chart "
     "entirely if you're not certain every value is real."
 )
@@ -1895,8 +1984,11 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
-    retrieval_query = rewrite_query(req.message, history)
     ai_mode = normalize_ai_mode(req.ai_mode)
+    retrieval_query = rewrite_query(req.message, history)
+    if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
+        retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
+    retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
     route = await determine_route(token, retrieval_query, casual, ai_mode)
     t_after_routing = time.monotonic()
 
@@ -1904,8 +1996,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         token, user_id, req.message, history, casual, req.role
     )
     t_after_personalization = time.monotonic()
-    full_context = "\n\n".join(
-        p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+    full_context = _assemble_compressed_context(
+        current_time_context(), personalization_context, route.context, route.web_context
     )
     custom_guidance = await load_ai_custom_guidance()
     fmt_directive = format_instruction(req.message)
@@ -1968,6 +2060,38 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                         answer_mismatch = True
                 else:
                     answer_mismatch = True
+                already_retried = True
+            else:
+                already_retried = False
+        else:
+            already_retried = False
+
+        # Answer Refinement Loop (orchestrator/refinement.py) — a SEPARATE,
+        # bounded-to-one check from the relevance-mismatch retry above;
+        # `already_retried` ensures a response is never regenerated twice.
+        # Also requires `route.context` (real retrieved evidence) — with no
+        # evidence, refining can't improve anything (the model has nothing
+        # more to draw from; the existing evidence_insufficient/handoff
+        # logic already covers that case) — and, just as importantly,
+        # avoids treating a deliberately short, correct answer (e.g. the
+        # user explicitly asked for FORMAT_SHORT) as "too thin" just
+        # because the completeness heuristic is length-based.
+        if not already_retried and answer and route.context:
+            draft_score = score_answer(
+                req.message, answer, answer_source=route.answer_source,
+                sources=route.sources, intent_wants_action=detect_format(req.message) == FORMAT_ACTION_PLAN,
+            )
+            if needs_refinement(draft_score, route.answer_source, already_retried):
+                refine_context = full_context + "\n\n" + build_refinement_instruction(draft_score)
+                refine_parts: List[str] = []
+                async for tok in stream_response(
+                    req.message, history, refine_context, req.language, route.mode, custom_guidance,
+                    ai_mode=ai_mode,
+                ):
+                    refine_parts.append(tok)
+                refined = "".join(refine_parts).strip()
+                if refined:
+                    answer = refined
     t_after_verification = time.monotonic()
 
     confidence, verification_status = _compute_confidence(casual, route)
@@ -1993,7 +2117,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     # features. Inserting here too duplicated every message in
     # chat_messages — this endpoint only needs conv_id for history/context.
 
-    await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+    await _log_analytics(
+        token, user_id, req, category, sources, confidence, route.answer_source,
+        ai_mode=ai_mode, latency_ms=(time.monotonic() - started_at) * 1000,
+    )
     stage_ms = {
         "routing": (t_after_routing - started_at) * 1000,
         "personalization": (t_after_personalization - t_after_routing) * 1000,
@@ -2144,6 +2271,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
         retrieval_query = rewrite_query(req.message, history)
+        if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
+            retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
+        retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
         route: Optional[RouteResult] = None
         async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
             if kind == "status":
@@ -2157,8 +2287,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             token, user_id, req.message, history, casual, req.role
         )
         t_after_personalization = time.monotonic()
-        full_context = "\n\n".join(
-            p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
+        full_context = _assemble_compressed_context(
+            current_time_context(), personalization_context, route.context, route.web_context
         )
         custom_guidance = await load_ai_custom_guidance()
         fmt_directive = format_instruction(req.message)
@@ -2242,7 +2372,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # NOTE: message persistence is owned by the frontend — see the same
         # note in the non-streaming /chat handler above.
 
-        await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+        await _log_analytics(
+            token, user_id, req, category, sources, confidence, route.answer_source,
+            ai_mode=ai_mode, latency_ms=(time.monotonic() - started_at) * 1000,
+        )
         t_after_verification = time.monotonic()
         stage_ms = {
             "routing": (t_after_routing - started_at) * 1000,
@@ -2385,8 +2518,15 @@ async def _log_analytics(
     sources: List[ChatSource],
     confidence: float,
     answer_route: Optional[str] = None,
+    ai_mode: Optional[str] = None,
+    latency_ms: Optional[float] = None,
 ) -> None:
-    """Best-effort analytics insert."""
+    """Best-effort analytics insert. `confidence`/`ai_mode`/`latency_ms`
+    feed the Observability Dashboard (GET /admin/analytics/observability,
+    admin_api.py) — added in v27_analytics_observability.sql; degrades
+    gracefully (Supabase just ignores/keeps null for extra fields it
+    doesn't have yet) if that migration hasn't been applied to a given
+    environment."""
     if not SUPABASE_URL:
         return
     payload = {
@@ -2398,6 +2538,9 @@ async def _log_analytics(
         "source_used": ",".join(s.table for s in sources[:3]) or None,
         "safety_status": "safe",
         "answer_route": answer_route,
+        "confidence": confidence,
+        "ai_mode": ai_mode,
+        "latency_ms": round(latency_ms) if latency_ms is not None else None,
     }
     # Use anon-key insert (no RLS on user_id=NULL or matching auth.uid())
     headers = {
@@ -3461,6 +3604,17 @@ try:
 except Exception as _dist_router_err:  # pragma: no cover
     import logging
     logging.getLogger("dayjoy.main").warning("Failed to load distributor router: %s", _dist_router_err)
+
+
+# ---------------------------------------------------------------------------
+# Advanced Intelligence Layer — Artifacts (capabilities 14-16)
+# ---------------------------------------------------------------------------
+try:
+    from backend.artifacts_api import router as artifacts_router
+    app.include_router(artifacts_router)
+except Exception as _artifacts_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load artifacts router: %s", _artifacts_router_err)
 
 
 # ---------------------------------------------------------------------------
