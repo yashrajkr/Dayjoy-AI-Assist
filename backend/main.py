@@ -125,11 +125,28 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Multimodal Understanding (Capabilities 1/2/19/20) — vision-capable model.
+# Live-verified against this account's actual Groq API key (GET
+# https://api.groq.com/openai/v1/models): zero vision-capable models are
+# available on it today (only text models: gpt-oss-120b/20b, qwen3.6-27b,
+# whisper, etc.) — so this deliberately does NOT default to a Groq model.
+# gpt-4o-mini (OPENAI_MODEL's own default) IS vision-capable and is reused
+# here rather than introducing a second model env var; if OPENAI_API_KEY is
+# unset or the account has no credit, image understanding degrades to a
+# clear "not available right now" message (see stream_vision_response)
+# rather than a raw provider error.
+VISION_MODEL = os.getenv("VISION_MODEL", OPENAI_MODEL)
 # Web search API keys (TAVILY_API_KEY, BRAVE_API_KEY) are read directly by
 # their provider classes in backend/search_providers.py, not here.
 ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v2.sql
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
+# Multimodal Understanding (Capabilities 1/2/19/20) — max length of an
+# attached image's data: URL. ~6M chars ≈ 4.4MB decoded (base64 is ~1.37x
+# source size), loosely matching the frontend's own MAX_ATTACHMENT_BYTES=
+# 10_000_000 cap; enforced independently here since a request can reach
+# this endpoint without going through that UI at all.
+MAX_IMAGE_DATA_URL_CHARS = 6_000_000
 
 # AI Orchestrator (backend/orchestrator/) — Phase 1: intent classification +
 # query planning run alongside the existing `_route_events` router purely for
@@ -355,6 +372,12 @@ class ChatRequest(BaseModel):
     # values fall back to "normal" in ai_modes.get_mode_config rather than
     # raising, so a stale client sending an unrecognized mode still works.
     ai_mode: str = "normal"
+    # Multimodal Understanding (Capabilities 1/2/19/20) — a single attached
+    # image as a data: URL (the frontend already captures this via
+    # FileReader.readAsDataURL when a user attaches an image). Optional;
+    # when present, both /chat and /chat/stream answer from the image via
+    # stream_vision_response() instead of the normal RAG/routing pipeline.
+    image_data_url: Optional[str] = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)
 
 
 class TitleRequest(BaseModel):
@@ -1825,6 +1848,109 @@ async def stream_openai(
         yield tok
 
 
+_ALLOWED_IMAGE_MIME_PREFIXES = ("data:image/jpeg", "data:image/png", "data:image/webp", "data:image/gif")
+
+_vision_logger = logging.getLogger("dayjoy.vision")
+
+
+def validate_image_data_url(data_url: str) -> Optional[str]:
+    """Returns an error message if `data_url` is unsafe/malformed to send to
+    a vision model, else None. Defense in depth even though the frontend
+    already caps size/type at capture time — this endpoint must not trust
+    that any caller went through that UI path."""
+    if not data_url.startswith(_ALLOWED_IMAGE_MIME_PREFIXES):
+        return "Unsupported image type — please attach a JPEG, PNG, WEBP, or GIF."
+    if len(data_url) > MAX_IMAGE_DATA_URL_CHARS:
+        return "Image is too large — please attach a smaller image."
+    return None
+
+
+async def stream_vision_response(message: str, image_data_url: str, language: str) -> AsyncIterator[str]:
+    """Multimodal Understanding (Capabilities 1, 2, 19, 20) — answers a
+    question about an attached image. Deliberately its OWN path, not routed
+    through _stream_chat_completions/RAG: an image question isn't a Dayjoy-
+    knowledge lookup, and "never assume information that cannot be seen or
+    verified" (Capability 2's explicit requirement) means this must NOT mix
+    in RAG context that could bias the model toward describing something
+    that isn't actually in the image.
+
+    OpenAI-only: this Groq account has zero vision-capable models available
+    (live-verified against the actual API key — see VISION_MODEL's
+    definition above), so there is no Groq fallback leg here the way
+    stream_response() has for text. If OPENAI_API_KEY is unset, or the call
+    fails for any reason (including the account having no credit — a real,
+    observed condition in this deployment's OpenAI key as of this writing),
+    this yields one clear, honest sentence rather than a raw provider error
+    or a silently empty response.
+    """
+    if not OPENAI_API_KEY:
+        yield (
+            "Image understanding isn't available right now — please describe what's in the "
+            "image and I'll help from there, or contact Dayjoy support to attach it to a ticket."
+        )
+        return
+
+    system_prompt = (
+        "You are Dayjoy AI Assist. The user has attached an image. Describe and answer questions "
+        "about ONLY what is actually visible in the image — never invent details, brands, text, or "
+        "product identities you cannot actually see. If the image is unclear or you cannot make out "
+        "something the user asked about, say so plainly rather than guessing. If the user is asking "
+        "about a Dayjoy product shown in the image, describe what you see, but do not assert Dayjoy-"
+        "specific facts (pricing, ingredients, health claims) beyond what's visibly printed on the "
+        "product/packaging itself — for anything else, tell the user to ask as a follow-up so it can "
+        "be checked against approved Dayjoy knowledge."
+    )
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Language: {language}\n\nQuestion: {message}"},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            },
+        ],
+        "temperature": 0.2,
+        "stream": True,
+        "max_tokens": 800,
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    collected = ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST", "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread())[:300]
+                    _vision_logger.warning("vision request failed (%s): %s", resp.status_code, body)
+                else:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload_str = line[5:].strip()
+                        if payload_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                            if delta:
+                                collected += delta
+                                yield delta
+                        except Exception:
+                            continue
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        _vision_logger.warning("vision request network error: %s", e)
+
+    if not collected:
+        yield (
+            "I couldn't process that image right now — please try again in a moment, or describe "
+            "what's in it and I'll help from there."
+        )
+
+
 _SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
 _DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
 _LEGACY_TABLE_TAG_RE = re.compile(r"^\[\w+\]\s*")
@@ -2075,6 +2201,38 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             safety_status="blocked",
             handoff_required=True,
             answer_source="unsafe",
+        )
+
+    # Multimodal Understanding (Capabilities 1/2/19/20) — an attached image
+    # bypasses RAG/routing entirely (see stream_vision_response's docstring
+    # for why: mixing in Dayjoy KB context here risks biasing the model
+    # toward describing something not actually visible in the image).
+    if req.image_data_url:
+        image_error = validate_image_data_url(req.image_data_url)
+        if image_error:
+            raise HTTPException(status_code=422, detail=image_error)
+        conv_id = req.conversation_id
+        if token and user_id and not req.is_temporary and not conv_id:
+            conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+        vision_parts: List[str] = []
+        async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+            vision_parts.append(tok)
+        vision_answer = "".join(vision_parts).strip()
+        await _log_analytics(
+            token, user_id, req, "vision", [], 0.9, "vision",
+            ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return ChatResponse(
+            answer=vision_answer,
+            category="vision",
+            sources=[],
+            safety_status="safe",
+            handoff_required=False,
+            confidence=0.9 if OPENAI_API_KEY else None,
+            conversation_id=conv_id,
+            answer_source="vision",
+            ai_mode="normal",
+            structured=structure_answer(vision_answer).to_dict(),
         )
 
     history: List[Dict[str, str]] = []
@@ -2377,6 +2535,39 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # nor `done`, so this is backwards compatible — and it re-arms the
         # client's idle timeout.
         yield _sse({"status": "connected"})
+
+        # Multimodal Understanding (Capabilities 1/2/19/20) — same
+        # image-bypasses-RAG early return as /chat above, streamed.
+        if req.image_data_url:
+            image_error = validate_image_data_url(req.image_data_url)
+            if image_error:
+                yield _sse({"token": "", "done": True, "error": image_error})
+                return
+            conv_id = req.conversation_id
+            if token and user_id and not req.is_temporary and not conv_id:
+                conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+            vision_parts: List[str] = []
+            async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+                vision_parts.append(tok)
+                yield _sse({"token": tok})
+            vision_answer = "".join(vision_parts).strip()
+            await _log_analytics(
+                token, user_id, req, "vision", [], 0.9, "vision",
+                ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+            )
+            yield _sse({
+                "done": True,
+                "category": "vision",
+                "sources": [],
+                "safety_status": "safe",
+                "handoff_required": False,
+                "confidence": 0.9 if OPENAI_API_KEY else None,
+                "conversation_id": conv_id,
+                "answer_source": "vision",
+                "ai_mode": "normal",
+                "structured": structure_answer(vision_answer).to_dict(),
+            })
+            return
 
         history: List[Dict[str, str]] = []
         conv_id = req.conversation_id

@@ -1314,6 +1314,12 @@ export function UserChat() {
         evidence_strength?: string | null;
       } = {};
 
+      // Multimodal Understanding (Capabilities 1/2/19/20) — the most
+      // recently attached image, if any, rides along with THIS message
+      // only (attachments themselves stay in the persistent per-conversation
+      // gallery below, unaffected by sending).
+      const imageForThisSend = attachments.length > 0 ? attachments[attachments.length - 1].dataUrl : undefined;
+
       try {
         const res = await streamChatWithBackend(
           {
@@ -1323,6 +1329,7 @@ export function UserChat() {
             conversation_id: convId,
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
+            image_data_url: imageForThisSend,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1505,7 +1512,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, attachments, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {

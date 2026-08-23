@@ -25,6 +25,10 @@ export type ChatRequest = {
   is_temporary?: boolean;
   /** AI Mode System — "normal" | "thinking" | "deep_research" | "compare_products". */
   ai_mode?: string;
+  /** Multimodal Understanding (Capability 1/2/19/20) — a single attached
+   * image as a data: URL. When present, the backend answers from the image
+   * via a vision-capable model instead of the normal RAG pipeline. */
+  image_data_url?: string;
 };
 
 export type ChatSource = {
