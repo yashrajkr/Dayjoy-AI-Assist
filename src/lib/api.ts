@@ -189,6 +189,12 @@ export type ChatProductCard = {
    * numeric confidence score. Absent for a structured pricing card (only
    * product_recommendation results carry this). */
   recommendation_strength?: string | null;
+  /** Reasoning Summary (Capability 36) — safe, deterministic "why this
+   * recommendation" bullets built from real signals (matched condition,
+   * verification status, evidence source, contraindications). Never a
+   * paraphrase of hidden model reasoning — this recommendation path is
+   * rule-based matching, not an LLM call. */
+  reasoning_summary?: string[] | null;
   price?: {
     mrp?: number | null;
     dp?: number | null;

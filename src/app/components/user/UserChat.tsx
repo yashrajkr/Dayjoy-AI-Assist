@@ -694,6 +694,7 @@ function AnswerContent({ content }: { content: string }) {
  */
 function ProductCard({ product }: { product: ChatProductCard }) {
   const price = product.price;
+  const [showWhy, setShowWhy] = useState(false);
   return (
     <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
       <div className="flex items-start gap-2">
@@ -736,6 +737,26 @@ function ProductCard({ product }: { product: ChatProductCard }) {
       ) : null}
       {product.safety_note ? (
         <p className="mt-1 text-[11px] text-warning">⚠ {product.safety_note}</p>
+      ) : null}
+      {/* Reasoning Summary (Capability 36) — safe, concise "why this
+          recommendation?" bullets, never hidden chain-of-thought. */}
+      {product.reasoning_summary && product.reasoning_summary.length > 0 ? (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            onClick={() => setShowWhy((v) => !v)}
+            className="text-[11px] text-primary hover:underline"
+          >
+            {showWhy ? "Hide" : "Why this?"}
+          </button>
+          {showWhy ? (
+            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground list-disc list-inside">
+              {product.reasoning_summary.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
