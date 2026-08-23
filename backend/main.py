@@ -1508,6 +1508,65 @@ async def _maybe_personalization_context(
     ).to_prompt_blocks()
 
 
+# Answer Personalization Controls (Capability 14) — recognized preference
+# keys, written either by Settings (see UserSettings.tsx's Response style
+# section) or by the existing User Preference Learning auto-save
+# (trackTransformUsage() in UserChat.tsx after repeated manual transform
+# use). Maps each key/value onto a plain-English system-prompt directive.
+_PERSONALIZATION_DIRECTIVES: Dict[str, Dict[str, str]] = {
+    "preferred_detail": {
+        "short": "Keep answers concise by default — only the essential point(s).",
+        "concise": "Keep answers concise by default — only the essential point(s).",
+        "balanced": "",  # default behavior — no directive needed
+        "detailed": "Prefer more detailed answers by default — include the full reasoning and relevant specifics.",
+    },
+    "preferred_explanation_level": {
+        "simple": "Explain things in plain, everyday language by default — avoid jargon unless the user uses it first.",
+    },
+    "preferred_response_style": {
+        "actionable": "Prefer actionable framing by default — concrete steps over pure explanation.",
+        "professional": "Use a polished, professional tone by default.",
+        "simple": "Use simple, plain language by default.",
+    },
+    "preferred_language": {
+        "Hindi": "Prefer responding in Hindi by default, unless the user writes in another language.",
+        "Hinglish": "Prefer responding in Hinglish (Hindi in Latin script mixed with English) by default, unless the user writes in another language.",
+    },
+}
+
+
+async def _personalization_style_addendum(token: Optional[str], user_id: Optional[str]) -> str:
+    """Turns the user's own saved preferences (Settings or auto-learned)
+    into an explicit system-prompt directive — previously these preference
+    keys were only ever surfaced as inert "known facts about the user" text
+    (via _maybe_personalization_context, itself gated to reference/
+    recommendation-shaped messages only), which an LLM has no reliable
+    reason to treat as a standing behavioral instruction. This runs on
+    every authenticated message, not conditionally, since a saved style
+    preference should apply everywhere, and is one cheap already-indexed
+    query (list_memory) reused, not a new one."""
+    if not token or not user_id:
+        return ""
+    try:
+        items = await list_memory(token, user_id, limit=20)
+    except Exception:
+        return ""
+    directives: List[str] = []
+    seen_keys = set()
+    for item in items:
+        if not item.key or item.key in seen_keys or item.key not in _PERSONALIZATION_DIRECTIVES:
+            continue
+        directive = _PERSONALIZATION_DIRECTIVES[item.key].get(item.value)
+        if directive:
+            directives.append(directive)
+        seen_keys.add(item.key)
+    if not directives:
+        return ""
+    return "User's saved preferences (apply by default, but always follow explicit in-message instructions first):\n" + "\n".join(
+        f"- {d}" for d in directives
+    )
+
+
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
     """Shared by /chat and /chat/stream — was previously duplicated inline in
     both (see git history), which is exactly how this endpoint pair drifted
@@ -2049,6 +2108,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     ex_directive = example_instruction(req.message)
     if ex_directive:
         custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+    personalization_style = await _personalization_style_addendum(token, user_id)
+    if personalization_style:
+        custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -2352,6 +2414,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         ex_directive = example_instruction(req.message)
         if ex_directive:
             custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+        personalization_style = await _personalization_style_addendum(token, user_id)
+        if personalization_style:
+            custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )

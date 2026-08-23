@@ -396,6 +396,35 @@ export async function generateConversationTitle(
  * endpoint. Best-effort: never blocks or surfaces an error to the user —
  * this is a background quality-of-life save, not a critical action.
  */
+export type MemoryItem = {
+  id: string;
+  source: string;
+  key: string | null;
+  value: string;
+  pinned: boolean;
+  updated_at: string | null;
+  relevance: number;
+};
+
+/** Reads this user's own saved memory/preferences (GET /memory). Used to
+ * seed the Response Style controls in Settings with the currently saved
+ * selection. Best-effort: returns [] on any failure. */
+export async function listUserMemory(): Promise<MemoryItem[]> {
+  try {
+    const token = await requireBearerToken();
+    if (!token) return [];
+    const res = await fetch(`${getApiBaseUrl()}/memory`, {
+      headers: { Authorization: `Bearer ${token}`, "X-Client": BRAND.shortName },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: MemoryItem[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function rememberPreference(key: string, value: string): Promise<boolean> {
   try {
     const token = await requireBearerToken();
