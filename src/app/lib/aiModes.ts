@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageCircle, Lightbulb, Microscope, GitCompare } from "lucide-react";
+import { MessageCircle, Lightbulb, Microscope, GitCompare, PenTool, BarChart3 } from "lucide-react";
 
 /**
  * AI Mode System — single source of truth for the frontend.
@@ -17,7 +17,7 @@ import { MessageCircle, Lightbulb, Microscope, GitCompare } from "lucide-react";
  * invent a step name the backend can't produce — that would be fake progress.
  */
 
-export type AiMode = "normal" | "thinking" | "deep_research" | "compare_products";
+export type AiMode = "normal" | "thinking" | "deep_research" | "compare_products" | "create" | "analyze";
 
 export type AiModeStatusKey =
   | "connected"
@@ -30,7 +30,7 @@ export type AiModeStatusKey =
   | "generating"
   | "done";
 
-export type AiModeAccent = "orange" | "indigo" | "purple" | "green";
+export type AiModeAccent = "orange" | "indigo" | "purple" | "green" | "amber" | "teal";
 
 export type AiModeProcessingStep = {
   key: AiModeStatusKey;
@@ -49,7 +49,14 @@ export type AiModeConfig = {
   processingSteps: AiModeProcessingStep[];
 };
 
-export const AI_MODE_ORDER: AiMode[] = ["normal", "thinking", "deep_research", "compare_products"];
+export const AI_MODE_ORDER: AiMode[] = [
+  "normal",
+  "thinking",
+  "deep_research",
+  "compare_products",
+  "create",
+  "analyze",
+];
 
 export const AI_MODES: Record<AiMode, AiModeConfig> = {
   normal: {
@@ -107,6 +114,33 @@ export const AI_MODES: Record<AiMode, AiModeConfig> = {
       { key: "generating", label: "Preparing the comparison", detail: "Building the comparison table" },
     ],
   },
+  create: {
+    id: "create",
+    label: "Create",
+    description: "Draft messages, plans & content",
+    icon: PenTool,
+    accent: "amber",
+    headline: "Creating your content...",
+    processingSteps: [
+      { key: "connected", label: "Understanding what to create", detail: "Reading the request" },
+      { key: "searching_knowledge", label: "Checking Dayjoy details", detail: "Pulling facts to ground it in" },
+      { key: "generating", label: "Drafting it", detail: "Writing the finished version" },
+    ],
+  },
+  analyze: {
+    id: "analyze",
+    label: "Analyze",
+    description: "Findings & recommendations from your data",
+    icon: BarChart3,
+    accent: "teal",
+    headline: "Analyzing...",
+    processingSteps: [
+      { key: "connected", label: "Understanding what to analyze", detail: "Reading the request" },
+      { key: "searching_knowledge", label: "Gathering relevant data", detail: "Pulling supporting information" },
+      { key: "verifying", label: "Checking the evidence", detail: "Making sure findings are grounded" },
+      { key: "generating", label: "Preparing findings", detail: "Structuring the analysis" },
+    ],
+  },
 };
 
 export const AI_MODE_ACCENT_CLASSES: Record<AiModeAccent, { text: string; bg: string; ring: string; dot: string }> = {
@@ -114,6 +148,8 @@ export const AI_MODE_ACCENT_CLASSES: Record<AiModeAccent, { text: string; bg: st
   indigo: { text: "text-indigo-500", bg: "bg-indigo-500/8", ring: "ring-indigo-500/20", dot: "bg-indigo-500" },
   purple: { text: "text-purple-500", bg: "bg-purple-500/8", ring: "ring-purple-500/20", dot: "bg-purple-500" },
   green: { text: "text-emerald-600", bg: "bg-emerald-500/8", ring: "ring-emerald-500/20", dot: "bg-emerald-500" },
+  amber: { text: "text-amber-600", bg: "bg-amber-500/8", ring: "ring-amber-500/20", dot: "bg-amber-500" },
+  teal: { text: "text-teal-600", bg: "bg-teal-500/8", ring: "ring-teal-500/20", dot: "bg-teal-500" },
 };
 
 export function isAiMode(value: unknown): value is AiMode {

@@ -18,13 +18,15 @@ may be mixed with Dayjoy knowledge.
 
 from typing import Dict
 
-VALID_AI_MODES = ("normal", "thinking", "deep_research", "compare_products")
+VALID_AI_MODES = ("normal", "thinking", "deep_research", "compare_products", "create", "analyze")
 
 AI_MODE_TOP_K: Dict[str, int] = {
     "normal": 5,
     "thinking": 5,
     "deep_research": 10,
     "compare_products": 10,
+    "create": 5,
+    "analyze": 8,
 }
 
 AI_MODE_ADDENDA: Dict[str, str] = {
@@ -53,6 +55,21 @@ AI_MODE_ADDENDA: Dict[str, str] = {
         "enough material, present it as a markdown table with columns: Product | Key "
         "Features | Benefits | Suitable For | Important Differences, followed by a short "
         "recommendation only if the context supports one."
+    ),
+    "create": (
+        "\n\nCREATE MODE: the user wants a finished, ready-to-use piece of content (a WhatsApp/"
+        "customer message, a follow-up plan, a short presentation outline, etc.), not an "
+        "explanation. Produce the actual finished draft — formatted for how it will actually be "
+        "used (e.g. a WhatsApp message should read like one, not like an essay about one) — and "
+        "ground every Dayjoy-specific fact (product names, prices, policies) ONLY in the "
+        "retrieved context below; never invent a fact to fill a gap in the draft."
+    ),
+    "analyze": (
+        "\n\nANALYZE MODE: the user wants you to examine the information/data below and report "
+        "back, not just answer a lookup question. Structure the answer as: Findings (what the "
+        "data/context actually shows), Evidence (what specifically supports each finding), then "
+        "a Recommendation ONLY if the evidence genuinely supports one. Clearly say so if the "
+        "context doesn't contain enough to analyze — don't pad the findings with guesses."
     ),
 }
 

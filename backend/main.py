@@ -1190,6 +1190,8 @@ def _log_unified_trace(
     started_at: float = 0.0,
     final_status: str = "ok",
     stage_ms: Optional[Dict[str, float]] = None,
+    answer: Optional[str] = None,
+    verification_status: Optional[str] = None,
 ) -> None:
     """Phase 7 — the single per-request observability call site. Does NOT
     replace `_log_analytics` (writes to the `analytics` table an admin
@@ -1239,6 +1241,21 @@ def _log_unified_trace(
         else:
             verification_result = "passed"
 
+        quality_score = None
+        if answer is not None:
+            from backend.orchestrator.format_intent import FORMAT_ACTION_PLAN, detect_format
+            from backend.orchestrator.quality import score_answer
+
+            quality_score = score_answer(
+                query,
+                answer,
+                answer_source=(route.answer_source if route else "general_llm"),
+                verification_status=verification_status,
+                confidence=confidence,
+                sources=(route.sources if route else []),
+                intent_wants_action=detect_format(query) == FORMAT_ACTION_PLAN,
+            ).to_dict()
+
         emit_trace(
             TraceEvent(
                 request_id=request_id,
@@ -1265,6 +1282,7 @@ def _log_unified_trace(
                 fallback_reason=fallback_reason,
                 handoff_required=handoff_required,
                 final_status=final_status,
+                quality_score=quality_score,
             )
         )
     except Exception:
@@ -1977,7 +1995,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
         route=route, confidence=confidence, handoff_required=handoff_required,
         answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
-        stage_ms=stage_ms,
+        stage_ms=stage_ms, answer=answer, verification_status=verification_status,
     )
 
     handoff_msg = None
@@ -2226,7 +2244,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
             route=route, confidence=confidence, handoff_required=handoff_required,
             answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
-            stage_ms=stage_ms,
+            stage_ms=stage_ms, answer=aggregated, verification_status=verification_status,
         )
 
         follow_ups = generate_followups(route.answer_source, category, req.message)
