@@ -1252,18 +1252,29 @@ def _log_unified_trace(
             verification_result = "passed"
 
         quality_score = None
+        validation = None
         if answer is not None:
             from backend.orchestrator.format_intent import FORMAT_ACTION_PLAN, detect_format
             from backend.orchestrator.quality import score_answer
+            from backend.orchestrator.answer_structure import structure_answer
+            from backend.orchestrator.answer_validate import validate_structured_answer
+
+            answer_source_for_scoring = route.answer_source if route else "general_llm"
+            sources_for_scoring = route.sources if route else []
 
             quality_score = score_answer(
                 query,
                 answer,
-                answer_source=(route.answer_source if route else "general_llm"),
+                answer_source=answer_source_for_scoring,
                 verification_status=verification_status,
                 confidence=confidence,
-                sources=(route.sources if route else []),
+                sources=sources_for_scoring,
                 intent_wants_action=detect_format(query) == FORMAT_ACTION_PLAN,
+            ).to_dict()
+            validation = validate_structured_answer(
+                structure_answer(answer),
+                answer_source=answer_source_for_scoring,
+                sources=sources_for_scoring,
             ).to_dict()
 
         emit_trace(
@@ -1293,6 +1304,7 @@ def _log_unified_trace(
                 handoff_required=handoff_required,
                 final_status=final_status,
                 quality_score=quality_score,
+                validation=validation,
             )
         )
     except Exception:
@@ -1452,7 +1464,8 @@ SYSTEM_PROMPT = (
     "products actually present in the context), you may ALSO include a fenced code block "
     "labeled \"chart\" containing ONLY compact JSON in this exact shape: "
     '{"type": "bar", "title": "<short title>", "data": [{"label": "<name>", "value": <number>}, '
-    '...]} (use "type": "line" instead of "bar" for a trend over time). Every value must come '
+    '...]} (use "type": "line" for a trend over time, or "type": "donut" for a share-of-total '
+    "breakdown instead of a bar-by-bar comparison). Every value must come "
     "directly from the context — never invent or estimate a number for a chart. Skip the chart "
     "entirely if you're not certain every value is real."
 )
