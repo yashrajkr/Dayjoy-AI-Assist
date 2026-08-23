@@ -40,6 +40,7 @@ from collections import defaultdict
 import time
 
 from backend.search_providers import get_search_providers, web_search_multi
+from backend.ai_modes import normalize_ai_mode, top_k_for, addendum_for
 
 load_dotenv()
 
@@ -348,6 +349,12 @@ class ChatRequest(BaseModel):
     # `elif token and user_id: ensure_conversation(...)` fallback below from
     # silently creating (and titling) a conversation row anyway.
     is_temporary: bool = False
+    # AI Mode System: "normal" | "thinking" | "deep_research" | "compare_products".
+    # Distinct from RouteResult.mode ("dayjoy"/"hybrid", an internal routing
+    # decision) — this is the user-selected reasoning/retrieval mode. Invalid
+    # values fall back to "normal" in ai_modes.get_mode_config rather than
+    # raising, so a stale client sending an unrecognized mode still works.
+    ai_mode: str = "normal"
 
 
 class TitleRequest(BaseModel):
@@ -389,6 +396,9 @@ class ChatResponse(BaseModel):
     # which knowledge source(s) actually produced this answer.
     answer_source: Optional[str] = None  # dayjoy_knowledge | web_search | general_llm | hybrid | casual | unsafe
     web_search_provider: Optional[str] = None  # tavily | brave | None
+    # AI Mode System — which mode (normal/thinking/deep_research/compare_products)
+    # actually produced this answer, echoed back so the frontend can badge it.
+    ai_mode: str = "normal"
 
 
 class FeedbackRequest(BaseModel):
@@ -546,6 +556,7 @@ async def retrieve_context(
     token: Optional[str],
     message: str,
     limit_per_table: int = 3,
+    top_k: Optional[int] = None,
 ) -> Tuple[str, List[ChatSource], str, Optional[Dict[str, Any]]]:
     """Pull approved rows and rank by simple token overlap.
 
@@ -576,6 +587,7 @@ async def retrieve_context(
                 token=token,
                 language="en",
                 log_query=False,  # chat endpoint logs analytics separately
+                top_k=top_k,
             )
             if rag_result.chunks:
                 rag_context_parts.append(rag_result.to_context_string(max_chars=3000))
@@ -838,7 +850,7 @@ async def _route_from_kb_result(
 
 
 async def _route_events(
-    token: Optional[str], message: str, casual: bool
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
 ) -> AsyncIterator[Tuple[str, Any]]:
     """Router core, shared by /chat and /chat/stream so routing logic can't
     drift between the two endpoints.
@@ -1012,7 +1024,9 @@ async def _route_events(
             return
 
     yield ("status", "searching_knowledge")
-    context, sources, category, rag_metadata = await retrieve_context(token, message)
+    context, sources, category, rag_metadata = await retrieve_context(
+        token, message, top_k=top_k_for(ai_mode)
+    )
 
     # A non-empty `context` string doesn't mean the retrieved chunks were
     # actually relevant — the retriever still concatenates whatever it found
@@ -1312,9 +1326,11 @@ def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]
     return 0.4, "unverified"
 
 
-async def determine_route(token: Optional[str], message: str, casual: bool) -> RouteResult:
+async def determine_route(
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
+) -> RouteResult:
     """Non-streaming convenience wrapper around `_route_events` — used by /chat."""
-    async for kind, payload in _route_events(token, message, casual):
+    async for kind, payload in _route_events(token, message, casual, ai_mode):
         if kind == "result":
             return payload
     raise AssertionError("_route_events did not yield a result")  # pragma: no cover
@@ -1618,7 +1634,7 @@ _BRACKET_HEADER_LINE_RE = re.compile(r"^\[(.+)\]$", re.MULTILINE)
 
 async def stream_response(
     message: str, history: List[Dict[str, str]], context: str, language: str, mode: str = "dayjoy",
-    custom_guidance: str = "", already_grounded: bool = False,
+    custom_guidance: str = "", already_grounded: bool = False, ai_mode: str = "normal",
 ) -> AsyncIterator[str]:
     """Try Groq first, then OpenAI. Falls back to a context-only answer.
 
@@ -1629,7 +1645,13 @@ async def stream_response(
     that filter exists to reject chunks that merely share a common word with
     the question, which doesn't apply to a result that's already precisely
     matched by construction.
+
+    `ai_mode` (AI Mode System — normal/thinking/deep_research/compare_products,
+    distinct from `mode` above which is the dayjoy/hybrid routing mode) layers
+    its addendum onto `custom_guidance` here, reusing the same admin-guidance
+    plumbing `_system_prompt_for` already applies — see backend/ai_modes.py.
     """
+    custom_guidance = f"{custom_guidance}\n\n{addendum_for(ai_mode)}".strip()
     if GROQ_API_KEY:
         collected = ""
         async for tok in stream_groq(message, history, context, language, mode, custom_guidance):
@@ -1792,7 +1814,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
     retrieval_query = rewrite_query(req.message, history)
-    route = await determine_route(token, retrieval_query, casual)
+    ai_mode = normalize_ai_mode(req.ai_mode)
+    route = await determine_route(token, retrieval_query, casual, ai_mode)
     t_after_routing = time.monotonic()
 
     personalization_context = await _maybe_personalization_context(
@@ -1823,7 +1846,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         answer_parts: List[str] = []
         async for tok in stream_response(
             req.message, history, full_context, req.language, route.mode, custom_guidance,
-            already_grounded=already_grounded,
+            already_grounded=already_grounded, ai_mode=ai_mode,
         ):
             answer_parts.append(tok)
         answer = "".join(answer_parts).strip()
@@ -1847,7 +1870,8 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                 )
                 retry_parts: List[str] = []
                 async for tok in stream_response(
-                    req.message, history, corrective_context, req.language, route.mode, custom_guidance
+                    req.message, history, corrective_context, req.language, route.mode, custom_guidance,
+                    ai_mode=ai_mode,
                 ):
                     retry_parts.append(tok)
                 retried = "".join(retry_parts).strip()
@@ -1924,6 +1948,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         rag_metadata=route.rag_metadata,
         answer_source=route.answer_source,
         web_search_provider=route.web_search_provider,
+        ai_mode=ai_mode,
     )
 
 
@@ -2000,6 +2025,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
     rules = await load_safety_rules()
     is_blocked, rule_key = run_safety_check(req.message, rules)
+    ai_mode = normalize_ai_mode(req.ai_mode)
 
     async def event_gen() -> AsyncIterator[str]:
         if is_blocked:
@@ -2029,7 +2055,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         _run_orchestrator_observability(req.message)
         retrieval_query = rewrite_query(req.message, history)
         route: Optional[RouteResult] = None
-        async for kind, payload in _route_events(token, retrieval_query, casual):
+        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
             if kind == "status":
                 yield _sse({"status": payload})
             else:
@@ -2063,7 +2089,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         else:
             async for tok in stream_response(
                 req.message, history, full_context, req.language, route.mode, custom_guidance,
-                already_grounded=already_grounded,
+                already_grounded=already_grounded, ai_mode=ai_mode,
             ):
                 aggregated += tok
                 yield _sse({"token": tok})
@@ -2085,6 +2111,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             and route.answer_source in ("dayjoy_knowledge", "hybrid")
         )
         if verification_ran:
+            yield _sse({"status": "verifying"})
             verdict = await verify_answer(req.message, aggregated, full_context)
             answer_mismatch = bool(verdict.checked and not verdict.addresses_question)
 
@@ -2151,6 +2178,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "rag_metadata": route.rag_metadata,
             "answer_source": route.answer_source,
             "web_search_provider": route.web_search_provider,
+            "ai_mode": ai_mode,
         })
 
     return StreamingResponse(

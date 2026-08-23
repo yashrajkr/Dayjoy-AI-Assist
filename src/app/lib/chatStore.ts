@@ -36,6 +36,10 @@ export type ChatMessage = {
   rag_metadata?: unknown;
   // ---- AI router labeling (added with the AI router / web search feature) ----
   answer_source?: string | null;
+  // ---- AI Mode System ----
+  // Which mode (normal/thinking/deep_research/compare_products) was active
+  // when this message was sent/answered — see src/app/lib/aiModes.ts.
+  ai_mode?: string | null;
   // Set on the client when the message rendered from a stream but its
   // Supabase persistence write failed — never sent to/from the backend.
   _unsaved?: boolean;
@@ -224,7 +228,7 @@ export async function appendMessage(
 
 export async function setMessageFeedback(
   messageId: string,
-  feedback: "up" | "down",
+  feedback: "up" | "down" | null,
   comment?: string,
 ): Promise<void> {
   if (!supabase) {

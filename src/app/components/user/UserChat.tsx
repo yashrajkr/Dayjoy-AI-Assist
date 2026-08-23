@@ -82,7 +82,6 @@ import {
   SessionExpiredError,
   type ChatSource,
 } from "../../../lib/api";
-import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
@@ -104,6 +103,9 @@ import { useVoice } from "../../lib/useVoice";
 import { isVoiceRepliesEnabled } from "../../lib/voicePreference";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { useChatExperience } from "../../lib/ChatExperienceContext";
+import { useChatMode } from "../../lib/ChatModeContext";
+import { AI_MODES, AI_MODE_ORDER, AI_MODE_ACCENT_CLASSES, type AiMode, type AiModeStatusKey } from "../../lib/aiModes";
+import { ModeProcessingCard } from "./ModeProcessingCard";
 import { useTransparentLogo } from "../../lib/useTransparentLogo";
 import logoSrc from "../../../assets/dayjoy-logo.png";
 import { Button } from "../ui/button";
@@ -368,6 +370,7 @@ export function UserChat() {
   const { currentUser, role } = useAuth();
   const isMobile = useIsMobile();
   const { mode: chatExperienceMode } = useChatExperience();
+  const { mode: aiMode, setMode: setAiMode } = useChatMode();
   // UserLayout only supplies this context on chat routes; other embeddings
   // (none currently) simply fall back to no-ops.
   const outletCtx = useOutletContext<{ openDrawer: () => void; professionalMobile: boolean } | undefined>();
@@ -425,6 +428,13 @@ export function UserChat() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // AI Mode System — mode picker panel (search + list) opened from the
+  // attach ("+") menu, and the real backend SSE status events received for
+  // the in-flight request (drives ModeProcessingCard; never a fixed timer).
+  const [modePanelOpen, setModePanelOpen] = useState(false);
+  const [modeSearch, setModeSearch] = useState("");
+  const [receivedStatuses, setReceivedStatuses] = useState<AiModeStatusKey[]>([]);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -552,6 +562,8 @@ export function UserChat() {
       setInput("");
       setStreamingText("");
       setSending(true);
+      setReceivedStatuses([]);
+      const sentAiMode = aiMode;
 
       let convId = chatId ?? activeConv?.id;
       let conv: Conversation | null = activeConv;
@@ -613,6 +625,7 @@ export function UserChat() {
         rag_metadata?: unknown;
         answer_source?: string | null;
         web_search_provider?: string | null;
+        ai_mode?: string;
       } = {};
 
       try {
@@ -623,12 +636,18 @@ export function UserChat() {
             language,
             conversation_id: convId,
             is_temporary: isTemporary,
+            ai_mode: sentAiMode,
           },
           (chunk) => {
             aggregated += chunk;
             setStreamingText(aggregated);
           },
           controller.signal,
+          (status) => {
+            setReceivedStatuses((prev) =>
+              prev.includes(status as AiModeStatusKey) ? prev : [...prev, status as AiModeStatusKey],
+            );
+          },
         );
 
         aggregated = res.answer || aggregated;
@@ -643,6 +662,7 @@ export function UserChat() {
           rag_metadata: res.rag_metadata,
           answer_source: res.answer_source,
           web_search_provider: res.web_search_provider,
+          ai_mode: res.ai_mode ?? sentAiMode,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -675,6 +695,7 @@ export function UserChat() {
               handoff_message: meta.handoff_message ?? null,
               rag_metadata: meta.rag_metadata ?? null,
               answer_source: meta.answer_source ?? null,
+              ai_mode: meta.ai_mode ?? sentAiMode,
             });
 
         // The answer must always render, even if the Supabase write above
@@ -694,6 +715,7 @@ export function UserChat() {
             handoff_message: meta.handoff_message ?? null,
             rag_metadata: meta.rag_metadata ?? null,
             answer_source: meta.answer_source ?? null,
+            ai_mode: meta.ai_mode ?? sentAiMode,
             created_at: new Date().toISOString(),
             _unsaved: !assistantMsg && !isTemporary,
           };
@@ -785,7 +807,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -985,23 +1007,12 @@ export function UserChat() {
   const handleFeedback = useCallback(
     async (messageId: string | undefined, rating: "up" | "down") => {
       if (!messageId) return;
+      const wasSameRating = messages.find((m) => m.id === messageId)?.feedback === rating;
+      const nextFeedback = wasSameRating ? null : rating;
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                feedback: m.feedback === rating ? null : rating,
-              }
-            : m,
-        ),
+        prev.map((m) => (m.id === messageId ? { ...m, feedback: nextFeedback } : m)),
       );
-      const msg = messages.find((m) => m.id === messageId);
-      if (msg?.feedback === rating) {
-        // Toggle off
-        await setMessageFeedback(messageId, "up"); // backend treats null as no-op
-      } else {
-        await setMessageFeedback(messageId, rating);
-      }
+      await setMessageFeedback(messageId, nextFeedback);
     },
     [messages],
   );
@@ -2117,8 +2128,10 @@ export function UserChat() {
               </>
             )}
 
-            {/* Knowledge search visualization — shown while sending, before tokens arrive */}
-            <KnowledgeSearchViz active={sending && !streamingText} />
+            {/* Mode-aware processing card — shown while sending, before tokens arrive.
+                Driven by real backend SSE status events (receivedStatuses), never a
+                fixed timer — see ModeProcessingCard/aiModes.ts. */}
+            <ModeProcessingCard active={sending && !streamingText} mode={aiMode} receivedStatuses={receivedStatuses} />
 
             {streamingText ? (
               <motion.div
@@ -2287,6 +2300,25 @@ export function UserChat() {
                           type="button"
                           onClick={() => {
                             setAttachMenuOpen(false);
+                            setModePanelOpen(true);
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitem"
+                        >
+                          {(() => {
+                            const ModeIcon = AI_MODES[aiMode].icon;
+                            return <ModeIcon className={`w-4 h-4 mt-0.5 shrink-0 ${AI_MODE_ACCENT_CLASSES[AI_MODES[aiMode].accent].text}`} aria-hidden="true" />;
+                          })()}
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Mode: {AI_MODES[aiMode].label}</p>
+                            <p className="text-[11px] text-muted-foreground">Choose how Dayjoy AI answers</p>
+                          </div>
+                        </button>
+                        <div className="my-1 h-px bg-border" aria-hidden="true" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachMenuOpen(false);
                             setCameraOpen(true);
                           }}
                           className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
@@ -2362,6 +2394,22 @@ export function UserChat() {
                       </motion.div>
                     ) : null}
                   </div>
+                  {aiMode !== "normal" ? (
+                    <button
+                      type="button"
+                      onClick={() => setModePanelOpen(true)}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 ${AI_MODE_ACCENT_CLASSES[AI_MODES[aiMode].accent].bg} ${AI_MODE_ACCENT_CLASSES[AI_MODES[aiMode].accent].text}`}
+                      aria-haspopup="dialog"
+                      title="Change AI mode"
+                    >
+                      {(() => {
+                        const ModeIcon = AI_MODES[aiMode].icon;
+                        return <ModeIcon className="w-3 h-3" aria-hidden="true" />;
+                      })()}
+                      {AI_MODES[aiMode].label}
+                      <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
+                    </button>
+                  ) : null}
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}
@@ -2993,6 +3041,70 @@ export function UserChat() {
       ) : null}
       </AnimatePresence>
 
+      {/* AI Mode System — mode picker (Normal / Thinking / Deep Research / Compare
+          Products), reached from the "+" composer menu's "Mode:" row above. */}
+      <Modal
+        open={modePanelOpen}
+        onClose={() => {
+          setModePanelOpen(false);
+          setModeSearch("");
+        }}
+        title="Choose a mode"
+        description="Each mode is optimized for different tasks"
+        size="sm"
+      >
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+            <input
+              type="text"
+              value={modeSearch}
+              onChange={(e) => setModeSearch(e.target.value)}
+              placeholder="Search modes..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1" role="listbox" aria-label="AI modes">
+            {AI_MODE_ORDER.filter((id) => {
+              const q = modeSearch.trim().toLowerCase();
+              if (!q) return true;
+              const cfg = AI_MODES[id];
+              return cfg.label.toLowerCase().includes(q) || cfg.description.toLowerCase().includes(q);
+            }).map((id) => {
+              const cfg = AI_MODES[id];
+              const accent = AI_MODE_ACCENT_CLASSES[cfg.accent];
+              const selected = aiMode === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    setAiMode(id);
+                    setModePanelOpen(false);
+                    setModeSearch("");
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors hover:bg-accent/60 ${
+                    selected ? `${accent.bg} ring-1 ${accent.ring}` : ""
+                  }`}
+                >
+                  <span className={`flex items-center justify-center w-8 h-8 rounded-lg shrink-0 ${accent.bg} ${accent.text}`}>
+                    <cfg.icon className="w-4 h-4" aria-hidden="true" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-foreground">{cfg.label}</span>
+                    <span className="block text-xs text-muted-foreground">{cfg.description}</span>
+                  </span>
+                  {selected ? <Check className={`w-4 h-4 shrink-0 ${accent.text}`} aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </Modal>
+
       {/* Attachment preview modal — full-size image view */}
       <Modal
         open={!!previewAttachment}
@@ -3406,7 +3518,7 @@ function MessageBubble({
                 pattern for a sent message. Edit truncates everything after
                 this message and resends the edited text (see
                 handleSaveEdit); Copy just copies the raw text. */}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity">
               {onStartEdit ? (
                 <button
                   type="button"
@@ -3467,7 +3579,6 @@ function MessageBubble({
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-xs mb-1 flex items-center gap-2">
-          <span className="font-semibold text-foreground">{BRAND.shortName}</span>
           {(() => {
             const badge = messageTrustBadge(message);
             if (!badge) return null;
@@ -3479,12 +3590,30 @@ function MessageBubble({
                   : "text-muted-foreground bg-accent";
             const Icon = badge.icon;
             return (
-              <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${toneClass}`}>
+              <span
+                className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${toneClass}`}
+                title={badge.label}
+                aria-label={badge.label}
+              >
                 <Icon className="w-2.5 h-2.5" aria-hidden="true" />
-                {badge.label}
               </span>
             );
           })()}
+          {message.ai_mode && message.ai_mode !== "normal" && AI_MODES[message.ai_mode as AiMode] ? (
+            (() => {
+              const modeConfig = AI_MODES[message.ai_mode as AiMode];
+              const modeAccent = AI_MODE_ACCENT_CLASSES[modeConfig.accent];
+              const ModeIcon = modeConfig.icon;
+              return (
+                <span
+                  className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${modeAccent.text} ${modeAccent.bg}`}
+                >
+                  <ModeIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                  {modeConfig.label}
+                </span>
+              );
+            })()
+          ) : null}
           {message.created_at ? (
             <span className="text-muted-foreground">· {formatTimestamp(message.created_at)}</span>
           ) : null}
