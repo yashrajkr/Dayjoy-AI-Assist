@@ -54,6 +54,8 @@ import {
   Menu,
   MoreVertical,
   Ghost,
+  Mic,
+  Pencil,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -79,7 +81,6 @@ import {
   type ChatSource,
 } from "../../../lib/api";
 import { KnowledgeSearchViz } from "../common/KnowledgeSearchViz";
-import { VoiceControls } from "../voice/VoiceControls";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
 import { OcrScanner } from "../tools/OcrScanner";
@@ -124,20 +125,34 @@ function getGreeting(): string {
  * response and the sources it cited. These are heuristic (not LLM-generated)
  * to keep the UX instant and free of extra API calls.
  */
-function generateFollowUps(answer: string, sources: unknown): string[] {
+function generateFollowUps(answer: string, sources: unknown, answerSource?: string | null): string[] {
   const followUps: string[] = [];
   const lower = answer.toLowerCase();
 
-  // Product-related follow-ups
-  if (sources && Array.isArray(sources) && sources.length > 0) {
-    const hasProducts = (sources as Array<{ table?: string }>).some((s) => s?.table === "products");
-    if (hasProducts) {
-      followUps.push("Compare this with similar products");
-      followUps.push("What are the safety notes?");
+  // answer_source-based follow-ups first — these reflect what the backend
+  // actually determined the question WAS (structured pricing/recommendation
+  // vs. a plain knowledge lookup), a stronger signal than re-guessing from
+  // the answer text alone.
+  if (answerSource === "dayjoy_knowledge") {
+    if (sources && Array.isArray(sources) && sources.length > 0) {
+      const hasProducts = (sources as Array<{ table?: string }>).some((s) => s?.table === "products");
+      if (hasProducts) {
+        followUps.push("Compare this with similar products");
+        followUps.push("What are the safety notes?");
+      }
     }
+  } else if (answerSource === "web_search") {
+    followUps.push("Is there an official Dayjoy source for this?");
+  } else if (answerSource === "clarification") {
+    // The answer IS the clarifying question — nothing more specific to
+    // suggest until the user picks an option.
+    return [];
   }
 
-  // Category-based follow-ups
+  // Category-based follow-ups, from the answer's own content
+  if (lower.includes("price") || lower.includes("mrp") || lower.includes("dp") || lower.includes(" bv")) {
+    followUps.push("What's the BV and PV for this?");
+  }
   if (lower.includes("policy") || lower.includes("refund") || lower.includes("return")) {
     followUps.push("Where can I find the full policy document?");
   }
@@ -151,14 +166,19 @@ function generateFollowUps(answer: string, sources: unknown): string[] {
   if (lower.includes("ingredient") || lower.includes("benefit")) {
     followUps.push("Tell me about related products");
   }
-
-  // Generic fallbacks — always offer at least 2 options
-  if (followUps.length < 2) {
-    followUps.push("Tell me more about this");
-    followUps.push("Can you give me an example?");
+  if (lower.includes("recommend") || lower.includes("matched for")) {
+    followUps.push("What's the price of this?");
+    followUps.push("Are there any alternatives?");
   }
 
-  return followUps.slice(0, 3);
+  // Last resort — still Dayjoy-scoped, never a content-free "give me an
+  // example" that has nothing to do with what was actually asked.
+  if (followUps.length === 0) {
+    followUps.push("Can you point me to a verified source for this?");
+    followUps.push("What else does Dayjoy offer here?");
+  }
+
+  return Array.from(new Set(followUps)).slice(0, 3);
 }
 
 type Lang = "English" | "Hindi" | "Hinglish";
@@ -369,6 +389,12 @@ export function UserChat() {
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
+  // Edit-and-resend a previously sent user message (ChatGPT-style). Keyed
+  // the same way message list `key`s are (`m.id ?? "role-created_at"`) so a
+  // not-yet-persisted message can still be edited.
+  const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
   // Temporary Chat (Claude/ChatGPT-style): messages aren't written to
   // Supabase and no conversation row is created, so nothing appears in the
   // sidebar's history and nothing survives a refresh/navigation. Only
@@ -501,9 +527,17 @@ export function UserChat() {
   const handleSend = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
-      // Ref, not state: a rapid double/triple tap on a suggestion card
-      // dispatches several calls before React commits `setSending(true)`.
-      if (!text || sending || sendingRef.current) return;
+      // Ref, not state: `sending` (state) isn't in this callback's own
+      // dependency array, so its closure can go stale — once created while
+      // `sending` was true, it stays permanently stuck reading `true` until
+      // some OTHER listed dep happens to change, blocking every later call
+      // even long after the send actually finished. Caught via the edit-
+      // and-resend flow: editing a message and saving silently no-opped
+      // because handleSend's captured `sending` never updated back to
+      // false. `sendingRef.current` doesn't have this problem — a ref's
+      // `.current` is always read live, never captured by a closure — so
+      // it alone is the correct guard here.
+      if (!text || sendingRef.current) return;
       if (text.length > 4000) {
         setError("Message is too long (max 4000 characters).");
         return;
@@ -979,6 +1013,36 @@ export function UserChat() {
     }
   }, []);
 
+  // ---- Edit-and-resend a sent user message ----
+  const handleStartEdit = useCallback((m: ChatMessage) => {
+    setEditingMessageKey(m.id ?? `${m.role}-${m.created_at}`);
+    setEditingValue(m.content);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageKey(null);
+    setEditingValue("");
+  }, []);
+
+  const handleSaveEdit = useCallback(
+    async (m: ChatMessage) => {
+      const trimmed = editingValue.trim();
+      if (!trimmed || sendingRef.current) return;
+      const key = m.id ?? `${m.role}-${m.created_at}`;
+      const idx = messages.findIndex((x) => (x.id ?? `${x.role}-${x.created_at}`) === key);
+      // Drop the edited message and everything after it — same "keep local
+      // state, resend fresh" convention handleRegenerate already uses above;
+      // any already-persisted rows for the dropped tail stay in Supabase
+      // (a reload will show the fuller history) rather than adding a new
+      // bulk-delete path for this.
+      if (idx !== -1) setMessages((prev) => prev.slice(0, idx));
+      setEditingMessageKey(null);
+      setEditingValue("");
+      await handleSend(trimmed);
+    },
+    [editingValue, messages, handleSend],
+  );
+
   // ---- Conversation actions ----
   const handleNewChat = useCallback(() => {
     setActiveConv(null);
@@ -1452,22 +1516,44 @@ export function UserChat() {
                 the one page in the app that's deliberately chat-first with
                 no account chrome in its header; profile is still reachable
                 from the hamburger drawer, and from every other page's
-                header/mobile top bar as before. */}
+                header/mobile top bar as before.
+
+                Swapped for a "Temporary Chat" pill when active — this is
+                the ONLY header shown on mobile in Professional mode (the
+                default), and it previously showed the fixed logo
+                regardless of temporary-chat state, so there was no visible
+                confirmation anywhere on screen that the toggle had actually
+                done anything besides the small icon's subtle color change. */}
             <div className="flex-1 min-w-0 flex items-center justify-center px-1">
-              <DayjoyLogo variant="full" size={22} />
+              {isTemporary ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 text-primary ring-1 ring-primary/40 px-3 py-1 text-xs font-semibold">
+                  <Ghost className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  Temporary Chat
+                </span>
+              ) : (
+                <DayjoyLogo variant="full" size={22} />
+              )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {!activeConv ? (
                 <button
                   type="button"
                   onClick={() => setIsTemporary((v) => !v)}
-                  disabled={messages.length > 0}
-                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 disabled:opacity-40 ${
-                    isTemporary ? "bg-accent text-primary" : "bg-accent/60 text-foreground hover:bg-accent"
+                  // Always clickable in both directions — a disabled button
+                  // gives zero feedback on tap, which is exactly what reads
+                  // as "this button doesn't work." This only renders while
+                  // `!activeConv` (no saved conversation yet), so toggling
+                  // never affects an already-persisted message either way —
+                  // it only changes what happens to messages sent AFTER
+                  // this tap.
+                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-all active:scale-90 ${
+                    isTemporary
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                      : "bg-accent/60 text-foreground hover:bg-accent"
                   }`}
                   aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
                   aria-pressed={isTemporary}
-                  title="Temporary Chat"
+                  title={isTemporary ? "Temporary Chat is on — tap to turn off" : "Temporary Chat"}
                 >
                   <Ghost className="w-4.5 h-4.5" aria-hidden="true" />
                 </button>
@@ -1584,13 +1670,14 @@ export function UserChat() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsTemporary((v) => !v)}
-                disabled={messages.length > 0}
-                className={`h-auto w-auto p-2 disabled:opacity-40 ${
-                  isTemporary ? "bg-accent/60 text-primary" : "text-muted-foreground"
+                className={`h-auto w-auto p-2 ${
+                  isTemporary
+                    ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                    : "text-muted-foreground"
                 }`}
                 aria-label={isTemporary ? "Turn off Temporary Chat" : "Turn on Temporary Chat"}
                 aria-pressed={isTemporary}
-                title={isTemporary ? "Temporary Chat is on — this chat won't be saved" : "Start a Temporary Chat"}
+                title={isTemporary ? "Temporary Chat is on — tap to turn off" : "Start a Temporary Chat"}
               >
                 <Ghost className="w-4 h-4" aria-hidden="true" />
               </Button>
@@ -1939,29 +2026,42 @@ export function UserChat() {
               </div>
             ) : (
               <>
-                {messages.map((m) => (
-                  <MessageBubble
-                    key={m.id ?? `${m.role}-${m.created_at}`}
-                    message={m}
-                    onFeedback={handleFeedback}
-                    onCopy={handleCopy}
-                    copiedId={copiedId}
-                    onRegenerate={
-                      m.role === "assistant" && m.id === lastAssistantId
-                        ? handleRegenerate
-                        : undefined
-                    }
-                  />
-                ))}
+                {messages.map((m) => {
+                  const key = m.id ?? `${m.role}-${m.created_at}`;
+                  return (
+                    <MessageBubble
+                      key={key}
+                      message={m}
+                      onFeedback={handleFeedback}
+                      onCopy={handleCopy}
+                      copiedId={copiedId}
+                      onRegenerate={
+                        m.role === "assistant" && m.id === lastAssistantId
+                          ? handleRegenerate
+                          : undefined
+                      }
+                      isEditing={editingMessageKey === key}
+                      editingValue={editingValue}
+                      onEditingValueChange={setEditingValue}
+                      onStartEdit={handleStartEdit}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                    />
+                  );
+                })}
 
-                {/* Follow-up suggestions — only after the last assistant message, when not sending */}
-                {lastAssistant && !sending && !streamingText ? (
-                  <FollowUpChips
-                    suggestions={generateFollowUps(lastAssistant.content, lastAssistant.sources)}
-                    onSelect={handleSend}
-                    disabled={sending}
-                  />
-                ) : null}
+                {/* Follow-up suggestions — only after the last assistant message, when not
+                    sending, and only when generateFollowUps actually has something
+                    question-specific to suggest (it returns [] for a clarification
+                    reply, where nothing more specific applies until the user answers). */}
+                {(() => {
+                  if (!lastAssistant || sending || streamingText) return null;
+                  const suggestions = generateFollowUps(
+                    lastAssistant.content, lastAssistant.sources, lastAssistant.answer_source,
+                  );
+                  if (suggestions.length === 0) return null;
+                  return <FollowUpChips suggestions={suggestions} onSelect={handleSend} disabled={sending} />;
+                })()}
               </>
             )}
 
@@ -2071,7 +2171,7 @@ export function UserChat() {
                 rows={1}
                 maxLength={4000}
                 disabled={sending}
-                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm focus:outline-none disabled:opacity-60"
+                className="relative w-full resize-none bg-transparent px-4 pt-3 pb-2 text-base focus:outline-none disabled:opacity-60"
                 aria-label={`Ask ${BRAND.shortName} about Dayjoy products, policies, or training`}
                 style={{ minHeight: "44px", maxHeight: "200px" }}
               />
@@ -2228,42 +2328,48 @@ export function UserChat() {
                       Stop
                     </Button>
                   ) : null}
-                  {/* Mic sits beside Send — both always visible (Send just
-                      disables when empty) rather than swapping one for the
-                      other, so the send control is never simply missing.
-                      Mic itself is hidden when voice is turned off in
-                      Settings (isVoiceRepliesEnabled). Speak/mute toggles
-                      are omitted here since normal text chat no longer
-                      auto-speaks answers. */}
-                  {isVoiceRepliesEnabled() ? (
-                    <VoiceControls
-                      voice={voice}
-                      onTranscript={setInput}
-                      voiceMode={voiceMode}
-                      onToggleVoiceMode={toggleVoiceMode}
-                      showSpeakToggle={false}
-                    />
-                  ) : null}
-                  <motion.button
-                    type="button"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || sending}
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
-                    className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
-                    aria-label="Send message"
-                  >
-                    {/* Gradient sheen on hover */}
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
-                      }}
-                    />
-                    <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
-                  </motion.button>
+                  {/* Mic and Send swap for each other, matching ChatGPT's
+                      composer: an empty composer shows Mic (tapping it goes
+                      to the dedicated Voice Assistant page, not an inline
+                      dictation/hands-free mode — a second, different voice
+                      entry point would be confusing here); as soon as
+                      there's text to send, Mic is replaced by Send. Hidden
+                      entirely when voice is turned off in Settings or the
+                      browser has no STT support. */}
+                  {!input.trim() && !sending && isVoiceRepliesEnabled() && voice.sttSupported ? (
+                    <motion.button
+                      type="button"
+                      onClick={() => navigate("/voice")}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: 1.05 }}
+                      className="relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Start voice conversation"
+                      title="Voice mode"
+                    >
+                      <Mic className="w-4 h-4" aria-hidden="true" />
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      type="button"
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || sending}
+                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
+                      className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md shrink-0"
+                      aria-label="Send message"
+                    >
+                      {/* Gradient sheen on hover */}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full opacity-0 group-hover/send:opacity-100 transition-opacity pointer-events-none"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%)",
+                        }}
+                      />
+                      <ArrowUp className="w-4 h-4 relative" aria-hidden="true" />
+                    </motion.button>
+                  )}
                 </div>
               </div>
               {/* Attachments preview row */}
@@ -3125,18 +3231,75 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  isEditing = false,
+  editingValue = "",
+  onEditingValueChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
 }: {
   message: ChatMessage;
   onFeedback: (id: string | undefined, rating: "up" | "down") => void;
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  isEditing?: boolean;
+  editingValue?: string;
+  onEditingValueChange?: (value: string) => void;
+  onStartEdit?: (message: ChatMessage) => void;
+  onSaveEdit?: (message: ChatMessage) => void;
+  onCancelEdit?: () => void;
 }) {
   const isUser = message.role === "user";
   const bubbleId = message.id ?? `temp-${message.created_at}`;
   const isBlocked = message.safety_status === "blocked";
 
   if (isUser) {
+    if (isEditing) {
+      return (
+        <motion.div
+          id={`msg-${bubbleId}`}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex gap-3 justify-end"
+        >
+          <div className="flex flex-col items-end max-w-[80%] w-full">
+            <textarea
+              autoFocus
+              value={editingValue}
+              onChange={(e) => onEditingValueChange?.(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSaveEdit?.(message);
+                } else if (e.key === "Escape") {
+                  onCancelEdit?.();
+                }
+              }}
+              rows={Math.min(6, Math.max(2, editingValue.split("\n").length))}
+              className="w-full rounded-2xl rounded-tr-md bg-primary text-primary-foreground px-4 py-2.5 shadow-sm text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-primary-foreground/60"
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="px-3 py-1.5 rounded-full text-xs font-medium text-muted-foreground hover:bg-accent/60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveEdit?.(message)}
+                disabled={!editingValue.trim()}
+                className="px-3 py-1.5 rounded-full text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
     return (
       <motion.div
         id={`msg-${bubbleId}`}
@@ -3158,11 +3321,43 @@ function MessageBubble({
             />
             <p className="text-sm whitespace-pre-wrap break-words relative">{message.content}</p>
           </div>
-          {message.created_at ? (
-            <div className="text-[10px] text-muted-foreground mt-1 pr-1 opacity-70 group-hover:opacity-100 transition-opacity">
-              {formatTimestamp(message.created_at)}
+          <div className="flex items-center gap-2 mt-1 pr-1">
+            {/* Edit + Copy — hidden until hover, matching ChatGPT's own
+                pattern for a sent message. Edit truncates everything after
+                this message and resends the edited text (see
+                handleSaveEdit); Copy just copies the raw text. */}
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              {onStartEdit ? (
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(message)}
+                  className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Edit message"
+                  title="Edit"
+                >
+                  <Pencil className="w-3 h-3" aria-hidden="true" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onCopy(message.content, bubbleId)}
+                className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={copiedId === bubbleId ? "Copied" : "Copy message"}
+                title={copiedId === bubbleId ? "Copied!" : "Copy"}
+              >
+                {copiedId === bubbleId ? (
+                  <Check className="w-3 h-3 text-primary" aria-hidden="true" />
+                ) : (
+                  <Copy className="w-3 h-3" aria-hidden="true" />
+                )}
+              </button>
             </div>
-          ) : null}
+            {message.created_at ? (
+              <div className="text-[10px] text-muted-foreground opacity-70 group-hover:opacity-100 transition-opacity">
+                {formatTimestamp(message.created_at)}
+              </div>
+            ) : null}
+          </div>
         </div>
       </motion.div>
     );

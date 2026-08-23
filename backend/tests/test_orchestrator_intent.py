@@ -21,6 +21,8 @@ from backend.orchestrator.types import (
     INTENT_CASUAL,
     INTENT_COMPARISON,
     INTENT_GENERAL,
+    INTENT_PRICING,
+    INTENT_RECOMMENDATION,
     INTENT_TIME_QUERY,
 )
 
@@ -42,11 +44,26 @@ from backend.orchestrator.types import (
         ("Compare Dayjoy Spirulina with competing Spirulina products.", INTENT_COMPARISON),
         ("What is the current time?", INTENT_TIME_QUERY),
         ("Does this product cure cancer?", INTENT_GENERAL),  # safety blocking is a separate layer
+        ("What is the DP of Dayjoy Turmeric?", INTENT_PRICING),
+        ("What is the MRP of Dayjoy Spirulina?", INTENT_PRICING),
+        ("How much does Dayjoy Ashwagandha cost?", INTENT_PRICING),
+        ("What's the BV and PV for Dayjoy Curind?", INTENT_PRICING),
+        ("What should I take for joint pain?", INTENT_RECOMMENDATION),
+        # Pricing must win over recommendation when a message matches both
+        # cue sets — "best product for" is a recommendation cue, but "cost"
+        # makes this an exact-figure ask, not a "what should I take" one.
+        ("How much does the best product for joint pain cost?", INTENT_PRICING),
     ],
 )
 def test_detect_intent_matches_expected_label(message, expected_intent):
     result = detect_intent(message)
     assert result.intent == expected_intent
+
+
+def test_pricing_cue_sets_wants_pricing_flag():
+    result = detect_intent("What is the DP of Dayjoy Turmeric?")
+    assert result.wants_pricing is True
+    assert result.wants_recommendation is False
 
 
 def test_casual_message_short_circuits_comparison_and_time_flags():

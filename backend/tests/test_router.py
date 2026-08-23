@@ -102,6 +102,66 @@ def test_casual_greeting_routes_to_casual(authed_client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_no_llm_fallback_picks_relevant_block_not_unrelated_dump(authed_client, monkeypatch):
+    """Reproduces a real reported bug: asking about order status returned
+    three concatenated, unrelated FAQ blocks (contact details, company
+    registration, "what is Dayjoy") because retrieval matched on the shared
+    token "Dayjoy" while both LLM providers were unavailable. The no-LLM
+    fallback must pick only the block that actually overlaps the question,
+    or admit it doesn't know — never concatenate everything retrieval found."""
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        stub_retrieve_context(
+            "[faqs] What are Dayjoy's official contact details?\n"
+            "Website: https://dayjoy.in, Support email: support@dayjoy.in, Phone: +91 74120 34387.\n\n"
+            "[faqs] What is Dayjoy's company structure and registration details?\n"
+            "Dayjoy Marketing Private Limited is a Private Limited Company (CIN U52600RJ2018PTC062258).\n\n"
+            "[faqs] What is Dayjoy?\n"
+            "Dayjoy is the wellness and direct-selling brand of Dayjoy Marketing Private Limited.",
+            category="faq",
+        ),
+    )
+    never_called_web_search(monkeypatch, [])
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "What's the status of my most recent Dayjoy order?", "role": "customer", "language": "English"},
+    )
+    assert res.status_code == 200
+    answer = res.json()["answer"]
+    # None of the three unrelated FAQ blocks share enough tokens with "status
+    # of my most recent order" to clear the relevance bar — the honest
+    # not-confident message must be shown, not a concatenation of all three.
+    assert "official contact details" not in answer
+    assert "company structure and registration" not in answer
+    assert "I don't have enough approved information" in answer
+
+
+def test_no_llm_fallback_picks_single_relevant_block_when_one_matches(authed_client, monkeypatch):
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        stub_retrieve_context(
+            "[faqs] What is Dayjoy's refund policy?\n"
+            "Refunds are processed within 7 business days of an approved return.\n\n"
+            "[faqs] What is Dayjoy?\n"
+            "Dayjoy is the wellness and direct-selling brand of Dayjoy Marketing Private Limited.",
+            category="faq",
+        ),
+    )
+    never_called_web_search(monkeypatch, [])
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is Dayjoy's refund policy?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    answer = res.json()["answer"]
+    assert "Refunds are processed within 7 business days" in answer
+    # The unrelated "what is Dayjoy" block must not be concatenated in too.
+    assert "wellness and direct-selling brand" not in answer
+
+
 def test_dayjoy_match_routes_to_dayjoy_knowledge(authed_client, monkeypatch):
     monkeypatch.setattr(
         backend_main,

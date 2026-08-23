@@ -16,12 +16,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from backend.orchestrator.intent import detect_intent
+from backend.orchestrator.intent import detect_intent, wants_additional_info
 from backend.orchestrator.tools.registry import get_registry
 from backend.orchestrator.types import (
     INTENT_CASUAL,
     INTENT_COMPARISON,
     INTENT_GENERAL,
+    INTENT_PRICING,
     INTENT_RECOMMENDATION,
     IntentResult,
 )
@@ -39,7 +40,18 @@ def build_plan(message: str) -> QueryPlan:
     available = set(registry.names())
 
     tools: List[str] = []
-    if intent.intent == INTENT_RECOMMENDATION:
+    if intent.intent == INTENT_PRICING:
+        # Structured MRP/DP/BV/PV lookup first (exact table row, never
+        # guessed). dayjoy_kb only joins it for a genuinely compound
+        # question ("what are the ingredients of X and how much does it
+        # cost") — a pure "how much for X" still gets only the single
+        # authoritative source, since generic RAG text next to an exact
+        # figure for no reason risks a stale/rounded figure contradicting it.
+        if "pricing_lookup" in available:
+            tools.append("pricing_lookup")
+        if wants_additional_info(intent.raw_message) and "dayjoy_kb" in available:
+            tools.append("dayjoy_kb")
+    elif intent.intent == INTENT_RECOMMENDATION:
         # Structured recommendation engine first (exact chart-driven match,
         # never guessed), dayjoy_kb second for supporting explanation text
         # only — never web_search: a product recommendation is never a

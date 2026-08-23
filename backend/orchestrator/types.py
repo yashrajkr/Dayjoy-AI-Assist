@@ -14,6 +14,7 @@ INTENT_CASUAL = "casual"
 INTENT_TIME_QUERY = "time_query"
 INTENT_COMPARISON = "comparison"
 INTENT_RECOMMENDATION = "recommendation"
+INTENT_PRICING = "pricing"
 INTENT_GENERAL = "general"
 
 
@@ -32,6 +33,7 @@ class IntentResult:
     wants_comparison: bool = False
     is_time_query: bool = False
     wants_recommendation: bool = False
+    wants_pricing: bool = False
     used_llm_fallback: bool = False
     raw_message: str = ""
 
