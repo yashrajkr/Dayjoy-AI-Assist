@@ -179,6 +179,12 @@ export type ChatProductCard = {
   usage?: string | null;
   who_can_use?: string | null;
   safety_note?: string | null;
+  /** Recommendation Strength (Capability 29) — "Strong recommendation" |
+   * "Good option" | "Possible option", classified from verification status,
+   * evidence source, and documented contraindications. Never a fabricated
+   * numeric confidence score. Absent for a structured pricing card (only
+   * product_recommendation results carry this). */
+  recommendation_strength?: string | null;
   price?: {
     mrp?: number | null;
     dp?: number | null;

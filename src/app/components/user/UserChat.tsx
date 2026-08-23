@@ -705,6 +705,19 @@ function ProductCard({ product }: { product: ChatProductCard }) {
           {product.matched_condition ? (
             <div className="text-[11px] text-muted-foreground">Matched for: {product.matched_condition}</div>
           ) : null}
+          {product.recommendation_strength ? (
+            <span
+              className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                product.recommendation_strength === "Strong recommendation"
+                  ? "text-primary bg-primary/10"
+                  : product.recommendation_strength === "Good option"
+                    ? "text-secondary bg-secondary/10"
+                    : "text-muted-foreground bg-accent"
+              }`}
+            >
+              {product.recommendation_strength}
+            </span>
+          ) : null}
         </div>
         {price ? (
           <div className="text-right shrink-0">
