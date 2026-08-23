@@ -111,6 +111,9 @@ const SupportTickets = lazy(() =>
 const AdminAnalytics = lazy(() =>
   import("./components/admin/AdminAnalytics").then((m) => ({ default: m.AdminAnalytics })),
 );
+const AdminObservability = lazy(() =>
+  import("./components/admin/AdminObservability").then((m) => ({ default: m.AdminObservability })),
+);
 const AISafetyRules = lazy(() =>
   import("./components/admin/AISafetyRules").then((m) => ({ default: m.AISafetyRules })),
 );
@@ -827,6 +830,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <AdminAnalytics />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="observability"
+              element={
+                <ProtectedRoute allowedRoles={[...ADMIN_OR_MGMT]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AdminObservability />
                   </Suspense>
                 </ProtectedRoute>
               }

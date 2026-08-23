@@ -2117,7 +2117,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     # features. Inserting here too duplicated every message in
     # chat_messages — this endpoint only needs conv_id for history/context.
 
-    await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+    await _log_analytics(
+        token, user_id, req, category, sources, confidence, route.answer_source,
+        ai_mode=ai_mode, latency_ms=(time.monotonic() - started_at) * 1000,
+    )
     stage_ms = {
         "routing": (t_after_routing - started_at) * 1000,
         "personalization": (t_after_personalization - t_after_routing) * 1000,
@@ -2369,7 +2372,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # NOTE: message persistence is owned by the frontend — see the same
         # note in the non-streaming /chat handler above.
 
-        await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+        await _log_analytics(
+            token, user_id, req, category, sources, confidence, route.answer_source,
+            ai_mode=ai_mode, latency_ms=(time.monotonic() - started_at) * 1000,
+        )
         t_after_verification = time.monotonic()
         stage_ms = {
             "routing": (t_after_routing - started_at) * 1000,
@@ -2512,8 +2518,15 @@ async def _log_analytics(
     sources: List[ChatSource],
     confidence: float,
     answer_route: Optional[str] = None,
+    ai_mode: Optional[str] = None,
+    latency_ms: Optional[float] = None,
 ) -> None:
-    """Best-effort analytics insert."""
+    """Best-effort analytics insert. `confidence`/`ai_mode`/`latency_ms`
+    feed the Observability Dashboard (GET /admin/analytics/observability,
+    admin_api.py) — added in v27_analytics_observability.sql; degrades
+    gracefully (Supabase just ignores/keeps null for extra fields it
+    doesn't have yet) if that migration hasn't been applied to a given
+    environment."""
     if not SUPABASE_URL:
         return
     payload = {
@@ -2525,6 +2538,9 @@ async def _log_analytics(
         "source_used": ",".join(s.table for s in sources[:3]) or None,
         "safety_status": "safe",
         "answer_route": answer_route,
+        "confidence": confidence,
+        "ai_mode": ai_mode,
+        "latency_ms": round(latency_ms) if latency_ms is not None else None,
     }
     # Use anon-key insert (no RLS on user_id=NULL or matching auth.uid())
     headers = {

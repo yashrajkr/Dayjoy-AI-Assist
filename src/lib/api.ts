@@ -1188,6 +1188,42 @@ export async function adminKnowledgeGaps(limit = 50): Promise<Array<Record<strin
   return adminGet(`/admin/analytics/knowledge-gaps?limit=${limit}`);
 }
 
+/** Feature: Feedback Learning aggregation — backend/admin_api.py's
+ * admin_feedback_summary. */
+export type AdminFeedbackSummary = {
+  total_rated: number;
+  total_up: number;
+  total_down: number;
+  satisfaction_rate: number | null;
+  by_answer_source: Record<string, { up: number; down: number }>;
+  by_ai_mode: Record<string, { up: number; down: number }>;
+  recent_negative_comments: Array<{ feedback_comment: string | null; answer_source: string | null; ai_mode: string | null; created_at: string | null }>;
+};
+
+export async function adminFeedbackSummary(): Promise<AdminFeedbackSummary> {
+  return adminGet(`/admin/analytics/feedback-summary`);
+}
+
+/** Feature: Observability Dashboard — backend/admin_api.py's
+ * admin_observability. */
+export type AdminObservability = {
+  migration_applied: boolean;
+  window_days: number;
+  total_requests: number;
+  blocked_requests: number;
+  safety_block_rate: number | null;
+  by_category: Record<string, number>;
+  by_answer_route: Record<string, number>;
+  by_ai_mode: Record<string, number> | null;
+  avg_confidence: number | null;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+};
+
+export async function adminObservability(days = 7): Promise<AdminObservability> {
+  return adminGet(`/admin/analytics/observability?days=${days}`);
+}
+
 /** Audit logs — list with filters. */
 export async function adminAuditLogs(params: { limit?: number; offset?: number; action?: string; entity_type?: string; created_by?: string } = {}): Promise<{ logs: AdminAuditLog[]; total: number; limit: number; offset: number }> {
   const qs = new URLSearchParams();

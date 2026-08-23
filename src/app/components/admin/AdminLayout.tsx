@@ -33,6 +33,7 @@ import {
   Send,
   Bot,
   Workflow,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -69,6 +70,7 @@ const NAV_SECTIONS: { heading: string; items: NavItemDef[] }[] = [
       { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/admin/executive", icon: TrendingUp, label: "Executive BI" },
       { to: "/admin/analytics-hub", icon: BarChart3, label: "Analytics Hub" },
+      { to: "/admin/observability", icon: Activity, label: "AI Observability" },
       { to: "/admin/search", icon: Search, label: "Universal Search" },
       { to: "/admin/analytics", icon: BarChart3, label: "Legacy Analytics" },
     ],
