@@ -1032,6 +1032,69 @@ async def admin_knowledge_gaps(request: Request, limit: int = 50) -> List[Dict[s
     return []
 
 
+@router.get("/analytics/feedback-summary")
+async def admin_feedback_summary(request: Request, limit: int = 500) -> Dict[str, Any]:
+    """Feature: Feedback Learning — turns the 👍/👎 ratings the chat UI
+    already captures (chat_messages.feedback/feedback_comment, written by
+    POST /feedback in backend/main.py) into something an admin can actually
+    act on, instead of leaving them sitting unused in the table. Aggregates
+    by answer_source and ai_mode (the two enrichment columns chat_messages
+    actually has — v17/v20 migrations) and surfaces the most recent
+    negative-feedback comments verbatim so a real failure pattern is
+    readable, not just a count."""
+    await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    url = (
+        f"{SUPABASE_URL}/rest/v1/chat_messages"
+        f"?feedback=not.is.null&select=feedback,feedback_comment,answer_source,ai_mode,created_at"
+        f"&order=created_at.desc&limit={limit}"
+    )
+    headers = _svc_headers(token)
+    rows: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code < 400:
+                rows = resp.json()
+    except Exception:
+        pass
+
+    total_up = sum(1 for r in rows if r.get("feedback") == "up")
+    total_down = sum(1 for r in rows if r.get("feedback") == "down")
+
+    by_answer_source: Dict[str, Dict[str, int]] = {}
+    by_ai_mode: Dict[str, Dict[str, int]] = {}
+    for r in rows:
+        rating = r.get("feedback")
+        if rating not in ("up", "down"):
+            continue
+        src = r.get("answer_source") or "unknown"
+        mode = r.get("ai_mode") or "normal"
+        by_answer_source.setdefault(src, {"up": 0, "down": 0})[rating] += 1
+        by_ai_mode.setdefault(mode, {"up": 0, "down": 0})[rating] += 1
+
+    recent_negative_comments = [
+        {
+            "feedback_comment": r.get("feedback_comment"),
+            "answer_source": r.get("answer_source"),
+            "ai_mode": r.get("ai_mode"),
+            "created_at": r.get("created_at"),
+        }
+        for r in rows
+        if r.get("feedback") == "down" and r.get("feedback_comment")
+    ][:20]
+
+    return {
+        "total_rated": total_up + total_down,
+        "total_up": total_up,
+        "total_down": total_down,
+        "satisfaction_rate": round(total_up / (total_up + total_down), 3) if (total_up + total_down) else None,
+        "by_answer_source": by_answer_source,
+        "by_ai_mode": by_ai_mode,
+        "recent_negative_comments": recent_negative_comments,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Module 11 — Audit logs
 # ---------------------------------------------------------------------------
