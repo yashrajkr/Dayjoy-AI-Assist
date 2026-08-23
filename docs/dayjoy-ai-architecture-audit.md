@@ -226,14 +226,38 @@ assertions with the file's other 3 tests).
 
 **Live-LLM content grading** (`scripts/live_grade_golden_eval.py`, also
 kept, real Groq/Supabase calls — not for CI): ran a 25-case sample through
-the actual pipeline. First attempt was invalid — the script's `.env`
-lookup defaulted to this worktree's `backend/.env`, which doesn't exist (a
-git worktree doesn't share untracked files with the main checkout), so
-`SUPABASE_URL` was unset and every retrieval silently short-circuited to
-empty while Groq still worked from an already-set OS-level env var — every
-case landed on `answer_source=general_llm` with no grounding at all. Fixed
-the script to fall back to the main checkout's `backend/.env`
-(`<repo>/backend/.env`, found by a prior session's audit) and re-ran.
+the actual pipeline, iterating through three real, found-and-fixed bugs
+along the way rather than declaring success on the first (silently wrong)
+run — see `docs/golden_eval_live_grading_report.md` for the full report:
+
+1. First attempt was invalid — the script's `.env` lookup defaulted to
+   this worktree's `backend/.env`, which doesn't exist (a git worktree
+   doesn't share untracked files with the main checkout), so
+   `SUPABASE_URL` was unset and every retrieval silently short-circuited
+   to empty while Groq still worked from an already-set OS-level env var
+   — every case landed on `answer_source=general_llm`. Fixed the script to
+   fall back to the main checkout's `backend/.env`.
+2. Second attempt used the correct `.env` path but still showed the OLD
+   `llama-3.3-70b-versatile` model and the degraded raw-fallback answer
+   shape — the main checkout's *local* `backend/.env` had the exact same
+   stale `GROQ_MODEL` this pass fixed on Render, never fixed locally.
+   Fixed it there too.
+3. Third attempt used the correct model and got real Groq-generated
+   answers (confirmed: honest "I don't have that information" responses,
+   not hallucinations, when no context was available) — but still zero
+   `dayjoy_knowledge`-sourced answers, including for plain company/policy
+   questions that should trivially match the 543-row `faqs` table.
+   Root-caused to a `401 Invalid API key` from Supabase's own REST API:
+   the main checkout's local `backend/.env` has an OpenAI-format key
+   (`sk-proj-...`) pasted into `SUPABASE_ANON_KEY` — this is the exact
+   issue a prior pass of this document already found and explicitly
+   flagged as unfixable from this sandbox ("no correct value available").
+   Confirmed via a Render log search that production has never logged
+   this error — this is local-only, not a production bug. **Net result**:
+   this pass could confirm real end-to-end Groq generation works
+   correctly and safely, but could NOT complete RAG-grounded
+   content-quality grading from this sandbox — that needs the real anon
+   key from the Supabase dashboard in the local `.env` first.
 
 **2. Per-stage latency breakdown** — `_log_unified_trace()`'s `latency_ms`
 now carries `routing` (includes RAG retrieval/structured lookups/web
