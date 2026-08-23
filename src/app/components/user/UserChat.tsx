@@ -61,6 +61,7 @@ import {
   Lightbulb,
   CheckCircle2,
   Wand2,
+  ListChecks,
 } from "lucide-react";
 import { BRAND } from "../../lib/brand";
 import { useAuth } from "../../lib/AuthContext";
@@ -83,6 +84,7 @@ import {
   streamChatWithBackend,
   generateConversationTitle,
   SessionExpiredError,
+  distributorCreateFollowUp,
   type ChatSource,
   type ChatProductCard,
 } from "../../../lib/api";
@@ -464,6 +466,20 @@ function ProductCard({ product }: { product: ChatProductCard }) {
   );
 }
 
+/** Roles that own rows in the `follow_ups` table (backend/distributor_api.py
+ * scopes every /distributor/* route to `distributor_id = auth.uid()`) —
+ * gates the "Save as follow-up task" chat action so a customer never gets
+ * offered an action meant for a distributor's own business workflow. */
+const CAN_SAVE_FOLLOW_UPS = new Set(["distributor", "management", "admin", "super_admin"]);
+
+/** Only offer "Save as follow-up task" on answers that are actually
+ * plan/step-shaped — never on a plain factual lookup, matching the "no
+ * irrelevant buttons" guidance for follow-up intelligence generally. */
+function looksActionable(content: string, aiMode?: string | null): boolean {
+  if (aiMode === "create") return true;
+  return /(^|\n)\s*\d+\.\s/.test(content);
+}
+
 type Lang = "English" | "Hindi" | "Hinglish";
 
 /**
@@ -670,6 +686,9 @@ export function UserChat() {
   const [findQuery, setFindQuery] = useState("");
   const [findMatchIndex, setFindMatchIndex] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // "Save as follow-up task" — id of the message currently showing a
+  // saved/saving/error confirmation on its action button.
+  const [followUpSaveState, setFollowUpSaveState] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -1370,6 +1389,43 @@ export function UserChat() {
       void handleSend(prompt);
     },
     [handleSend],
+  );
+
+  // ---- Save an assistant answer as a distributor follow-up task ----
+  // Feature: Agentic Workflows, scoped safely — this calls the EXISTING,
+  // already-authorized POST /distributor/follow-ups (RLS-scoped to the
+  // caller's own distributor_id, see backend/distributor_api.py), not a
+  // staff-only endpoint. The user's own button click IS the required
+  // explicit approval (see the safety rule against autonomous consequential
+  // actions) — nothing here executes anything on its own.
+  const handleSaveFollowUp = useCallback(
+    async (message: ChatMessage) => {
+      const key = message.id ?? `${message.role}-${message.created_at}`;
+      setFollowUpSaveState((prev) => ({ ...prev, [key]: "saving" }));
+      try {
+        const dueDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        await distributorCreateFollowUp({
+          title: deriveTitle(message.content, 60),
+          description: message.content,
+          due_date: dueDate,
+          task_type: "follow_up",
+          priority: "normal",
+          ai_generated: true,
+          ai_suggestion: message.content,
+        });
+        setFollowUpSaveState((prev) => ({ ...prev, [key]: "saved" }));
+      } catch {
+        setFollowUpSaveState((prev) => ({ ...prev, [key]: "error" }));
+        setTimeout(() => {
+          setFollowUpSaveState((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        }, 2500);
+      }
+    },
+    [],
   );
 
   // ---- Edit-and-resend a sent user message ----
@@ -2410,6 +2466,12 @@ export function UserChat() {
                       speakingId={speakingId}
                       onShare={handleShareMessage}
                       onTransform={m.role === "assistant" ? handleTransform : undefined}
+                      onSaveFollowUp={
+                        m.role === "assistant" && CAN_SAVE_FOLLOW_UPS.has(role ?? "")
+                          ? handleSaveFollowUp
+                          : undefined
+                      }
+                      followUpSaveState={followUpSaveState[key]}
                       isEditing={editingMessageKey === key}
                       editingValue={editingValue}
                       onEditingValueChange={setEditingValue}
@@ -3736,6 +3798,8 @@ function MessageBubble({
   speakingId,
   onShare,
   onTransform,
+  onSaveFollowUp,
+  followUpSaveState,
   isEditing = false,
   editingValue = "",
   onEditingValueChange,
@@ -3752,6 +3816,8 @@ function MessageBubble({
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
   onTransform?: (kind: "simplify" | "actionable", text: string) => void;
+  onSaveFollowUp?: (message: ChatMessage) => void;
+  followUpSaveState?: "saving" | "saved" | "error";
   isEditing?: boolean;
   editingValue?: string;
   onEditingValueChange?: (value: string) => void;
@@ -4029,6 +4095,26 @@ function MessageBubble({
                 <ScrollText className="w-3.5 h-3.5" aria-hidden="true" />
               </ActionButton>
             </>
+          ) : null}
+          {onSaveFollowUp && looksActionable(message.content, message.ai_mode) ? (
+            <ActionButton
+              onClick={() => onSaveFollowUp(message)}
+              label={
+                followUpSaveState === "saved"
+                  ? "Saved to Follow-Ups"
+                  : followUpSaveState === "error"
+                    ? "Couldn't save — try again"
+                    : "Save as follow-up task"
+              }
+              active={followUpSaveState === "saved"}
+              activeColor="primary"
+            >
+              {followUpSaveState === "saved" ? (
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <ListChecks className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+            </ActionButton>
           ) : null}
         </div>
 

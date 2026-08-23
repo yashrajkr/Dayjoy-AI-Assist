@@ -146,6 +146,19 @@ export type ChatResponse = {
   /** Structured product data — only ever populated from a verified DB row
    * (pricing_lookup/product_recommendation), never fabricated. */
   products?: ChatProductCard[];
+  /** Structured Response JSON (orchestrator/answer_structure.py) — parsed
+   * server-side from `answer`'s own markdown. The frontend renders directly
+   * from `answer` (see UserChat.tsx's own parseAnswerBlocks) rather than
+   * this field; it exists for other API consumers that don't want to
+   * reimplement the markdown parsing. */
+  structured?: {
+    tldr: string | null;
+    callouts: Array<{ variant: "insight" | "warning" | "tip" | "recommended"; text: string }>;
+    sections: Array<{ heading: string | null; level: number; text: string }>;
+    key_points: string[];
+    has_table: boolean;
+    has_chart: boolean;
+  } | null;
 };
 
 export type ChatProductCard = {
@@ -465,6 +478,7 @@ export async function streamChatWithBackend(
       ai_mode: finalMeta.ai_mode ?? req.ai_mode,
       follow_ups: finalMeta.follow_ups,
       products: finalMeta.products,
+      structured: finalMeta.structured,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

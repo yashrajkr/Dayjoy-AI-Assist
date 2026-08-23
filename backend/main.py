@@ -407,6 +407,12 @@ class ChatResponse(BaseModel):
     # tool result), never fabricated from RAG/LLM text. Empty for every
     # route that isn't a structured pricing/recommendation match.
     products: List[Dict[str, Any]] = []
+    # Structured Response JSON (orchestrator/answer_structure.py) — parsed
+    # from `answer`'s own markdown, not LLM-emitted JSON (see that module's
+    # docstring for why). Additive: `answer` is always present and correct
+    # on its own; this just exposes the same structure other clients of
+    # this API can use without re-implementing the markdown parsing.
+    structured: Optional[Dict[str, Any]] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -506,6 +512,10 @@ from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
 # the frontend prefer backend-computed suggestions, which react to more
 # signals (route.answer_source, category) than the frontend has access to.
 from backend.orchestrator.followups import generate_followups  # noqa: E402
+
+# Structured Response JSON — parsed from the answer's own markdown (see
+# module docstring for why this is safer than asking the LLM for raw JSON).
+from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -2028,6 +2038,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         ai_mode=ai_mode,
         follow_ups=follow_ups,
         products=route.product_cards,
+        structured=structure_answer(answer).to_dict(),
     )
 
 
@@ -2265,6 +2276,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "ai_mode": ai_mode,
             "follow_ups": follow_ups,
             "products": route.product_cards,
+            "structured": structure_answer(aggregated).to_dict(),
         })
 
     return StreamingResponse(
