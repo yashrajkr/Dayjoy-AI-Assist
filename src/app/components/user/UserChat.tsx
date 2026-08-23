@@ -3550,6 +3550,43 @@ export function UserChat() {
                                   <span className="font-mono">{s.id}</span>
                                 </div>
                               ) : null}
+                              {/* Source Preview System (Capability 6) — document name/
+                                  page/section/date, when the retrieval layer supplied them
+                                  (knowledge_chunks sources from document ingestion). These
+                                  fields already existed on ChatSource but were never
+                                  rendered anywhere in the UI. */}
+                              {isObj && s.document_name ? (
+                                <div>
+                                  <span className="text-muted-foreground">Document:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.document_name}
+                                    {s.document_version ? ` (v${s.document_version})` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && (s.section || s.page_number != null) ? (
+                                <div>
+                                  <span className="text-muted-foreground">Section:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.section ?? "—"}
+                                    {s.page_number != null ? ` · Page ${s.page_number}` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.document_updated_at ? (
+                                <div>
+                                  <span className="text-muted-foreground">Last updated:</span>{" "}
+                                  <span className="font-medium">
+                                    {new Date(s.document_updated_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.score != null ? (
+                                <div>
+                                  <span className="text-muted-foreground">Relevance:</span>{" "}
+                                  <span className="font-medium">{Math.round(s.score * 100)}%</span>
+                                </div>
+                              ) : null}
                               {isObj && s.url ? (
                                 <div className="truncate">
                                   <span className="text-muted-foreground">URL:</span>{" "}
