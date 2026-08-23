@@ -196,6 +196,96 @@ In rough priority order:
 None of the above are silently glossed over as "done" — they're listed here
 specifically so they aren't lost.
 
+## 2026-08-23, later pass: the four priority items from the "still left" list
+
+Picked up items 4-6 from the priority list above (eval expansion, per-stage
+latency, role/RLS audit) plus syncing the live-only migrations, now that
+the GROQ_MODEL fix (below) was actually applied to Render and confirmed via
+its logs.
+
+**1. Golden eval expanded 147 → 443 cases**, via `scripts/expand_golden_eval.py`
+(kept in the repo — reusable for future expansion, not a one-shot deleted
+script). ~300 new candidate messages across the spec's 12 semantic
+categories (product/pricing/recommendation/company/policy/distributor/
+leader/followup/ambiguous/adversarial/out-of-domain/current-web) were
+classified through the REAL `build_plan()`/`detect_intent()` classifier
+(not hand-guessed labels) — each case's `expected_intent`/`expected_tools`
+is exactly what the live classifier produces, so a future regression shows
+up as a test failure rather than being silently "correct by definition."
+One genuine classifier limitation surfaced and was deliberately *excluded*
+rather than encoded as correct: `wants_pricing()` matches the bare word
+"price" with no Dayjoy-product anchor, so "What's the current gold price
+today?" / "What's the current petrol price?" both classify as `pricing`
+intent even though they have nothing to do with a Dayjoy product — a
+concrete instance of the "no entity/SKU extraction stage" gap this doc
+already listed. Left as a known, documented limitation (the structured
+`pricing_lookup` tool itself would find no matching product and fall
+through gracefully) rather than silently baked into the golden set as
+"expected" behavior. All 443 cases pass (`test_golden_eval.py`, 446 total
+assertions with the file's other 3 tests).
+
+**Live-LLM content grading** (`scripts/live_grade_golden_eval.py`, also
+kept, real Groq/Supabase calls — not for CI): ran a 25-case sample through
+the actual pipeline. First attempt was invalid — the script's `.env`
+lookup defaulted to this worktree's `backend/.env`, which doesn't exist (a
+git worktree doesn't share untracked files with the main checkout), so
+`SUPABASE_URL` was unset and every retrieval silently short-circuited to
+empty while Groq still worked from an already-set OS-level env var — every
+case landed on `answer_source=general_llm` with no grounding at all. Fixed
+the script to fall back to the main checkout's `backend/.env`
+(`<repo>/backend/.env`, found by a prior session's audit) and re-ran.
+
+**2. Per-stage latency breakdown** — `_log_unified_trace()`'s `latency_ms`
+now carries `routing` (includes RAG retrieval/structured lookups/web
+search — all happen inside `determine_route()`), `personalization`,
+`generation`, and `verification` (only present when verification actually
+ran), alongside the pre-existing `total`, in both `/chat` and
+`/chat/stream`. All 389 backend tests still pass.
+
+**3. Role/RLS audit — found and fixed a real, live IDOR vulnerability.**
+Supabase's own security advisors plus a direct query against
+`information_schema.routine_privileges` on the production project
+(`xfhdlktvttqngsqahqje`) found three `SECURITY DEFINER` functions —
+`archive_chat(conversation_uuid, archive_flag)`, `close_ticket(ticket_uuid)`,
+`create_ticket(p_user_id, ...)` — granted `EXECUTE` to `anon` (fully
+unauthenticated callers) via Postgres's default `PUBLIC` grant, with **zero
+ownership check in their bodies**. Since `SECURITY DEFINER` bypasses RLS by
+design, any anonymous caller with just the public anon key could archive or
+unarchive **any** user's conversation, close **any** user's support ticket,
+or create a ticket **impersonating an arbitrary `user_id`** — all by direct
+PostgREST RPC calls the frontend never makes (confirmed via grep: nothing
+in this repo calls any of the three; the app does direct table writes under
+RLS instead, e.g. `archiveConversation()` in `chatStore.ts`). Fixed live via
+`database/supabase_schema_v25_security_hardening.sql` (applied to
+production): revoked `EXECUTE` from `PUBLIC`/`anon`/`authenticated` on all
+three, leaving only `postgres`/`service_role` — verified via a follow-up
+`routine_privileges` query showing the grants gone. Also closed 11 lower-
+severity "mutable search_path" warnings on `SECURITY DEFINER`/trigger
+functions. Remaining lower-priority advisor items (not fixed, informational):
+`vector` extension installed in `public` schema, 3 materialized views
+exposed via the PostgREST API, and "leaked password protection" disabled in
+Supabase Auth settings (a dashboard toggle, not a SQL fix).
+
+Scope note: this was a targeted audit of what the advisors flagged plus a
+grep-verified check of whether flagged functions are actually reachable
+from this app — not an exhaustive manual review of every RLS policy on
+every table. The four newly-documented tables' own RLS policies (below)
+were spot-checked and look correct (read: authenticated; write: `is_staff()`
+only), but a full policy-by-policy audit across all ~60 tables in this
+schema is still open.
+
+**4. Synced the 4 live-only tables into checked-in migrations** —
+`database/supabase_schema_v23_dayjoy_kb_pricing.sql` (`product_prices`,
+`condition_recommendations`, `product_relationships`, `compensation_rules`)
+was written by introspecting the live production schema directly (columns,
+types, defaults, constraints, indexes, RLS policies — not guessed), filed
+under the exact migration name `pricing.py`'s and `test_pricing_lookup.py`'s
+code comments already referenced (`v23_dayjoy_kb_pricing`), and written
+idempotently (`IF NOT EXISTS`/`DO` blocks) so it's safe to run against
+production (already has these tables) or a fresh environment (doesn't).
+Not applied as a migration since the tables already exist identically in
+production — this is a documentation/ops-risk fix, not a schema change.
+
 ## 2026-08-23 re-confirmation: the Render fix was never applied
 
 Checked the live Render service (`Dayjoy-AI-Assist`, srv-d9mnm9lbedkc73e4pti0)

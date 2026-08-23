@@ -2,9 +2,9 @@
 Structured pricing lookup.
 
 IMPORTANT: `product_prices` already exists in the live Supabase project
-(migration `v23_dayjoy_kb_pricing`, applied 2026-08-09 — not present in this
-repo's `database/*.sql` files, i.e. the checked-in migrations are missing
-one that's actually live in production) with 170 real rows: product_id
+(migration `v23_dayjoy_kb_pricing`, applied 2026-08-09 — now also checked
+in at `database/supabase_schema_v23_dayjoy_kb_pricing.sql`, introspected
+directly from production so it matches exactly) with 170 real rows: product_id
 (text — matches `products.product_id`, NOT `products.id`), mrp, dp, bv, pv,
 currency, effective_from, effective_to, source_document, verification_status.
 

@@ -1,159 +1,3896 @@
 [
-  {"message": "hi", "expected_intent": "casual", "expected_tools": []},
-  {"message": "hello", "expected_intent": "casual", "expected_tools": []},
-  {"message": "thanks", "expected_intent": "casual", "expected_tools": []},
-  {"message": "thank you!", "expected_intent": "casual", "expected_tools": []},
-  {"message": "ok", "expected_intent": "casual", "expected_tools": []},
-  {"message": "bye", "expected_intent": "casual", "expected_tools": []},
-  {"message": "good morning", "expected_intent": "casual", "expected_tools": []},
-  {"message": "namaste", "expected_intent": "casual", "expected_tools": []},
-
-  {"message": "What are the benefits of Dayjoy Spirulina?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What ingredients are in Dayjoy Ashwagandha?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "How do I use Dayjoy Turmeric Capsules?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What is the dosage for Dayjoy Ashwagandha?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Is Dayjoy Spirulina vegan?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What category does Dayjoy Curind belong to?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Tell me about the Wild Muse product line.", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What is Aayushmaan used for?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Does Dayjoy YumDum contain sugar?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What is HomeShine made of?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What are the contraindications for Domatti?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Can children use HappyGrow?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What does Aqua Essentials do?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Is Bio-Germanium safe during pregnancy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What's the shelf life of Dayjoy Spirulina?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "How should Dayjoy Curind be stored?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What are the active ingredients in Amara Beauty?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Is Dayjoy Ashwagandha gluten-free?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What size does Dayjoy Turmeric come in?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "How many capsules are in a bottle of Dayjoy Spirulina?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What is the SKU for Dayjoy Ashwagandha 60ct?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Is Dayjoy Curind FSSAI certified?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What allergens are in Dayjoy YumDum?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Does Dayjoy Spirulina interact with blood thinners?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What flavor options does YumDum come in?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "How long before I see results from Dayjoy Ashwagandha?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What is the expiry date policy for Dayjoy products?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "Is Aayushmaan suitable for diabetics?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-  {"message": "What certifications does Bio-Germanium have?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "product"},
-
-  {"message": "What is the DP of Dayjoy Turmeric?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What is the MRP of Dayjoy Spirulina?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much does Dayjoy Ashwagandha cost?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What's the price of Dayjoy Curind?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much BV does Dayjoy Spirulina carry?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What is the PV of Aayushmaan?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much is Wild Muse for distributors?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What's the distributor price for Domatti?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "Give me the MRP and DP for HomeShine.", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much does a bottle of YumDum cost?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What is Bio-Germanium priced at?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "Cost of Aqua Essentials please.", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much for HappyGrow?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What discount price applies to Dayjoy Turmeric for distributors?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "BV and PV for Dayjoy Ashwagandha?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What's the MRP on Amara Beauty products?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much does the Curind combo pack cost?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "DP for Dayjoy Spirulina please.", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "What price point is Dayjoy Curind at right now?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-  {"message": "How much would 2 bottles of Dayjoy Ashwagandha cost?", "expected_intent": "pricing", "expected_tools": ["pricing_lookup"], "category": "pricing"},
-
-  {"message": "Which product is best?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation", "note": "ambiguous — clarify.needs_clarification() should return non-None for this, checked separately"},
-  {"message": "Which product is best for digestion?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation", "note": "specific goal stated — clarify.needs_clarification() should return None; recommend.run()'s own condition-matching is the real ambiguity check for this one, not clarify.py"},
-  {"message": "What do you recommend for high blood pressure?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What should I take for joint pain?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Suggest something good for anxiety.", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What should I use for better sleep?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Recommend something for low energy.", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What's good for skin problems?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Which product would help with weight loss?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "I'm suffering from acidity, what do you suggest?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What helps with hair fall?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "I'm struggling with low immunity, any suggestions?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What should I take for an achy heavy feeling in my legs?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Good for digestion — what do you have?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Which one works for joint stiffness?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What should I try for stress relief?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Suggest a product for general wellness.", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What helps with bloating?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "I have trouble focusing, what should I take?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "Best product for aging skin?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-  {"message": "What do you recommend for a protein boost?", "expected_intent": "recommendation", "expected_tools": ["product_recommendation", "dayjoy_kb"], "category": "recommendation"},
-
-  {"message": "Who founded Dayjoy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "When was Dayjoy incorporated?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Where is Dayjoy headquartered?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What is the Adila Group?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What sub-brands does Dayjoy own?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What business model does Dayjoy operate under?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Is Dayjoy a legally registered company?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What is Dayjoy's mission?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Does Dayjoy have manufacturing facilities of its own?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What industries does Dayjoy operate in?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Is Dayjoy a direct selling or MLM company?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What year did Dayjoy launch as a direct-selling business?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Does Dayjoy have an e-commerce platform?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "What is Dayjoy's registered legal name?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-  {"message": "Does Dayjoy comply with direct selling guidelines in India?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "company"},
-
-  {"message": "How do I become a distributor?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What is the compensation plan?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "How does the rank advancement system work?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What is required to join as a Dayjoy distributor?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "How do I calculate my monthly BV target?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What are the different distributor ranks?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "How is commission calculated for team sales?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What training resources are available for new distributors?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "How do I sponsor a new team member?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What is the difference between DP and MRP for distributors?", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor", "note": "'difference between X and Y' matches the comparison cue, checked before pricing in detect_intent's precedence — an honest edge case, not a misroute: the question genuinely is comparing two pricing concepts"},
-  {"message": "How often are commissions paid out?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What is a leadership bonus?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "How do I check my downline's performance?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "What happens if I miss my monthly target?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-  {"message": "Can I sell Dayjoy products online as a distributor?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "distributor"},
-
-  {"message": "What is Dayjoy's refund policy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "What is the shipping policy?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I track my order?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "My order hasn't arrived, what should I do?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I raise a support ticket?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "Can I cancel an order after placing it?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How long does delivery usually take?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "I received a damaged product, what now?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I update my delivery address?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "What payment methods does Dayjoy accept?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I contact customer support?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "Can I exchange a product for a different one?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I reset my account password?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "What should I do if my payment failed?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-  {"message": "How do I file a complaint about a distributor?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "support"},
-
-  {"message": "What is the current time?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
-  {"message": "What time is it?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
-  {"message": "What's today's date?", "expected_intent": "time_query", "expected_tools": ["dayjoy_kb"]},
-
-  {"message": "Compare Dayjoy Spirulina with competing Spirulina products.", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
-  {"message": "How does Dayjoy compare to other MLM companies?", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
-  {"message": "Dayjoy Turmeric vs a competitor turmeric supplement", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
-  {"message": "Is Dayjoy Spirulina better than Product X?", "expected_intent": "comparison", "expected_tools": ["dayjoy_kb", "web_search"]},
-
-  {"message": "Does this product cure cancer?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately in run_safety_check, not intent detection"},
-  {"message": "Can you guarantee I'll get rich quick?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "note": "safety blocking runs separately"},
-
-  {"message": "What is the latest AI news today?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What is the current stock market doing?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "Explain machine learning in simple terms.", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What is the capital of France?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "Who won the last cricket world cup?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain", "note": "the real reported bug — five unrelated Dayjoy FAQ chunks at ~0.2 score must NOT be confidently labeled dayjoy_knowledge; see test_evidence_verification.py / test_weather_and_rewrite_routing.py for the routing-level assertion, this fixture only checks intent+tool proposal"},
-  {"message": "What's the weather like in Mumbai today?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain", "note": "handled by is_weather_query short-circuit in _route_events before this ever reaches RAG — build_plan() itself doesn't know about weather, so it still classifies general here"},
-  {"message": "How do I bake a chocolate cake?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What is the population of India?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "Translate 'good morning' into Spanish.", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What's a good workout routine for beginners?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "Who is the current Prime Minister of India?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What's a good movie to watch tonight?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "How tall is Mount Everest?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "What is quantum computing?", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"},
-  {"message": "Give me a recipe for green smoothie.", "expected_intent": "general", "expected_tools": ["dayjoy_kb", "web_search"], "category": "out_of_domain"}
+  {
+    "message": "hi",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "hello",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "thanks",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "thank you!",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "ok",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "bye",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "good morning",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "namaste",
+    "expected_intent": "casual",
+    "expected_tools": []
+  },
+  {
+    "message": "What are the benefits of Dayjoy Spirulina?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What ingredients are in Dayjoy Ashwagandha?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How do I use Dayjoy Turmeric Capsules?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the dosage for Dayjoy Ashwagandha?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Dayjoy Spirulina vegan?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What category does Dayjoy Curind belong to?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Tell me about the Wild Muse product line.",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is Aayushmaan used for?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Does Dayjoy YumDum contain sugar?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is HomeShine made of?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What are the contraindications for Domatti?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Can children use HappyGrow?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What does Aqua Essentials do?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Bio-Germanium safe during pregnancy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What's the shelf life of Dayjoy Spirulina?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How should Dayjoy Curind be stored?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What are the active ingredients in Amara Beauty?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Dayjoy Ashwagandha gluten-free?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What size does Dayjoy Turmeric come in?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How many capsules are in a bottle of Dayjoy Spirulina?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the SKU for Dayjoy Ashwagandha 60ct?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Dayjoy Curind FSSAI certified?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What allergens are in Dayjoy YumDum?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Does Dayjoy Spirulina interact with blood thinners?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What flavor options does YumDum come in?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How long before I see results from Dayjoy Ashwagandha?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the expiry date policy for Dayjoy products?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Aayushmaan suitable for diabetics?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What certifications does Bio-Germanium have?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the DP of Dayjoy Turmeric?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the MRP of Dayjoy Spirulina?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does Dayjoy Ashwagandha cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the price of Dayjoy Curind?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much BV does Dayjoy Spirulina carry?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the PV of Aayushmaan?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much is Wild Muse for distributors?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the distributor price for Domatti?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Give me the MRP and DP for HomeShine.",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does a bottle of YumDum cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is Bio-Germanium priced at?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Cost of Aqua Essentials please.",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much for HappyGrow?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What discount price applies to Dayjoy Turmeric for distributors?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "BV and PV for Dayjoy Ashwagandha?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the MRP on Amara Beauty products?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does the Curind combo pack cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "DP for Dayjoy Spirulina please.",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What price point is Dayjoy Curind at right now?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much would 2 bottles of Dayjoy Ashwagandha cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Which product is best?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation",
+    "note": "ambiguous — clarify.needs_clarification() should return non-None for this, checked separately"
+  },
+  {
+    "message": "Which product is best for digestion?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation",
+    "note": "specific goal stated — clarify.needs_clarification() should return None; recommend.run()'s own condition-matching is the real ambiguity check for this one, not clarify.py"
+  },
+  {
+    "message": "What do you recommend for high blood pressure?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I take for joint pain?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Suggest something good for anxiety.",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I use for better sleep?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Recommend something for low energy.",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What's good for skin problems?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which product would help with weight loss?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm suffering from acidity, what do you suggest?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What helps with hair fall?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm struggling with low immunity, any suggestions?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I take for an achy heavy feeling in my legs?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Good for digestion — what do you have?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which one works for joint stiffness?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I try for stress relief?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Suggest a product for general wellness.",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What helps with bloating?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I have trouble focusing, what should I take?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Best product for aging skin?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What do you recommend for a protein boost?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Who founded Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "When was Dayjoy incorporated?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Where is Dayjoy headquartered?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is the Adila Group?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What sub-brands does Dayjoy own?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What business model does Dayjoy operate under?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Is Dayjoy a legally registered company?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's mission?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy have manufacturing facilities of its own?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What industries does Dayjoy operate in?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Is Dayjoy a direct selling or MLM company?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What year did Dayjoy launch as a direct-selling business?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy have an e-commerce platform?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's registered legal name?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy comply with direct selling guidelines in India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How do I become a distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is the compensation plan?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How does the rank advancement system work?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is required to join as a Dayjoy distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I calculate my monthly BV target?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What are the different distributor ranks?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How is commission calculated for team sales?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What training resources are available for new distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I sponsor a new team member?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is the difference between DP and MRP for distributors?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor",
+    "note": "'difference between X and Y' matches the comparison cue, checked before pricing in detect_intent's precedence — an honest edge case, not a misroute: the question genuinely is comparing two pricing concepts"
+  },
+  {
+    "message": "How often are commissions paid out?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is a leadership bonus?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I check my downline's performance?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What happens if I miss my monthly target?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "Can I sell Dayjoy products online as a distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is Dayjoy's refund policy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "What is the shipping policy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I track my order?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "My order hasn't arrived, what should I do?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I raise a support ticket?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "Can I cancel an order after placing it?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How long does delivery usually take?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "I received a damaged product, what now?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I update my delivery address?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "What payment methods does Dayjoy accept?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I contact customer support?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "Can I exchange a product for a different one?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I reset my account password?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "What should I do if my payment failed?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "How do I file a complaint about a distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "support"
+  },
+  {
+    "message": "What is the current time?",
+    "expected_intent": "time_query",
+    "expected_tools": [
+      "dayjoy_kb"
+    ]
+  },
+  {
+    "message": "What time is it?",
+    "expected_intent": "time_query",
+    "expected_tools": [
+      "dayjoy_kb"
+    ]
+  },
+  {
+    "message": "What's today's date?",
+    "expected_intent": "time_query",
+    "expected_tools": [
+      "dayjoy_kb"
+    ]
+  },
+  {
+    "message": "Compare Dayjoy Spirulina with competing Spirulina products.",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ]
+  },
+  {
+    "message": "How does Dayjoy compare to other MLM companies?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ]
+  },
+  {
+    "message": "Dayjoy Turmeric vs a competitor turmeric supplement",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ]
+  },
+  {
+    "message": "Is Dayjoy Spirulina better than Product X?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ]
+  },
+  {
+    "message": "Does this product cure cancer?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "note": "safety blocking runs separately in run_safety_check, not intent detection"
+  },
+  {
+    "message": "Can you guarantee I'll get rich quick?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "note": "safety blocking runs separately"
+  },
+  {
+    "message": "What is the latest AI news today?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the current stock market doing?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Explain machine learning in simple terms.",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the capital of France?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Who won the last cricket world cup?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain",
+    "note": "the real reported bug — five unrelated Dayjoy FAQ chunks at ~0.2 score must NOT be confidently labeled dayjoy_knowledge; see test_evidence_verification.py / test_weather_and_rewrite_routing.py for the routing-level assertion, this fixture only checks intent+tool proposal"
+  },
+  {
+    "message": "What's the weather like in Mumbai today?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain",
+    "note": "handled by is_weather_query short-circuit in _route_events before this ever reaches RAG — build_plan() itself doesn't know about weather, so it still classifies general here"
+  },
+  {
+    "message": "How do I bake a chocolate cake?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the population of India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Translate 'good morning' into Spanish.",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's a good workout routine for beginners?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Who is the current Prime Minister of India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's a good movie to watch tonight?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "How tall is Mount Everest?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is quantum computing?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Give me a recipe for green smoothie.",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What are the ingredients in Dayjoy Ashwagandha capsules?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Tell me about the benefits of Seabuckthorn Juice",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How do I use the Dayjoy Turmeric Curcumin capsules?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the dosage for Dayjoy Multivitamin tablets?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Is Dayjoy Spirulina safe for daily use?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What are the side effects of Dayjoy Ashwagandha?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is Dayjoy Amla Juice made of?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How does Dayjoy Green Tea Extract work?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What's the composition of Dayjoy Protein Powder?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Can you tell me about Dayjoy Omega 3 capsules?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the shelf life of Dayjoy Aloe Vera Juice?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Does Dayjoy Multivitamin contain any allergens?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What flavors does Dayjoy Protein Powder come in?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the pack size of Dayjoy Seabuckthorn Juice?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Who can use Dayjoy Ashwagandha capsules?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Are Dayjoy supplements vegetarian?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What certifications does Dayjoy Multivitamin have?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How is Dayjoy Turmeric Curcumin different from regular turmeric?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the SKU for Dayjoy Amla Juice?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Tell me the safety notes for Dayjoy Green Tea Extract",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What contraindications exist for Dayjoy Ashwagandha?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How many capsules are in a Dayjoy Multivitamin bottle?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is Dayjoy Spirulina good for?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Explain the manufacturing process for Dayjoy supplements",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the expiry period for Dayjoy Protein Powder?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Does Dayjoy Omega 3 need refrigeration?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What's inside a Dayjoy wellness starter kit?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "How should I store Dayjoy Aloe Vera Juice?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the recommended usage of Dayjoy Green Tea Extract?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "Give me the full product details of Dayjoy Ashwagandha capsules",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "product"
+  },
+  {
+    "message": "What is the MRP of Dayjoy Ashwagandha capsules?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does Dayjoy Multivitamin cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the DP for Dayjoy Seabuckthorn Juice?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Tell me the BV of Dayjoy Turmeric Curcumin capsules",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the distributor price of Dayjoy Protein Powder?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much is Dayjoy Omega 3 capsules?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the discount price for Dayjoy Green Tea Extract?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Give me the PV of Dayjoy Amla Juice",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the price of Dayjoy Aloe Vera Juice?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much do I pay for Dayjoy Spirulina?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the cost of the Dayjoy wellness starter kit?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Tell me the MRP and DP of Dayjoy Multivitamin",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the BV of Dayjoy Ashwagandha for my rank calculation?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does Dayjoy Business Planner Book cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the price for Dayjoy Turmeric Curcumin capsules?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Give me the current pricing for Dayjoy Seabuckthorn Juice",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much MRP for Dayjoy Green Tea Extract?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the distributor price for Dayjoy Amla Juice?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Tell me the cost of Dayjoy Omega 3 capsules",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the DP of Dayjoy Protein Powder?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much does the Dayjoy Aloe Vera Juice retail for?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the price list for Dayjoy Multivitamin?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Give me the BV for Dayjoy Spirulina",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the MRP for Dayjoy Business Planner Book Hindi edition?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much do Dayjoy supplements cost on average?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What is the pricing of Dayjoy Turmeric Curcumin?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Tell me the DP and BV of Dayjoy Ashwagandha",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "How much is the discount price on Dayjoy Green Tea Extract?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "What's the current MRP of Dayjoy Seabuckthorn Juice?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Give me the cost breakdown of Dayjoy Omega 3 capsules",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "pricing"
+  },
+  {
+    "message": "Which product is best for digestion issues?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm suffering from low energy, what do you suggest?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What Dayjoy product helps with anxiety?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which one works for immunity boosting?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm struggling with poor sleep, any recommendations?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I use for skin health?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Suggest a product for weight management",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which product is good for hair fall?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What do you recommend for stress relief?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I have high blood pressure, what should I take?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which Dayjoy product helps with diabetes management?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What's good for improving concentration and focus?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Suggest something for muscle recovery after workout",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which product is best for detoxification?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm suffering from acidity, what should I use?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I take for better bone health?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which one helps with hormonal balance?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Recommend a product for children's nutrition",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What Dayjoy product is good for eye health?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which product helps with liver health?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm struggling with hair thinning, any suggestions?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What should I use for post-pregnancy recovery?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which one is best for cholesterol management?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Suggest a product for improving metabolism",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What helps with chronic fatigue?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which product is recommended for arthritis?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "I'm suffering from seasonal allergies, what should I take?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What's the best product for gut health?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "Which one would help with respiratory issues?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "recommendation"
+  },
+  {
+    "message": "What is Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "When was Dayjoy founded?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Who owns Dayjoy Marketing Private Limited?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's mission statement?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How many employees does Dayjoy have?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy have manufacturing facilities?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's company registration number?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Who is the founder of Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What awards has Dayjoy received?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Is Dayjoy part of a larger corporate group?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's vision for the next five years?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How can I contact Dayjoy corporate office?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's company culture like?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy have international operations?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What sectors does Dayjoy Marketing Private Limited cover?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Tell me about Dayjoy's history and background",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is the legal structure of Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy publish annual reports?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What certifications does Dayjoy as a company hold?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Who are Dayjoy's key leadership team members?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's registered office address?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How is Dayjoy different from other direct-selling companies?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is Dayjoy's corporate social responsibility initiative?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "Does Dayjoy have a research and development division?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "What is the total product portfolio size of Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How long has Dayjoy been a direct-selling company?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "company"
+  },
+  {
+    "message": "How do I return a damaged product?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the cancellation policy for orders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How long does shipping take?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is Dayjoy's privacy policy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Can I exchange a product I don't like?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What are the terms and conditions for distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How do I file a complaint against Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the warranty policy on Dayjoy products?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How does Dayjoy handle data protection?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the process for order cancellation?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Can I get a replacement for an expired product?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is Dayjoy's shipping policy for international orders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How do I track my order status?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What happens if my order is delayed?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the return window for Dayjoy products?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Does Dayjoy offer cash on delivery?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What are the payment methods accepted by Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is Dayjoy's policy on damaged shipments?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Can I cancel my distributor membership?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the code of conduct for Dayjoy distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How does Dayjoy handle customer grievances?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the dispute resolution process?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Is there a minimum order requirement?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is Dayjoy's policy on counterfeit products?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How do I report a policy violation by another distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What are the terms of the buyback policy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "Does Dayjoy have an anti-spam policy for distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "What is the process to close my Dayjoy account?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "policy"
+  },
+  {
+    "message": "How is my team performing this month?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my current BV target?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I check my rank progress?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my commission for last month?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How many active members are in my downline?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my business volume for this quarter?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What are the PV requirements for rank advancement?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I add a new member to my team?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my current sales performance?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I check my earnings history?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my downline structure?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How many customers do I have in my network?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my team's total business volume?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I view my incentive eligibility?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my current distributor rank?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I recruit new distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What training is available for new distributors?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I track my monthly commission payout?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my team's growth rate this year?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is the process to upgrade my distributor rank?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I access my business dashboard?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What are the requirements to become a leader?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How is my performance compared to last quarter?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What tools are available for growing my business?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I generate leads for my Dayjoy business?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What is my total lifetime business volume?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I check my team's active vs inactive members?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "What are the qualification criteria for rank promotion?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "distributor"
+  },
+  {
+    "message": "How do I mentor new distributors on my team?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What leadership training programs does Dayjoy offer?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I motivate underperforming team members?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the compensation structure for leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I organize a team building event?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What are the responsibilities of a Dayjoy leader?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I track my entire organization's performance?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What incentives are available for top leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I handle conflicts within my downline team?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the leadership development pathway at Dayjoy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I recognize top performers in my team?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What reports are available for tracking team growth?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I set goals for my downline organization?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What support does Dayjoy provide to leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I conduct effective team training sessions?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the criteria to qualify for leadership recognition?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I build a sustainable distributor network?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What communication tools are available for team leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I plan a regional business meeting?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the escalation process for team-level issues?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I identify potential future leaders in my team?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What metrics should I track for organizational health?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I structure mentorship for new leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the leadership retreat schedule?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I manage a multi-generational downline?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What resources exist for leadership skill development?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I present business opportunity to prospects?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What is the succession planning process for leaders?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "How do I balance recruitment and retention as a leader?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "What leadership certifications does Dayjoy offer?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "leader"
+  },
+  {
+    "message": "Can you tell me more about that?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What about the other one?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "How does that compare to the previous option?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Can you give me more details on this?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What else should I know about it?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Is there a cheaper alternative to that?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Can you explain that in simpler terms?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What's the next step after this?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Does this apply to all products?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "How does that affect my current plan?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Can you summarize what we discussed?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What other options are similar to this?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Is this the best choice for my situation?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Can you clarify the previous answer?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What if I want something different?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "How long does this usually take?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Is there anything else I should consider?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Can you break that down further?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What are the alternatives to this one?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "Does this come with any additional benefits?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "followup"
+  },
+  {
+    "message": "What about the product?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Tell me more",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Is it good?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "How does it work?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What's the deal with this?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Can you help me decide?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What do you think is best?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "I'm not sure what I need",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Something for my health",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What's popular right now?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Any suggestions?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What's good?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "I need help choosing",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What would you pick?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Give me options",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What's the best one overall?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "I don't know where to start",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Just show me something",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "What's trending?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Help me out here",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "ambiguous"
+  },
+  {
+    "message": "Compare Dayjoy Ashwagandha vs a competitor brand's ashwagandha",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Is Dayjoy Turmeric Curcumin better than Patanjali's turmeric?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "How does Dayjoy's compensation plan compare to Amway's?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What's the difference between Dayjoy and other MLM companies?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Which is cheaper, Dayjoy Multivitamin or a pharmacy brand?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Compare the price of Dayjoy Protein Powder with market alternatives",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Is Dayjoy a pyramid scheme or a legitimate direct-selling company?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What's the price of the joint pain product and how do I become a distributor?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "How much does the sleep product cost and what should I take for stress?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Compare Dayjoy Omega 3 versus other omega-3 supplements in the market",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What is the BV of the product for weight loss and is it safe?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Which one is better, Dayjoy Spirulina or Dayjoy Green Tea Extract?",
+    "expected_intent": "recommendation",
+    "expected_tools": [
+      "product_recommendation",
+      "dayjoy_kb"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "How does Dayjoy Aloe Vera Juice compare to other aloe vera brands?",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Tell me the price and recommend which product is best for digestion",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What's the ingredients of the product and how much does it cost?",
+    "expected_intent": "pricing",
+    "expected_tools": [
+      "pricing_lookup",
+      "dayjoy_kb"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Compare Dayjoy's refund policy with Amazon's return policy",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Is Dayjoy's Ashwagandha organic compared to competitor brands?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "How does Dayjoy rank against other wellness companies in India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What's cheaper, buying direct from Dayjoy or through a distributor?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "Compare the BV structure of Dayjoy with other direct-selling companies",
+    "expected_intent": "comparison",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "adversarial"
+  },
+  {
+    "message": "What's the population of Japan?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Tell me a joke",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's the tallest mountain in the world?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Who is the president of the United States?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the speed of light?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Explain quantum physics to me",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's the recipe for chocolate cake?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Who wrote Romeo and Juliet?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the boiling point of water?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Tell me about the history of Rome",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's the currency of Japan?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "How do airplanes fly?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is machine learning?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Who painted the Mona Lisa?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's the largest ocean on Earth?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Explain how photosynthesis works",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What is the GDP of India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "Tell me about the solar system",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "out_of_domain"
+  },
+  {
+    "message": "What's the latest news about the stock market?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's happening in the news today?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the weather like right now?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the current exchange rate for USD to INR?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's trending on social media today?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the latest update on the economy?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "Are there any current offers on wellness products in the market?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the recent development in the direct-selling industry?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the current inflation rate in India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the latest health news today?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What time is it right now?",
+    "expected_intent": "time_query",
+    "expected_tools": [
+      "dayjoy_kb"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the current interest rate set by RBI?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the latest cricket score?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's new in the wellness industry this year?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the current status of the Indian stock market?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the recent news about MLM regulations in India?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  },
+  {
+    "message": "What's the weather forecast for tomorrow?",
+    "expected_intent": "general",
+    "expected_tools": [
+      "dayjoy_kb",
+      "web_search"
+    ],
+    "category": "current_web"
+  }
 ]

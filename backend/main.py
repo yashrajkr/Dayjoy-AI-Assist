@@ -1136,6 +1136,7 @@ def _log_unified_trace(
     verification_ran: bool = False,
     started_at: float = 0.0,
     final_status: str = "ok",
+    stage_ms: Optional[Dict[str, float]] = None,
 ) -> None:
     """Phase 7 — the single per-request observability call site. Does NOT
     replace `_log_analytics` (writes to the `analytics` table an admin
@@ -1146,7 +1147,14 @@ def _log_unified_trace(
     thing genuinely missing before this pass: ONE structured log line per
     request carrying everything — intent, route, retrieval IDs/scores,
     latency, verification outcome, fallback reason — in one place instead of
-    three unmerged ones. Called unconditionally (not gated behind
+    three unmerged ones. `stage_ms` (optional) breaks total latency down by
+    pipeline stage (routing — which includes RAG retrieval, structured
+    lookups, and web search, since those all happen inside
+    `determine_route()` — personalization, generation, verification);
+    omitted stages (e.g. verification on an answer that skipped the check)
+    simply aren't keys in the dict rather than being reported as zero, so a
+    dashboard can tell "didn't run" from "ran instantly." Called
+    unconditionally (not gated behind
     ORCHESTRATOR_ENABLED, unlike the pre-generation-only observability hook)
     since real observability shouldn't be an opt-in debug flag. Best-effort:
     any failure here must never affect the response, which has already been
@@ -1194,7 +1202,10 @@ def _log_unified_trace(
                 retrieval_sources=list({s.table for s in route.sources}) if route else [],
                 retrieved_chunk_ids=chunk_ids,
                 retrieved_scores=scores,
-                latency_ms={"total": (time.monotonic() - started_at) * 1000} if started_at else {},
+                latency_ms=(
+                    {"total": (time.monotonic() - started_at) * 1000, **(stage_ms or {})}
+                    if started_at else {}
+                ),
                 model=GROQ_MODEL if GROQ_API_KEY else (OPENAI_MODEL if OPENAI_API_KEY else None),
                 confidence=confidence,
                 verification_result=verification_result,
@@ -1782,10 +1793,12 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     _run_orchestrator_observability(req.message)
     retrieval_query = rewrite_query(req.message, history)
     route = await determine_route(token, retrieval_query, casual)
+    t_after_routing = time.monotonic()
 
     personalization_context = await _maybe_personalization_context(
         token, user_id, req.message, history, casual, req.role
     )
+    t_after_personalization = time.monotonic()
     full_context = "\n\n".join(
         p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
     )
@@ -1804,6 +1817,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         # skip generation entirely rather than asking the LLM to rephrase a
         # question we already know how to ask.
         answer = route.direct_answer
+        t_after_generation = time.monotonic()
     else:
         # Collect streamed tokens into a single string
         answer_parts: List[str] = []
@@ -1813,6 +1827,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         ):
             answer_parts.append(tok)
         answer = "".join(answer_parts).strip()
+        t_after_generation = time.monotonic()
 
         # Post-generation answer-relevance check — only for RAG-sourced
         # answers (dayjoy_knowledge/hybrid): structured pricing/recommendation
@@ -1844,6 +1859,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                         answer_mismatch = True
                 else:
                     answer_mismatch = True
+    t_after_verification = time.monotonic()
 
     confidence, verification_status = _compute_confidence(casual, route)
     # Evidence-verification signal (rag/evidence.py, via rag_metadata) is
@@ -1869,10 +1885,18 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     # chat_messages — this endpoint only needs conv_id for history/context.
 
     await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+    stage_ms = {
+        "routing": (t_after_routing - started_at) * 1000,
+        "personalization": (t_after_personalization - t_after_routing) * 1000,
+        "generation": (t_after_generation - t_after_personalization) * 1000,
+    }
+    if verification_ran:
+        stage_ms["verification"] = (t_after_verification - t_after_generation) * 1000
     _log_unified_trace(
         request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
         route=route, confidence=confidence, handoff_required=handoff_required,
         answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
+        stage_ms=stage_ms,
     )
 
     handoff_msg = None
@@ -2011,10 +2035,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             else:
                 route = payload
         assert route is not None  # _route_events always yields exactly one "result"
+        t_after_routing = time.monotonic()
 
         personalization_context = await _maybe_personalization_context(
             token, user_id, req.message, history, casual, req.role
         )
+        t_after_personalization = time.monotonic()
         full_context = "\n\n".join(
             p for p in [current_time_context(), personalization_context, route.context, route.web_context] if p
         )
@@ -2041,6 +2067,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             ):
                 aggregated += tok
                 yield _sse({"token": tok})
+        t_after_generation = time.monotonic()
 
         # Post-generation answer-relevance check. Unlike /chat (non-streaming,
         # so it can retry generation before anything is shown), tokens here
@@ -2096,10 +2123,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # note in the non-streaming /chat handler above.
 
         await _log_analytics(token, user_id, req, category, sources, confidence, route.answer_source)
+        t_after_verification = time.monotonic()
+        stage_ms = {
+            "routing": (t_after_routing - started_at) * 1000,
+            "personalization": (t_after_personalization - t_after_routing) * 1000,
+            "generation": (t_after_generation - t_after_personalization) * 1000,
+        }
+        if verification_ran:
+            stage_ms["verification"] = (t_after_verification - t_after_generation) * 1000
         _log_unified_trace(
             request_id=request_id, user_id=user_id, query=req.message, rewritten_query=retrieval_query,
             route=route, confidence=confidence, handoff_required=handoff_required,
             answer_mismatch=answer_mismatch, verification_ran=verification_ran, started_at=started_at,
+            stage_ms=stage_ms,
         )
 
         yield _sse({
