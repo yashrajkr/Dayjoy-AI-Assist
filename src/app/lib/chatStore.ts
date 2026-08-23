@@ -51,6 +51,10 @@ export type ChatMessage = {
   // Structured product data (verified DB rows only) — same transient,
   // client-side-only treatment as follow_ups above.
   products?: ChatProductCard[] | null;
+  // Clarification Intelligence — selectable options accompanying a
+  // clarifying-question reply. Same transient, client-side-only treatment
+  // as follow_ups/products above.
+  clarification_options?: string[] | null;
 };
 
 /** In-memory fallback when Supabase is unavailable. */
