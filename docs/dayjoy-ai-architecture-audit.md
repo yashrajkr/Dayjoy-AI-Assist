@@ -195,3 +195,36 @@ In rough priority order:
 
 None of the above are silently glossed over as "done" — they're listed here
 specifically so they aren't lost.
+
+## 2026-08-23 re-confirmation: the Render fix was never applied
+
+Checked the live Render service (`Dayjoy-AI-Assist`, srv-d9mnm9lbedkc73e4pti0)
+directly via its logs, ~7 hours after this doc's "actual root cause" section
+was written. **The `GROQ_MODEL` fix described above was never applied to
+production.** Live log evidence, same day:
+
+```
+groq stream failed (404), not retrying: {"error":{"message":"The model
+`llama-3.3-70b-versatile` does not exist or you do not have access to it.",
+...}}
+openai stream failed (429), not retrying: {"error":{"message":"You have no
+credits remaining. ...}}
+Both Groq and OpenAI unavailable (configured: groq=True, openai=True) —
+serving degraded context-only fallback answer
+```
+
+Both the code default (`backend/main.py:124`) and the local `.env` were
+fixed to `openai/gpt-oss-120b` per the section above — but Render's own
+`GROQ_MODEL` environment variable independently still holds the old value
+and overrides the code default, exactly as this doc predicted. OpenAI's
+zero-credit 429 is also still live. This sandbox cannot modify Render's
+environment variables (no platform credential/permission for it), so this
+remains an action only the account owner can take: update `GROQ_MODEL` to
+`openai/gpt-oss-120b` on the Render dashboard for `Dayjoy-AI-Assist`.
+
+**Everything else in this document is unaffected by this** — the routing,
+retrieval, structured lookups, recommendation engine, verification, and
+personalization logic described above are correct and tested; they simply
+have never run against a working LLM in production, so no amount of
+re-reading the code or re-testing routing logic will change what users see
+until this one environment variable is corrected.
