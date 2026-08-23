@@ -749,7 +749,16 @@ function looksActionable(content: string, aiMode?: string | null): boolean {
  * and the existing orchestrator/RAG/grounding pipeline already handles
  * "explain X simply" style requests correctly.
  */
-export type TransformKind = "simplify" | "actionable" | "shorter" | "detail" | "checklist" | "compare" | "hinglish";
+export type TransformKind =
+  | "simplify"
+  | "actionable"
+  | "shorter"
+  | "detail"
+  | "checklist"
+  | "compare"
+  | "hinglish"
+  | "example"
+  | "translate";
 
 const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   simplify: (t) => `Explain this more simply, in plain everyday language:\n\n"""${t}"""`,
@@ -759,6 +768,8 @@ const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   checklist: (t) => `Turn this into a short, practical checklist:\n\n"""${t}"""`,
   compare: (t) => `Compare the options mentioned here side by side, with a clear verdict:\n\n"""${t}"""`,
   hinglish: (t) => `Rewrite this in Hinglish (Hindi in Latin script, mixed with English the way it's commonly spoken):\n\n"""${t}"""`,
+  example: (t) => `Give a concrete, realistic example that illustrates this:\n\n"""${t}"""`,
+  translate: (t) => `Translate this into Hindi:\n\n"""${t}"""`,
 };
 
 function buildTransformPrompt(kind: TransformKind, text: string): string {
@@ -4486,6 +4497,12 @@ function MessageBubble({
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onTransform("compare", message.content)}>
                     <GitCompare className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Compare
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("example", message.content)}>
+                    <Lightbulb className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Give example
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onTransform("translate", message.content)}>
+                    <Globe className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Translate to Hindi
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onTransform("hinglish", message.content)}>
                     <Languages className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Hinglish
