@@ -16,6 +16,11 @@ INTENT_COMPARISON = "comparison"
 INTENT_RECOMMENDATION = "recommendation"
 INTENT_PRICING = "pricing"
 INTENT_GENERAL = "general"
+# Wellness Journey P0 (see docs/WELLNESS_JOURNEY_ANALYSIS_AND_MASTER_PROMPT.md
+# Step 12) — goal-management asks ("I want to improve my energy", "how's my
+# wellness goal going") route here instead of INTENT_RECOMMENDATION, which is
+# reserved for a direct "what product should I take" ask.
+INTENT_WELLNESS = "wellness"
 
 
 @dataclass
@@ -34,6 +39,7 @@ class IntentResult:
     is_time_query: bool = False
     wants_recommendation: bool = False
     wants_pricing: bool = False
+    wants_wellness: bool = False
     used_llm_fallback: bool = False
     raw_message: str = ""
 

@@ -52,7 +52,7 @@ export function WellnessJourney() {
 
   // Activity modal
   const [actModal, setActModal] = useState(false);
-  const [actForm, setActForm] = useState({ activity_type: "custom", title: "", value: "", unit: "", duration_minutes: "", notes: "" });
+  const [actForm, setActForm] = useState({ activity_type: "custom", title: "", value: "", unit: "", duration_minutes: "", notes: "", goal_id: "" });
   const [savingAct, setSavingAct] = useState(false);
 
   // Reminder modal
@@ -117,8 +117,13 @@ export function WellnessJourney() {
         unit: actForm.unit || null,
         duration_minutes: actForm.duration_minutes ? parseInt(actForm.duration_minutes) : null,
         notes: actForm.notes || null,
+        // When linked to a goal, the backend auto-advances that goal's
+        // current_value from this activity — reloading below (`load()`)
+        // picks up the updated goal alongside the new activity, so the
+        // Goals tab's progress bar reflects it without a second write.
+        goal_id: actForm.goal_id || null,
       });
-      setActModal(false); setActForm({ activity_type: "custom", title: "", value: "", unit: "", duration_minutes: "", notes: "" });
+      setActModal(false); setActForm({ activity_type: "custom", title: "", value: "", unit: "", duration_minutes: "", notes: "", goal_id: "" });
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setSavingAct(false); }
   };
@@ -147,6 +152,32 @@ export function WellnessJourney() {
     value: Number(a.value || a.duration_minutes || 1),
   }));
 
+  const activeGoals = goals.filter((g) => !g.is_completed);
+
+  /**
+   * Overview data — every number here is computed from goals/activities
+   * already loaded above, never a fabricated "wellness score" (see
+   * docs/WELLNESS_JOURNEY_ANALYSIS_AND_MASTER_PROMPT.md Step 1/11's rule
+   * that every summary number must trace to real data).
+   */
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const activeDaysThisWeek = new Set(
+    activities
+      .filter((a) => {
+        if (!a.activity_date) return false;
+        const days = (Date.now() - new Date(a.activity_date).getTime()) / 86400000;
+        return days >= 0 && days < 7;
+      })
+      .map((a) => a.activity_date),
+  ).size;
+  const loggedTodayGoalIds = new Set(
+    activities.filter((a) => a.activity_date === todayStr && a.goal_id).map((a) => a.goal_id),
+  );
+  // "Today's priority": the first active goal with no activity logged
+  // against it today — not just "the first goal", so this actually reflects
+  // what still needs attention rather than an arbitrary pick.
+  const priorityGoal = activeGoals.find((g) => !g.id || !loggedTodayGoalIds.has(g.id));
+
   const tabs: { value: Tab; label: string; icon: typeof Target; count?: number }[] = [
     { value: "goals", label: "Goals", icon: Target, count: goals.filter((g) => !g.is_completed).length },
     { value: "activities", label: "Activities", icon: Activity, count: activities.length },
@@ -164,9 +195,41 @@ export function WellnessJourney() {
       <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full">
       {error ? <ErrorState message={error} /> : null}
 
+      {/* Overview — a data-grounded summary + one surfaced next action,
+          instead of three equally-weighted stat tiles with nothing telling
+          the user what to actually do next. Only renders once there's
+          something to summarize (empty-state below already covers the
+          "no goals yet" case). */}
+      {!loading && activeGoals.length > 0 ? (
+        <Card className="p-4 mb-4 shadow-none border-primary/20 bg-primary/5">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {activeDaysThisWeek > 0
+                  ? `${activeDaysThisWeek} active day${activeDaysThisWeek === 1 ? "" : "s"} this week`
+                  : "No activity logged yet this week"}
+              </p>
+              {priorityGoal ? (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Today's priority: <span className="text-foreground font-medium">{priorityGoal.title}</span> — log an
+                  activity or adjust its progress in the Goals tab.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  You're on track — every active goal has activity logged today.
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold text-primary">{goals.filter((g) => !g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Active Goals</p></Card>
+        <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold text-primary">{activeGoals.length}</p><p className="text-[10px] text-muted-foreground">Active Goals</p></Card>
         <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{goals.filter((g) => g.is_completed).length}</p><p className="text-[10px] text-muted-foreground">Completed</p></Card>
         <Card className="p-3 text-center shadow-none"><p className="text-2xl font-semibold">{reminders.length}</p><p className="text-[10px] text-muted-foreground">Reminders</p></Card>
       </div>
@@ -321,6 +384,15 @@ export function WellnessJourney() {
             <div><label className="block text-xs text-muted-foreground mb-1">Value</label><input type="number" value={actForm.value} onChange={(e) => setActForm({ ...actForm, value: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
             <div><label className="block text-xs text-muted-foreground mb-1">Duration (min)</label><input type="number" value={actForm.duration_minutes} onChange={(e) => setActForm({ ...actForm, duration_minutes: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
           </div>
+          {activeGoals.length > 0 ? (
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Counts toward goal (optional)</label>
+              <select value={actForm.goal_id} onChange={(e) => setActForm({ ...actForm, goal_id: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
+                <option value="">Not linked to a goal</option>
+                {activeGoals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+              </select>
+            </div>
+          ) : null}
         </div>
       </Modal>
 

@@ -1957,6 +1957,10 @@ export type WellnessActivity = {
   duration_minutes?: number | null;
   activity_date?: string;
   notes?: string | null;
+  /** Goal this activity counts toward (wellness_activities.goal_id,
+   * migration v28) — logging it auto-advances that goal's current_value
+   * server-side (see log_wellness_activity in backend/customer_api.py). */
+  goal_id?: string | null;
 };
 
 export type Reminder = {

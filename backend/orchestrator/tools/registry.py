@@ -46,7 +46,7 @@ def get_registry() -> ToolRegistry:
 
 
 def _register_default_tools(registry: ToolRegistry) -> None:
-    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, recommend, web
+    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, recommend, wellness, web
 
     registry.register(
         ToolSpec(
@@ -95,6 +95,20 @@ def _register_default_tools(registry: ToolRegistry) -> None:
             timeout_seconds=8.0,
             requires_auth=False,
             handler=recommend.run,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="wellness_context",
+            description=(
+                "Reads this user's own active wellness_goals (RLS-scoped to "
+                "the caller), or creates one from the message when none "
+                "exists — the chat-side entry point to the Wellness Journey "
+                "page's own state. Requires auth."
+            ),
+            timeout_seconds=6.0,
+            requires_auth=True,
+            handler=wellness.run,
         )
     )
     registry.register(

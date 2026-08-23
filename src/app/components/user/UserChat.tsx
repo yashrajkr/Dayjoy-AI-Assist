@@ -2320,7 +2320,7 @@ export function UserChat() {
             language, sources) lives one tap away in the drawer / options menu
             / profile menu instead of being permanently on screen. */}
         {professionalMobile ? (
-          <header className="lg:hidden flex items-center justify-between gap-2 px-3 h-14 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
+          <header className="lg:hidden relative flex items-center justify-between gap-2 px-3 h-14 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
             <button
               type="button"
               onClick={() => outletCtx?.openDrawer()}
@@ -2329,12 +2329,18 @@ export function UserChat() {
             >
               <Menu className="w-4.5 h-4.5" aria-hidden="true" />
             </button>
-            {/* Logo + "Dayjoy AI Assist" wordmark, centered — the chat
-                screen's own brand moment. No profile avatar here: this is
-                the one page in the app that's deliberately chat-first with
-                no account chrome in its header; profile is still reachable
-                from the hamburger drawer, and from every other page's
-                header/mobile top bar as before.
+            {/* Logo + "Dayjoy AI Assist" wordmark. Absolutely centered on the
+                bar itself (not flex `justify-center` in a `flex-1` slot) —
+                the left side is a single fixed-width button but the right
+                side's button count varies (1-3 depending on chat state), so
+                a flex-based center slot drifted the wordmark off-true-center
+                whenever the right side wasn't exactly as wide as the left.
+                Same fix already applied to UserLayout's mobile top bar.
+
+                No profile avatar here: this is the one page in the app
+                that's deliberately chat-first with no account chrome in its
+                header; profile is still reachable from the hamburger drawer,
+                and from every other page's header/mobile top bar as before.
 
                 Swapped for a "Temporary Chat" pill when active — this is
                 the ONLY header shown on mobile in Professional mode (the
@@ -2342,7 +2348,7 @@ export function UserChat() {
                 regardless of temporary-chat state, so there was no visible
                 confirmation anywhere on screen that the toggle had actually
                 done anything besides the small icon's subtle color change. */}
-            <div className="flex-1 min-w-0 flex items-center justify-center px-1">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
               {isTemporary ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 text-primary ring-1 ring-primary/40 px-3 py-1 text-xs font-semibold">
                   <Ghost className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -2376,16 +2382,21 @@ export function UserChat() {
                   <Ghost className="w-4.5 h-4.5" aria-hidden="true" />
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={handleNewChat}
-                disabled={!activeConv && messages.length === 0}
-                className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all disabled:opacity-40"
-                aria-label="Start new chat"
-                title="New chat"
-              >
-                <MessageSquarePlus className="w-4.5 h-4.5" aria-hidden="true" />
-              </button>
+              {/* "New chat" only makes sense once there's an actual
+                  conversation to leave — on a blank, brand-new chat screen
+                  it was rendered (just disabled), which is a dead control
+                  with no purpose: there's nothing to start "new" from yet. */}
+              {activeConv || messages.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/60 text-foreground hover:bg-accent active:scale-90 transition-all"
+                  aria-label="Start new chat"
+                  title="New chat"
+                >
+                  <MessageSquarePlus className="w-4.5 h-4.5" aria-hidden="true" />
+                </button>
+              ) : null}
               <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <button

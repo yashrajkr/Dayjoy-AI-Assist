@@ -97,18 +97,28 @@ export function KnowledgeCenter() {
       />
       <div className="flex-1 overflow-y-auto">
       <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
-      <div className="relative mb-3">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input id="dj-knowledge-search" type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
-          autoFocus placeholder="Search for anything… (e.g. ashwagandha, refund policy, distributor)"
-          className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-card text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 mb-5">
-        {FILTERS.map((f) => (
-          <button key={f.value} type="button" onClick={() => { setFilter(f.value); search(query, f.value); }}
-            className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === f.value ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground hover:bg-accent/70"}`}>{f.label}</button>
-        ))}
+      {/* Search + filter bar — same "labeled strip, horizontal scroll on
+          mobile" treatment as Product Discovery's category bar, instead of
+          a bare flex-wrap row that broke unevenly across two lines on
+          narrow screens. */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm p-4 sm:p-5 mb-5">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input id="dj-knowledge-search" type="search" value={query} onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
+            autoFocus placeholder="Search for anything… (e.g. ashwagandha, refund policy, distributor)"
+            className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+        <div className="mt-4 pt-4 border-t border-border">
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+            Filter
+          </span>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+            {FILTERS.map((f) => (
+              <button key={f.value} type="button" onClick={() => { setFilter(f.value); search(query, f.value); }}
+                className={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === f.value ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground hover:bg-accent/70"}`}>{f.label}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {error ? <ErrorState message={error} /> : null}

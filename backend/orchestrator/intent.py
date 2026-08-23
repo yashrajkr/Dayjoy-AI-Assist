@@ -31,6 +31,7 @@ from backend.orchestrator.types import (
     INTENT_PRICING,
     INTENT_RECOMMENDATION,
     INTENT_TIME_QUERY,
+    INTENT_WELLNESS,
     IntentResult,
 )
 
@@ -80,6 +81,26 @@ _ADDITIONAL_INFO_CUES_RE = re.compile(
     r"side effect\w*|how (to|do) (use|take)|works?|made of|composition\w*)\b",
     re.IGNORECASE,
 )
+
+
+# Wellness Journey P0 — goal-management asks, distinct from a direct
+# "what product should I take" recommendation ask (INTENT_RECOMMENDATION).
+# Deliberately narrow (explicit "wellness"/"goal"/"progress"/"check-in"
+# wording, or "I want ... my <area>" phrasing) so it never shadows the
+# existing recommendation/pricing cue sets on overlapping noun phrases like
+# "energy" or "sleep" alone.
+_WELLNESS_CUES_RE = re.compile(
+    r"\b(wellness (goal|journey)|my (wellness|health) goal|"
+    r"track my (progress|activity|goal)|how(?:'s| is) my (progress|goal)|"
+    r"check.?in|"
+    r"i want (?:to (?:improve|boost|increase|build)\s+)?(?:more|better)?\s*"
+    r"my (energy|sleep|fitness|immunity|weight|stress|digestion|skin))\b",
+    re.IGNORECASE,
+)
+
+
+def wants_wellness(text: str) -> bool:
+    return bool(_WELLNESS_CUES_RE.search(text))
 
 
 def wants_recommendation(text: str) -> bool:
@@ -137,12 +158,14 @@ def detect_intent(message: str) -> IntentResult:
             is_time_query=False,
             wants_recommendation=False,
             wants_pricing=False,
+            wants_wellness=False,
             raw_message=message,
         )
 
     comparison = wants_hybrid_comparison(message)
     time_query = is_pure_time_query(message)
     pricing = wants_pricing(message)
+    wellness = wants_wellness(message)
     recommendation = wants_recommendation(message)
 
     if comparison:
@@ -151,6 +174,8 @@ def detect_intent(message: str) -> IntentResult:
         intent = INTENT_TIME_QUERY
     elif pricing:
         intent = INTENT_PRICING
+    elif wellness:
+        intent = INTENT_WELLNESS
     elif recommendation:
         intent = INTENT_RECOMMENDATION
     else:
@@ -163,5 +188,6 @@ def detect_intent(message: str) -> IntentResult:
         is_time_query=time_query,
         wants_recommendation=recommendation,
         wants_pricing=pricing,
+        wants_wellness=wellness,
         raw_message=message,
     )

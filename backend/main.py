@@ -527,7 +527,7 @@ from backend.orchestrator.tools import recommend as recommend_tool  # noqa: E402
 # separate routing decision duplicating planner.py's own logic.
 from backend.orchestrator.executor import run_tools  # noqa: E402
 from backend.orchestrator.planner import build_plan  # noqa: E402
-from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # noqa: E402
+from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION, INTENT_WELLNESS  # noqa: E402
 
 # Post-generation answer-relevance check — see module docstring for why this
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
@@ -887,6 +887,38 @@ def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
+def _format_wellness_context(data: Dict[str, Any]) -> str:
+    """Deterministic context string for the structured wellness_context
+    tool result — every field is a verbatim wellness_goals row value (see
+    tools/wellness.py); the LLM only phrases these into a status update or
+    a "goal created" confirmation, never invents progress."""
+    if data.get("status") == "goal_created":
+        goal = data.get("goal") or {}
+        return (
+            f"[Wellness goal created — {goal.get('title')}]\n"
+            f"Goal type: {data.get('goal_type')}\n"
+            "This is a brand-new goal with no progress logged yet. Confirm it was "
+            "created, and mention the user can track it (and log activities toward "
+            "it) from the Wellness Journey page."
+        )
+    goals = data.get("goals") or []
+    blocks = []
+    for g in goals:
+        lines = [f"[Active wellness goal — {g.get('title')}]"]
+        lines.append(f"Type: {g.get('goal_type')}")
+        current = g.get("current_value")
+        target = g.get("target_value")
+        unit = g.get("unit") or ""
+        if target:
+            lines.append(f"Progress: {current or 0}/{target} {unit}".strip())
+        else:
+            lines.append(f"Progress logged: {current or 0} {unit}".strip())
+        if g.get("target_date"):
+            lines.append(f"Target date: {g['target_date']}")
+        blocks.append("\n".join(lines))
+    return "\n\n---\n\n".join(blocks)
+
+
 async def _route_from_kb_result(
     kb_data: Dict[str, Any], message: str
 ) -> AsyncIterator[Tuple[str, Any]]:
@@ -1117,6 +1149,57 @@ async def _route_events(
             async for event in _route_from_kb_result(kb_data, message):
                 yield event
             return
+
+    elif plan.intent.intent == INTENT_WELLNESS and plan.proposed_tools:
+        # Wellness Journey P0 (docs/WELLNESS_JOURNEY_ANALYSIS_AND_MASTER_
+        # PROMPT.md, Step 12) — reads/writes the SAME wellness_goals table
+        # the Wellness Journey page owns via tools/wellness.py, so a chat
+        # request like "I want to improve my energy" actually creates (or
+        # reports progress on) a real goal instead of just answering once.
+        yield ("status", "checking_wellness_goals")
+        tool_calls = [{"name": name, "kwargs": {"token": token, "message": message}} for name in plan.proposed_tools]
+        results = {r.tool_name: r for r in await run_tools(tool_calls)}
+        wellness_result = results.get("wellness_context")
+        wellness_data = wellness_result.data if wellness_result and wellness_result.ok else None
+
+        if wellness_data and wellness_data.get("status") in ("has_active_goals", "goal_created"):
+            context = _format_wellness_context(wellness_data)
+            # Product recommendation reuse (analysis Step 8) — opportunistic,
+            # never forced: only attached if the SAME structured chart match
+            # tools/recommend.py already uses for a direct product ask also
+            # matches this goal's own title/type, using its own existing
+            # insufficient_evidence fallback when it doesn't.
+            product_cards: List[Dict[str, Any]] = []
+            goal_text = (
+                wellness_data.get("goal", {}).get("title")
+                if wellness_data["status"] == "goal_created"
+                else (wellness_data.get("goals") or [{}])[0].get("title")
+            )
+            if goal_text:
+                try:
+                    rec = await recommend_tool.run(token, str(goal_text))
+                    if rec.get("status") == "ok" and rec.get("products"):
+                        product_cards = rec["products"][:3]
+                        context += f"\n\n---\n\n{_format_recommendation_context(product_cards)}"
+                except Exception:
+                    pass  # a failed opportunistic recommendation must never block the wellness answer
+            yield (
+                "result",
+                RouteResult(
+                    context=context, web_context="", sources=[], web_sources=[],
+                    category="wellness",
+                    rag_metadata={
+                        "confidence": 0.9, "verification_status": "verified",
+                        "evidence_sufficient": True, "source": "structured_wellness",
+                    },
+                    mode="dayjoy", answer_source="dayjoy_knowledge",
+                    web_search_provider=None, used_web_search=False,
+                    product_cards=product_cards,
+                ),
+            )
+            return
+        # Unauthenticated, or the write failed — fall through to the normal
+        # general-knowledge path below rather than a dead end.
 
     # Answer Quality Router (orchestrator/quality_router.py) — a narrow,
     # deterministic check for a broad business/strategy question (the only

@@ -23,6 +23,7 @@ All endpoints require authentication. Data scoped to auth.uid() via RLS.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -49,6 +50,10 @@ def _svc_headers(token: Optional[str] = None, json_body: bool = False) -> Dict[s
     elif token:
         h["Authorization"] = f"Bearer {token}"
     return h
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _prefer_headers(token: Optional[str] = None) -> Dict[str, str]:
@@ -184,6 +189,11 @@ class WellnessActivityCreate(BaseModel):
     duration_minutes: Optional[int] = None
     notes: Optional[str] = None
     activity_date: Optional[str] = None
+    # Links this activity to the goal it counts toward (wellness_activities.
+    # goal_id, migration v28) — when set, log_wellness_activity() below also
+    # auto-advances that goal's current_value, so Goals and Activities are no
+    # longer two disconnected tabs.
+    goal_id: Optional[str] = None
 
 
 class ReminderCreate(BaseModel):
@@ -495,7 +505,10 @@ async def update_wellness_goal(goal_id: str, req: WellnessGoalUpdate, request: R
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
     payload = {k: v for k, v in req.model_dump().items() if v is not None}
     if payload.get("is_completed"):
-        payload["completed_at"] = "now()"
+        # A literal "now()" string here would insert the text "now()" into
+        # completed_at, not an actual SQL NOW() — PostgREST payloads are
+        # plain JSON values, not SQL expressions.
+        payload["completed_at"] = _utc_now_iso()
     rows = await _update("wellness_goals", {"id": goal_id, "user_id": user_id}, payload, token=token)
     return rows[0] if rows else {"status": "error"}
 
@@ -515,12 +528,39 @@ async def list_wellness_activities(request: Request, limit: int = 50) -> List[Di
     return await _select("wellness_activities", "*", filters={"user_id": user_id}, limit=limit, order="activity_date.desc", token=token)
 
 
+async def _apply_activity_to_goal(
+    goal_id: str, user_id: str, value: Optional[float], duration_minutes: Optional[int], token: Optional[str]
+) -> None:
+    """Advances a goal's current_value by whatever this activity logged
+    (its numeric value, or duration in minutes, or 1 as a plain "did it"
+    tick) — best-effort: a goal that doesn't exist, isn't this user's, or
+    is already completed is silently skipped rather than raising, since a
+    failed auto-advance shouldn't block the activity log itself."""
+    rows = await _select("wellness_goals", "*", filters={"id": goal_id, "user_id": user_id}, limit=1, token=token)
+    if not rows or rows[0].get("is_completed"):
+        return
+    goal = rows[0]
+    delta = value if value is not None else (duration_minutes if duration_minutes is not None else 1)
+    new_value = float(goal.get("current_value") or 0) + float(delta)
+    target = goal.get("target_value")
+    update_payload: Dict[str, Any] = {"current_value": new_value}
+    if target is not None and new_value >= float(target):
+        update_payload["is_completed"] = True
+        update_payload["completed_at"] = _utc_now_iso()
+    await _update("wellness_goals", {"id": goal_id, "user_id": user_id}, update_payload, token=token)
+
+
 @router.post("/wellness/activities")
 async def log_wellness_activity(req: WellnessActivityCreate, request: Request) -> Dict[str, Any]:
     user_id = await require_user_id(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
     payload = {**req.model_dump(), "user_id": user_id}
-    return await _insert("wellness_activities", payload, token=token) or {"status": "error"}
+    result = await _insert("wellness_activities", payload, token=token)
+    if not result:
+        return {"status": "error"}
+    if req.goal_id:
+        await _apply_activity_to_goal(req.goal_id, user_id, req.value, req.duration_minutes, token)
+    return result
 
 
 @router.get("/wellness/reminders")

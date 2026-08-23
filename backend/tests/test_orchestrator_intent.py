@@ -24,6 +24,7 @@ from backend.orchestrator.types import (
     INTENT_PRICING,
     INTENT_RECOMMENDATION,
     INTENT_TIME_QUERY,
+    INTENT_WELLNESS,
 )
 
 
@@ -77,6 +78,45 @@ def test_comparison_cue_detected_alongside_intent():
     result = detect_intent("Compare Dayjoy Spirulina with a competitor.")
     assert result.wants_comparison is True
     assert result.is_casual is False
+
+
+# ---------------------------------------------------------------------------
+# Wellness Journey P0 — Step 12 of docs/WELLNESS_JOURNEY_ANALYSIS_AND_MASTER_
+# PROMPT.md. Narrow, explicit cues so this never shadows the existing
+# pricing/recommendation cue sets on overlapping noun phrases like "energy"
+# alone (a direct "what should I take for my energy" still routes to
+# INTENT_RECOMMENDATION, not INTENT_WELLNESS).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "I want to improve my energy",
+        "How's my wellness goal going?",
+        "Track my progress on my fitness goal",
+        "check-in on my goal",
+    ],
+)
+def test_wellness_cues_detected(message):
+    assert detect_intent(message).intent == INTENT_WELLNESS
+
+
+def test_recommendation_ask_not_shadowed_by_wellness_intent():
+    # A direct product ask must still classify as INTENT_RECOMMENDATION even
+    # though it mentions a goal-shaped noun phrase ("joint pain").
+    result = detect_intent("What should I take for joint pain?")
+    assert result.intent == INTENT_RECOMMENDATION
+
+
+def test_plan_for_wellness_message_proposes_wellness_context_only():
+    plan = build_plan("I want to improve my energy")
+    assert plan.proposed_tools == ["wellness_context"]
+
+
+def test_registry_has_wellness_context():
+    registry = get_registry()
+    assert "wellness_context" in set(registry.names())
 
 
 # ---------------------------------------------------------------------------

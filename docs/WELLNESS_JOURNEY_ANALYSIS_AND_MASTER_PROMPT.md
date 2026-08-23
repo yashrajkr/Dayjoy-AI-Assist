@@ -1,9 +1,11 @@
 # Wellness Journey — Analysis & Master Implementation Prompt
 
-Date: 2026-08-23. Analysis-only deliverable — no code changed for this section.
-Grounded in the 5 screenshots provided **and** the actual current source:
-`src/app/components/user/WellnessJourney.tsx`, `src/lib/api.ts` (customer wellness
-functions), and `database/supabase_schema_v9_customer.sql` (wellness tables).
+Date: 2026-08-23. Originally an analysis-only deliverable (no code changed);
+**P0 of the roadmap below has since been implemented** — see the status
+note at the bottom of the file. Grounded in the 5 screenshots provided
+**and** the actual current source: `src/app/components/user/
+WellnessJourney.tsx`, `src/lib/api.ts` (customer wellness functions), and
+`database/supabase_schema_v9_customer.sql` (wellness tables).
 
 ---
 
@@ -554,3 +556,82 @@ read/write wiring into wellness_goals via a new WELLNESS intent, and
 wiring the existing product_recommendation tool into a wellness-goal
 context). Stop and report back before starting P1.
 ```
+
+---
+
+# P0 Implementation Status (2026-08-23)
+
+P0 from the roadmap above has been implemented and verified as far as this
+environment allows (see "Verification" below):
+
+1. **Wellness Overview section** — `WellnessJourney.tsx` now shows a
+   real-data summary line ("N active days this week") + "Today's priority"
+   (first active goal with no activity logged today), computed entirely
+   from already-loaded `goals`/`activities` — never a fabricated score.
+   Only renders once there's an active goal (empty state unchanged).
+2. **Per-goal progress linked to real activity logs** — migration
+   `database/supabase_schema_v28_wellness_journey_p0.sql` adds
+   `wellness_activities.goal_id` (FK → `wellness_goals.id`), **applied to
+   the live production Supabase project** (`xfhdlktvttqngsqahqje`) via the
+   Supabase MCP tool and confirmed present via `information_schema`. The
+   Activity modal now offers "Counts toward goal" when active goals exist;
+   `backend/customer_api.py`'s `log_wellness_activity()` auto-advances the
+   linked goal's `current_value` (and marks it completed if the target is
+   reached) via a new `_apply_activity_to_goal()` helper — Goals and
+   Activities are no longer two disconnected tabs.
+3. **DayJoy GPT ↔ Wellness Journey read/write wiring** — a new `INTENT_WELLNESS`
+   (`backend/orchestrator/types.py`/`intent.py`, narrow cues so it never
+   shadows existing pricing/recommendation cues), routed through a new
+   `wellness_context` tool (`backend/orchestrator/tools/wellness.py`,
+   registered in `tools/registry.py`) and a new branch in `main.py`'s
+   `_route_events`. Behavior: no active goal → creates one from the message
+   (keyword-inferred `goal_type`, same defaults the UI itself uses);
+   active goal(s) exist → returns a real progress-grounded context for the
+   LLM to phrase, never invented numbers.
+4. **Product recommendation reuse** — the same wellness branch
+   opportunistically calls the existing `tools/recommend.py` with the
+   goal's own title text and attaches matching products as `product_cards`
+   (capped at 3) when the official recommendation chart matches — zero new
+   matching logic, and it silently no-ops (never blocks the wellness
+   answer) when `recommend.py` returns `insufficient_evidence`.
+
+**Drive-by fix**: `backend/customer_api.py`'s `update_wellness_goal` was
+inserting the literal string `"now()"` into `completed_at` instead of an
+actual timestamp (PostgREST JSON payloads aren't SQL — `"now()"` isn't a
+valid Postgres timestamp literal). Fixed with a small `_utc_now_iso()`
+helper, reused by the new goal-auto-advance path. The same anti-pattern
+exists in ~13 other backend files; flagged separately, not fixed here
+(out of scope for this pass).
+
+## Verification
+
+- New backend logic (`_infer_goal_type`, intent regex precedence, planner
+  tool-proposal, tool registry) verified directly via standalone Python
+  scripts against the real modules (no mocking) — all correct, including a
+  check that every existing `test_orchestrator_intent.py` fixture still
+  classifies the same as before.
+- Added `test_wellness_cues_detected`, `test_recommendation_ask_not_shadowed_
+  by_wellness_intent`, `test_plan_for_wellness_message_proposes_wellness_
+  context_only`, and `test_registry_has_wellness_context` to
+  `backend/tests/test_orchestrator_intent.py` — not run in this environment
+  (no working `pytest`/`pydantic-core` install here; a build from source
+  failed), so run them explicitly in an environment where the backend test
+  suite works before treating this as fully proven.
+- Frontend: `npm run typecheck` / `npm run lint` clean (no new issues); the
+  Overview section, chat header, and Knowledge Center changes were also
+  visually confirmed against the running dev server.
+- **Not verified**: an actual end-to-end chat request through a live
+  backend (this dev environment only runs the frontend Vite server, not
+  FastAPI) — the routing logic is verified by direct code inspection and
+  unit-level checks, not a real `/chat/stream` call. Test the real flows
+  from Step 19's list ("I want to improve my daily energy" with no prior
+  goal → goal created; with an existing goal → progress summary) against a
+  staging environment before calling P0 production-proven.
+
+## Not done in this pass (still P1+)
+
+AI Wellness Coach clarifying-question flow, `wellness_preferences`/
+`wellness_events` tables, smart check-ins, arithmetic weekly/monthly
+insights, and everything else listed under P1–P3 above remains future
+work — this pass intentionally stopped at P0, per the master prompt's own
+"stop and report before starting P1" instruction.

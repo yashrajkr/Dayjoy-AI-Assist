@@ -24,6 +24,7 @@ from backend.orchestrator.types import (
     INTENT_GENERAL,
     INTENT_PRICING,
     INTENT_RECOMMENDATION,
+    INTENT_WELLNESS,
     IntentResult,
 )
 
@@ -62,6 +63,12 @@ def build_plan(message: str) -> QueryPlan:
             tools.append("product_recommendation")
         if "dayjoy_kb" in available:
             tools.append("dayjoy_kb")
+    elif intent.intent == INTENT_WELLNESS:
+        # Structured wellness_context tool only — this reads/writes the
+        # user's own wellness_goals (auth-required), it isn't a knowledge
+        # lookup, so dayjoy_kb/web_search don't apply here.
+        if "wellness_context" in available:
+            tools.append("wellness_context")
     elif intent.intent != INTENT_CASUAL:
         if "dayjoy_kb" in available:
             tools.append("dayjoy_kb")
