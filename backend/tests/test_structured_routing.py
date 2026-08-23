@@ -102,6 +102,31 @@ def test_pricing_found_skips_rag_and_uses_structured_context(authed_client, monk
     assert card["product_id"] == "P-1"
     assert card["product_name"] == "Dayjoy Turmeric"
     assert card["price"] == {"mrp": 999, "dp": 799, "bv": 50, "pv": 50, "currency": "INR"}
+    # Evidence Strength Indicator — a structured pricing hit is a verified
+    # DB row, so it must read as the strongest label, not a generic one.
+    assert body["evidence_strength"] == "Strongly supported"
+
+
+def test_evidence_strength_unverified_when_no_sources(authed_client, monkeypatch):
+    rag_calls: list = []
+    _never_called_retrieve_context(monkeypatch, rag_calls)
+
+    async def _fake_pricing_run(token, message):
+        return {"found": False}
+
+    monkeypatch.setattr(backend_main.pricing_tool, "run", _fake_pricing_run)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "What is the DP of a made-up product?", "role": "customer", "language": "English"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    # No LLM configured in this isolated test (GROQ/OPENAI cleared) and no
+    # structured/RAG evidence found — the answer is the degraded fallback
+    # with zero sources, which must read as "Not verified", never a
+    # stronger label than the evidence actually supports.
+    assert body["evidence_strength"] == "Not verified"
 
 
 def test_pricing_compound_question_merges_kb_context_in_parallel(authed_client, monkeypatch):

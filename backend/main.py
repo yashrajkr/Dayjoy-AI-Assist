@@ -380,6 +380,19 @@ class ChatSource(BaseModel):
     url: Optional[str] = None
 
 
+# Evidence Strength Indicator — maps answer_validate.py's internal
+# GROUNDING_* states onto the exact qualitative labels the brief asks for.
+# Deliberately five discrete strings, never a numeric confidence score (the
+# brief explicitly prohibits fabricated confidence percentages).
+_EVIDENCE_STRENGTH_LABELS = {
+    "verified": "Strongly supported",
+    "recommendation": "Supported",
+    "ai_analysis": "Partially supported",
+    "assumption": "Needs verification",
+    "unverified": "Not verified",
+}
+
+
 class ChatResponse(BaseModel):
     answer: str
     category: str
@@ -417,6 +430,13 @@ class ChatResponse(BaseModel):
     # clarifying-question answer (orchestrator/clarify.py). Empty for
     # every non-clarification route.
     clarification_options: List[str] = []
+    # Evidence Strength Indicator — a qualitative label derived from
+    # answer_validate.py's existing 5-state grounding classification
+    # (verified/ai_analysis/recommendation/assumption/unverified), which was
+    # previously computed only for internal observability logging and never
+    # returned to the client. Deliberately qualitative, never a fabricated
+    # confidence percentage — see _EVIDENCE_STRENGTH_LABELS below.
+    evidence_strength: Optional[str] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -545,6 +565,7 @@ from backend.orchestrator.followups import generate_followups  # noqa: E402
 # Structured Response JSON — parsed from the answer's own markdown (see
 # module docstring for why this is safer than asking the LLM for raw JSON).
 from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
+from backend.orchestrator.answer_validate import classify_grounding_state  # noqa: E402
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -2171,6 +2192,16 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     follow_ups = generate_followups(route.answer_source, category, req.message)
 
+    structured_answer = structure_answer(answer)
+    grounding_state = classify_grounding_state(
+        structured_answer,
+        answer_source=route.answer_source,
+        verification_status=verification_status,
+        sources=sources,
+        answer_text=answer,
+    )
+    evidence_strength = _EVIDENCE_STRENGTH_LABELS.get(grounding_state)
+
     return ChatResponse(
         answer=answer,
         category=category,
@@ -2187,8 +2218,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         ai_mode=ai_mode,
         follow_ups=follow_ups,
         products=route.product_cards,
-        structured=structure_answer(answer).to_dict(),
+        structured=structured_answer.to_dict(),
         clarification_options=route.clarification_options,
+        evidence_strength=evidence_strength,
     )
 
 
@@ -2416,6 +2448,15 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         follow_ups = generate_followups(route.answer_source, category, req.message)
 
+        structured_answer = structure_answer(aggregated)
+        grounding_state = classify_grounding_state(
+            structured_answer,
+            answer_source=route.answer_source,
+            verification_status=verification_status,
+            sources=sources,
+            answer_text=aggregated,
+        )
+
         yield _sse({
             "done": True,
             "category": category,
@@ -2432,8 +2473,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "ai_mode": ai_mode,
             "follow_ups": follow_ups,
             "products": route.product_cards,
-            "structured": structure_answer(aggregated).to_dict(),
+            "structured": structured_answer.to_dict(),
             "clarification_options": route.clarification_options,
+            "evidence_strength": _EVIDENCE_STRENGTH_LABELS.get(grounding_state),
         })
 
     return StreamingResponse(

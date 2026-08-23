@@ -55,6 +55,10 @@ export type ChatMessage = {
   // clarifying-question reply. Same transient, client-side-only treatment
   // as follow_ups/products above.
   clarification_options?: string[] | null;
+  // Evidence Strength Indicator — qualitative label from the backend's
+  // grounding classification. Same transient, client-side-only treatment
+  // as follow_ups/products/clarification_options above.
+  evidence_strength?: string | null;
 };
 
 /** In-memory fallback when Supabase is unavailable. */

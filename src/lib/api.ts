@@ -163,6 +163,11 @@ export type ChatResponse = {
    * a clarifying-question answer_source="clarification" reply. Each entry
    * is a complete follow-up message, not a bare label. */
   clarification_options?: string[];
+  /** Evidence Strength Indicator — qualitative label derived server-side
+   * from the existing 5-state grounding classification. Never a fabricated
+   * confidence percentage. One of "Strongly supported" | "Supported" |
+   * "Partially supported" | "Needs verification" | "Not verified". */
+  evidence_strength?: string | null;
 };
 
 export type ChatProductCard = {
@@ -511,6 +516,7 @@ export async function streamChatWithBackend(
       products: finalMeta.products,
       structured: finalMeta.structured,
       clarification_options: finalMeta.clarification_options,
+      evidence_strength: finalMeta.evidence_strength,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather

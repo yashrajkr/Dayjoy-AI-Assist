@@ -1259,6 +1259,7 @@ export function UserChat() {
         follow_ups?: string[] | null;
         products?: ChatProductCard[] | null;
         clarification_options?: string[] | null;
+        evidence_strength?: string | null;
       } = {};
 
       try {
@@ -1299,6 +1300,7 @@ export function UserChat() {
           follow_ups: res.follow_ups,
           products: res.products,
           clarification_options: res.clarification_options,
+          evidence_strength: res.evidence_strength,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1361,6 +1363,7 @@ export function UserChat() {
           follow_ups: meta.follow_ups ?? null,
           products: meta.products ?? null,
           clarification_options: meta.clarification_options ?? null,
+          evidence_strength: meta.evidence_strength ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -4362,6 +4365,20 @@ function MessageBubble({
               </span>
             );
           })()}
+          {message.evidence_strength ? (
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                message.evidence_strength === "Strongly supported" || message.evidence_strength === "Supported"
+                  ? "text-primary bg-primary/8"
+                  : message.evidence_strength === "Not verified"
+                    ? "text-muted-foreground bg-accent"
+                    : "text-warning bg-gold-accent/15"
+              }`}
+              title="Evidence Strength — how well this answer is backed by verified DayJoy sources"
+            >
+              {message.evidence_strength}
+            </span>
+          ) : null}
           {message.ai_mode && message.ai_mode !== "normal" && AI_MODES[message.ai_mode as AiMode] ? (
             (() => {
               const modeConfig = AI_MODES[message.ai_mode as AiMode];
