@@ -932,6 +932,9 @@ const SHOW_VOICE_ORB = false;
 /** Attachments are inlined as data URLs, so keep them small. */
 const MAX_ATTACHMENT_BYTES = 10_000_000;
 const MAX_ATTACHMENTS = 5;
+// Advanced File Intelligence (Capabilities 3/21/22/5) — mirrors
+// backend/main.py's MAX_ATTACHED_DOCUMENTS.
+const MAX_ATTACHED_DOCUMENTS_PER_MESSAGE = 3;
 
 type SuggestedPrompt = { title: string; text: string; icon: typeof Leaf };
 
@@ -1136,7 +1139,9 @@ export function UserChat() {
   const [qrOpen, setQrOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
+  const [attachments, setAttachments] = useState<
+    Array<{ name: string; dataUrl: string; kind: "image" | "document"; mime: string }>
+  >([]);
   // Knowledge Scope Selector (Capability 16) — narrows retrieval to one
   // category instead of all of DayJoy's knowledge base. Persists only for
   // this browser session (not saved to a preference) since it's a
@@ -1361,7 +1366,21 @@ export function UserChat() {
       // recently attached image, if any, rides along with THIS message
       // only (attachments themselves stay in the persistent per-conversation
       // gallery below, unaffected by sending).
-      const imageForThisSend = attachments.length > 0 ? attachments[attachments.length - 1].dataUrl : undefined;
+      const documentAttachments = attachments.filter((a) => a.kind === "document");
+      const imageAttachments = attachments.filter((a) => a.kind === "image");
+      // Advanced File Intelligence (Capabilities 3/21/22/5) — documents
+      // take priority over an image if somehow both are attached (matches
+      // the backend's own precedence in main.py's /chat handler).
+      const documentsForThisSend =
+        documentAttachments.length > 0
+          ? documentAttachments
+              .slice(-MAX_ATTACHED_DOCUMENTS_PER_MESSAGE)
+              .map((a) => ({ name: a.name, mime: a.mime, data_url: a.dataUrl }))
+          : undefined;
+      const imageForThisSend =
+        documentAttachments.length === 0 && imageAttachments.length > 0
+          ? imageAttachments[imageAttachments.length - 1].dataUrl
+          : undefined;
 
       try {
         const res = await streamChatWithBackend(
@@ -1373,6 +1392,7 @@ export function UserChat() {
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
             image_data_url: imageForThisSend,
+            attached_documents: documentsForThisSend,
             knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
             allow_web_search: allowWebSearch,
           },
@@ -1625,7 +1645,7 @@ export function UserChat() {
   const handleCameraCapture = useCallback((img: CapturedImage) => {
     setAttachments((prev) => [
       ...prev,
-      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const },
+      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const, mime: img.file.type || "image/jpeg" },
     ]);
     setCameraOpen(false);
     // Pre-fill the composer with a context prompt
@@ -1663,10 +1683,14 @@ export function UserChat() {
       reader.onload = () => {
         const dataUrl = typeof reader.result === "string" ? reader.result : "";
         if (!dataUrl) return;
+        // Advanced File Intelligence (Capabilities 3/21/22/5) — a
+        // non-image attachment (PDF/Word/Excel/etc.) is sent to the
+        // backend's document-extraction path instead of the vision path.
+        const kind: "image" | "document" = file.type.startsWith("image/") ? "image" : "document";
         setAttachments((prev) =>
           prev.length >= MAX_ATTACHMENTS
             ? prev
-            : [...prev, { name: file.name, dataUrl, kind: "image" as const }],
+            : [...prev, { name: file.name, dataUrl, kind, mime: file.type || "application/octet-stream" }],
         );
       };
       reader.onerror = () => setError(`Could not read ${file.name}.`);
@@ -3175,7 +3199,7 @@ export function UserChat() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,.pdf,.txt,.csv,.doc,.docx"
+                      accept="image/*,.pdf,.txt,.csv,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.json"
                       multiple
                       className="hidden"
                       onChange={(e) => {
@@ -3459,7 +3483,16 @@ export function UserChat() {
                       key={`${att.name}-${idx}`}
                       className="relative w-14 h-14 rounded-lg overflow-hidden border border-border shrink-0 group"
                     >
-                      <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      {att.kind === "image" ? (
+                        <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 bg-accent/40 px-1" title={att.name}>
+                          <FileText className="w-4 h-4 text-primary" aria-hidden="true" />
+                          <span className="text-[8px] text-muted-foreground truncate w-full text-center leading-tight">
+                            {att.name}
+                          </span>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
@@ -4039,22 +4072,31 @@ export function UserChat() {
                         key={`${att.name}-${idx}`}
                         className="group relative rounded-lg border border-border overflow-hidden bg-accent/20"
                       >
-                        <img
-                          src={att.dataUrl}
-                          alt={att.name}
-                          className="w-full h-24 object-cover"
-                        />
+                        {att.kind === "image" ? (
+                          <img
+                            src={att.dataUrl}
+                            alt={att.name}
+                            className="w-full h-24 object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-24 flex flex-col items-center justify-center gap-1 px-2">
+                            <FileText className="w-6 h-6 text-primary" aria-hidden="true" />
+                            <span className="text-[10px] text-muted-foreground truncate w-full text-center">{att.name}</span>
+                          </div>
+                        )}
                         {/* Overlay actions on hover */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewAttachment(att)}
-                            className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
-                            aria-label={`Preview ${att.name}`}
-                            title="Preview"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
+                          {att.kind === "image" ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewAttachment(att)}
+                              className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
+                              aria-label={`Preview ${att.name}`}
+                              title="Preview"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => handleDownloadAttachment(att)}

@@ -20,6 +20,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -147,6 +148,16 @@ MAX_HISTORY_TURNS = 6
 # 10_000_000 cap; enforced independently here since a request can reach
 # this endpoint without going through that UI at all.
 MAX_IMAGE_DATA_URL_CHARS = 6_000_000
+# Advanced File Intelligence (Capabilities 3, 21, 22, 5) — same reasoning
+# as MAX_IMAGE_DATA_URL_CHARS above, sized larger since PDFs/DOCX/XLSX
+# legitimately run bigger than a typical photo. ~16.4MB decoded per file.
+MAX_DOCUMENT_DATA_URL_CHARS = 22_000_000
+MAX_ATTACHED_DOCUMENTS = 3
+# Extracted text is capped per-document before it ever reaches an LLM
+# prompt — a large PDF's full text could otherwise blow the context
+# window on its own; this is generous enough for real document Q&A while
+# keeping a hard ceiling (~10k tokens/doc at ~4 chars/token).
+MAX_EXTRACTED_TEXT_CHARS_PER_DOC = 40_000
 
 # AI Orchestrator (backend/orchestrator/) — Phase 1: intent classification +
 # query planning run alongside the existing `_route_events` router purely for
@@ -355,6 +366,17 @@ async def supabase_delete(
 # ----------------------------------------------------------------------------
 # Models
 # ----------------------------------------------------------------------------
+class AttachedDocument(BaseModel):
+    """One user-attached document (Capabilities 3/21/22/5). `data_url` is a
+    base64 data: URL captured client-side the same way image attachments
+    already are — no binary upload endpoint needed for this ephemeral,
+    per-message use (contrast with backend/artifacts_api.py's persisted
+    file storage, a different concern)."""
+    name: str = Field(..., min_length=1, max_length=255)
+    mime: Optional[str] = None
+    data_url: str = Field(..., max_length=MAX_DOCUMENT_DATA_URL_CHARS)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
     role: str = Field("customer")
@@ -394,6 +416,17 @@ class ChatRequest(BaseModel):
     # message is allowed to fall back to a live web search. True (default)
     # is unchanged prior behavior.
     allow_web_search: bool = True
+    # Advanced File Intelligence / PDF Intelligence / Document Comparison /
+    # Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — up to
+    # MAX_ATTACHED_DOCUMENTS files (PDF/DOCX/PPTX/XLSX/CSV/TXT/JSON, the
+    # SAME formats backend/rag/extractors.py already parses for the admin
+    # knowledge-ingestion pipeline, reused here rather than reimplemented).
+    # When present, both /chat and /chat/stream answer from the extracted
+    # text via stream_document_response() instead of the normal RAG
+    # pipeline — 2+ documents naturally supports comparison/cross-document
+    # reasoning since the extracted text of every document is placed in
+    # context together.
+    attached_documents: Optional[List[AttachedDocument]] = None
 
 
 class TitleRequest(BaseModel):
@@ -1997,6 +2030,100 @@ async def stream_vision_response(message: str, image_data_url: str, language: st
         )
 
 
+# ----------------------------------------------------------------------------
+# Advanced File Intelligence / PDF Intelligence / Document Comparison /
+# Cross-Document Reasoning (Capabilities 3, 21, 22, 5)
+# ----------------------------------------------------------------------------
+_document_logger = logging.getLogger("dayjoy.documents")
+
+# Same format families backend/rag/extractors.py already parses for the
+# admin knowledge-ingestion pipeline — reused, not reimplemented.
+_ALLOWED_DOCUMENT_MIME_PREFIXES = (
+    "data:application/pdf",
+    "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "data:application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "data:application/vnd.ms-excel",
+    "data:application/msword",
+    "data:application/vnd.ms-powerpoint",
+    "data:text/plain",
+    "data:text/markdown",
+    "data:text/csv",
+    "data:application/json",
+    # Browsers sometimes report a generic octet-stream for these types
+    # depending on OS file-association config — extract_text() falls back
+    # on the FILENAME extension in that case (see detect_kind()), so this
+    # is accepted here too rather than rejecting a legitimate .pdf/.docx
+    # just because the browser guessed its mime type generically.
+    "data:application/octet-stream",
+)
+
+
+def validate_document_data_url(data_url: str, filename: str) -> Optional[str]:
+    """Returns an error message if `data_url` is unsafe/malformed to
+    extract text from, else None. Mirrors validate_image_data_url's
+    defense-in-depth stance — the frontend already caps size/type at
+    capture time, but this endpoint must not trust that."""
+    if not data_url.startswith(_ALLOWED_DOCUMENT_MIME_PREFIXES):
+        return f"{filename}: unsupported file type — please attach a PDF, Word, PowerPoint, Excel, CSV, text, or JSON file."
+    if len(data_url) > MAX_DOCUMENT_DATA_URL_CHARS:
+        return f"{filename}: file is too large."
+    return None
+
+
+def _decode_data_url(data_url: str) -> bytes:
+    _, _, b64 = data_url.partition(",")
+    return base64.b64decode(b64)
+
+
+def extract_attached_document_text(name: str, data_url: str) -> str:
+    """Extracts and truncates plain text from one attached document, using
+    the SAME extract_text() the admin RAG-ingestion pipeline already uses
+    (backend/rag/extractors.py) — best-effort by design (that module falls
+    back to "" on a per-format failure rather than raising), so a corrupt
+    or scanned/image-only PDF degrades to an honest "couldn't read this"
+    note instead of a crash."""
+    from backend.rag.extractors import extract_text
+
+    try:
+        content = _decode_data_url(data_url)
+        text, _pages, _sections, _meta = extract_text(content, name, mime_type=None)
+    except Exception as e:
+        _document_logger.warning("document extraction failed for %s: %s", name, e)
+        text = ""
+    if not text.strip():
+        return f"[Could not extract readable text from \"{name}\" — it may be a scanned/image-only document, password-protected, or in an unsupported layout.]"
+    if len(text) > MAX_EXTRACTED_TEXT_CHARS_PER_DOC:
+        text = text[:MAX_EXTRACTED_TEXT_CHARS_PER_DOC] + "\n\n[... truncated — document continues beyond what fits here ...]"
+    return text
+
+
+def build_document_context(documents: List["AttachedDocument"]) -> str:
+    """Assembles extracted document text into one labeled context block —
+    each document under its own clearly delimited header so the model can
+    attribute claims to a specific source (required for Document
+    Comparison, Capability 22) and reason across all of them together
+    (Cross-Document Reasoning, Capability 5) without conflating which
+    document said what."""
+    parts = []
+    for i, doc in enumerate(documents, start=1):
+        text = extract_attached_document_text(doc.name, doc.data_url)
+        parts.append(f'[Document {i}: "{doc.name}"]\n{text}')
+    return "\n\n---\n\n".join(parts)
+
+
+_DOCUMENT_QA_GUIDANCE = (
+    "The context below contains the extracted text of one or more documents the user attached "
+    "to this message. Answer ONLY from what is actually present in the document text — never "
+    "invent content that isn't there. Always say which document a claim comes from when more "
+    "than one document is attached (e.g. \"According to Document 1...\"). If asked to compare the "
+    "documents, structure the answer around: what's the same across them, what's different, and "
+    "any notably important additions/removals — do not just summarize each one separately. If a "
+    "document's text could not be extracted (noted in its block), say so plainly rather than "
+    "guessing at its contents."
+)
+
+
 _SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
 _DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
 _LEGACY_TABLE_TAG_RE = re.compile(r"^\[\w+\]\s*")
@@ -2247,6 +2374,47 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             safety_status="blocked",
             handoff_required=True,
             answer_source="unsafe",
+        )
+
+    # Advanced File Intelligence / PDF Intelligence / Document Comparison /
+    # Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — attached
+    # documents bypass RAG/routing entirely, same reasoning as the vision
+    # path below: the extracted document text IS the evidence for this
+    # answer, mixing in Dayjoy KB context would blur what's actually in
+    # the attached file(s) vs. what's approved Dayjoy knowledge.
+    if req.attached_documents:
+        if len(req.attached_documents) > MAX_ATTACHED_DOCUMENTS:
+            raise HTTPException(status_code=422, detail=f"Attach at most {MAX_ATTACHED_DOCUMENTS} documents per message.")
+        for doc in req.attached_documents:
+            doc_error = validate_document_data_url(doc.data_url, doc.name)
+            if doc_error:
+                raise HTTPException(status_code=422, detail=doc_error)
+        conv_id = req.conversation_id
+        if token and user_id and not req.is_temporary and not conv_id:
+            conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+        document_context = build_document_context(req.attached_documents)
+        doc_parts: List[str] = []
+        async for tok in stream_response(
+            req.message, [], document_context, req.language, "dayjoy",
+            custom_guidance=_DOCUMENT_QA_GUIDANCE, already_grounded=True,
+        ):
+            doc_parts.append(tok)
+        doc_answer = "".join(doc_parts).strip()
+        await _log_analytics(
+            token, user_id, req, "document", [], 0.9, "document",
+            ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return ChatResponse(
+            answer=doc_answer,
+            category="document",
+            sources=[],
+            safety_status="safe",
+            handoff_required=False,
+            confidence=0.9 if (GROQ_API_KEY or OPENAI_API_KEY) else None,
+            conversation_id=conv_id,
+            answer_source="document",
+            ai_mode="normal",
+            structured=structure_answer(doc_answer).to_dict(),
         )
 
     # Multimodal Understanding (Capabilities 1/2/19/20) — an attached image
@@ -2584,6 +2752,49 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # nor `done`, so this is backwards compatible — and it re-arms the
         # client's idle timeout.
         yield _sse({"status": "connected"})
+
+        # Advanced File Intelligence / PDF Intelligence / Document
+        # Comparison / Cross-Document Reasoning (Capabilities 3, 21, 22,
+        # 5) — same document-bypasses-RAG early return as /chat above,
+        # streamed.
+        if req.attached_documents:
+            if len(req.attached_documents) > MAX_ATTACHED_DOCUMENTS:
+                yield _sse({"token": "", "done": True, "error": f"Attach at most {MAX_ATTACHED_DOCUMENTS} documents per message."})
+                return
+            for doc in req.attached_documents:
+                doc_error = validate_document_data_url(doc.data_url, doc.name)
+                if doc_error:
+                    yield _sse({"token": "", "done": True, "error": doc_error})
+                    return
+            conv_id = req.conversation_id
+            if token and user_id and not req.is_temporary and not conv_id:
+                conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+            document_context = build_document_context(req.attached_documents)
+            doc_parts: List[str] = []
+            async for tok in stream_response(
+                req.message, [], document_context, req.language, "dayjoy",
+                custom_guidance=_DOCUMENT_QA_GUIDANCE, already_grounded=True,
+            ):
+                doc_parts.append(tok)
+                yield _sse({"token": tok})
+            doc_answer = "".join(doc_parts).strip()
+            await _log_analytics(
+                token, user_id, req, "document", [], 0.9, "document",
+                ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+            )
+            yield _sse({
+                "done": True,
+                "category": "document",
+                "sources": [],
+                "safety_status": "safe",
+                "handoff_required": False,
+                "confidence": 0.9 if (GROQ_API_KEY or OPENAI_API_KEY) else None,
+                "conversation_id": conv_id,
+                "answer_source": "document",
+                "ai_mode": "normal",
+                "structured": structure_answer(doc_answer).to_dict(),
+            })
+            return
 
         # Multimodal Understanding (Capabilities 1/2/19/20) — same
         # image-bypasses-RAG early return as /chat above, streamed.

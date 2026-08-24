@@ -35,6 +35,18 @@ export type ChatRequest = {
   /** Context Scope Control (Capability 15) — whether this message may fall
    * back to a live web search. Defaults to true server-side if omitted. */
   allow_web_search?: boolean;
+  /** Advanced File Intelligence / PDF Intelligence / Document Comparison /
+   * Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — up to 3
+   * attached PDF/DOCX/PPTX/XLSX/CSV/TXT/JSON files. When present, the
+   * backend answers from their extracted text instead of the normal RAG
+   * pipeline; 2+ documents supports comparison/cross-document reasoning. */
+  attached_documents?: AttachedDocument[];
+};
+
+export type AttachedDocument = {
+  name: string;
+  mime?: string;
+  data_url: string;
 };
 
 export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";
