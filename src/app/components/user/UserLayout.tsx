@@ -53,7 +53,8 @@ import {
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { listConversations, pinConversation, archiveConversation, deleteConversation, sortConversations, type Conversation } from "../../lib/chatStore";
-import { checkDueReminders } from "../../../lib/api";
+import { checkDueReminders, customerCheckWellnessReminders } from "../../../lib/api";
+import { sendLocalNotification } from "../../lib/pushNotifications";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -132,12 +133,27 @@ export function UserLayout() {
   // this isn't a server-side cron job): once on load, then every 5
   // minutes while the app stays open. Best-effort — checkDueReminders()
   // itself never throws.
+  //
+  // Wellness Journey reminders/goals (Advanced Wellness — notifications)
+  // ride the same poll: customerCheckWellnessReminders() delivers due
+  // wellness_reminders into the same shared `notifications` table
+  // checkDueReminders() already uses, and each delivered item is also
+  // turned into a real browser/OS notification via the existing
+  // pushNotifications.ts (sendLocalNotification silently no-ops if the
+  // user never granted permission — see WellnessJourney.tsx's "Enable
+  // notifications" prompt, the actual opt-in surface).
   useEffect(() => {
     if (!currentUser?.id) return;
-    checkDueReminders();
-    const interval = setInterval(() => {
+    const checkAll = () => {
       checkDueReminders();
-    }, 5 * 60 * 1000);
+      customerCheckWellnessReminders().then((res) => {
+        for (const item of res.delivered) {
+          void sendLocalNotification({ title: item.title, body: "Wellness reminder", route: "/wellness", tag: `wellness-reminder-${item.id}` });
+        }
+      });
+    };
+    checkAll();
+    const interval = setInterval(checkAll, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [currentUser?.id]);
 

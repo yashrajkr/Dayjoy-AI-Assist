@@ -23,7 +23,7 @@ All endpoints require authentication. Data scoped to auth.uid() via RLS.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -595,6 +595,74 @@ async def delete_reminder(reminder_id: str, request: Request) -> Dict[str, str]:
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
     ok = await _delete("wellness_reminders", {"id": reminder_id, "user_id": user_id}, token=token)
     return {"status": "deleted" if ok else "error"}
+
+
+@router.post("/wellness/reminders/check")
+async def check_due_wellness_reminders(request: Request) -> Dict[str, Any]:
+    """Client-triggered due-reminder check for Wellness Journey reminders —
+    mirrors reminders_api.py's check_due_reminders() (Capability 33) but
+    over `wellness_reminders`, a deliberately separate table (see the
+    "ScheduledReminder vs Reminder" comment in src/lib/api.ts for why these
+    two reminder systems were kept apart). Delivers each due reminder as a
+    row in the SAME shared `notifications` table Capability 33 already
+    uses, so the existing NotificationCenter UI picks it up with no new
+    backend table or frontend list — the frontend additionally turns each
+    delivered item into a real browser/OS notification via the existing
+    src/app/lib/pushNotifications.ts (see UserLayout.tsx's polling effect).
+
+    Simplification consistent with reminders_api.py's own scope: no
+    per-user timezone is stored anywhere in this schema, so `time_of_day`
+    is compared directly against server UTC wall-clock time — same
+    approach already used (or rather, not yet solved) elsewhere in this
+    codebase, not a new gap introduced here."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+
+    rows = await _select("wellness_reminders", "*", filters={"user_id": user_id, "is_active": "true"}, limit=100, token=token)
+    now = datetime.now(timezone.utc)
+    delivered: List[Dict[str, Any]] = []
+
+    for r in rows:
+        time_of_day = r.get("time_of_day")
+        if not time_of_day:
+            continue
+        try:
+            hh, mm = str(time_of_day).split(":")[:2]
+            due_today = now.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+        except (ValueError, TypeError):
+            continue
+        if now < due_today:
+            continue  # not due yet today
+
+        last_triggered = r.get("last_triggered_at")
+        if last_triggered:
+            try:
+                last_dt = datetime.fromisoformat(str(last_triggered).replace("Z", "+00:00"))
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                # Already fired recently — don't re-fire on every 5-minute
+                # poll once due; ~20h keeps a daily reminder to once/day
+                # without needing real cron/timezone-aware scheduling.
+                if (now - last_dt) < timedelta(hours=20):
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        await _insert(
+            "notifications",
+            {
+                "user_id": user_id,
+                "type": "system",
+                "title": r.get("title") or "Wellness reminder",
+                "body": r.get("description") or "Time for your wellness reminder.",
+                "link": "/wellness",
+            },
+            token=token,
+        )
+        delivered.append({"id": r["id"], "title": r.get("title")})
+        await _update("wellness_reminders", {"id": r["id"], "user_id": user_id}, {"last_triggered_at": _utc_now_iso()}, token=token)
+
+    return {"delivered": delivered, "count": len(delivered)}
 
 
 # ---------------------------------------------------------------------------

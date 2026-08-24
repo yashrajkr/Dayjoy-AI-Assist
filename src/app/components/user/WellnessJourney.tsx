@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search } from "lucide-react";
+import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search, BellRing } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { getProducts, type Product } from "../../lib/db";
+import { getPushSubscriptionState, subscribeToPush, isNotificationSupported } from "../../lib/pushNotifications";
 import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
   customerListWellnessActivities, customerLogWellnessActivity,
@@ -111,6 +112,20 @@ export function WellnessJourney() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Notification opt-in — reuses the existing browser-notification wrapper
+  // (src/app/lib/pushNotifications.ts, already used for tickets/training)
+  // rather than building a second notification system. Reminders/goal
+  // nudges are silently no-ops until the user explicitly grants this —
+  // browsers require a user gesture, so this can't be auto-requested.
+  const [notifState, setNotifState] = useState<{ subscribed: boolean; supported: boolean } | null>(null);
+  useEffect(() => {
+    getPushSubscriptionState().then((s) => setNotifState({ subscribed: s.subscribed, supported: s.supported }));
+  }, []);
+  const enableNotifications = async () => {
+    const ok = await subscribeToPush();
+    setNotifState({ subscribed: ok, supported: isNotificationSupported() });
+  };
 
   // Goal modal — target_value/unit start from the "general" preset instead
   // of blank, so the very first render already shows a sensible example
@@ -323,6 +338,22 @@ export function WellnessJourney() {
       <div className="flex-1 overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full">
       {error ? <ErrorState message={error} /> : null}
+
+      {/* Notification opt-in banner — only shown when supported and not
+          yet enabled; disappears once granted (or if the browser can't do
+          notifications at all, e.g. iOS Safari outside an installed PWA). */}
+      {notifState && notifState.supported && !notifState.subscribed ? (
+        <Card className="p-3 mb-4 shadow-none border-border flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+            <BellRing className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Get reminded on this device</p>
+            <p className="text-xs text-muted-foreground">Enable notifications so your reminders actually reach you, not just this page.</p>
+          </div>
+          <Button type="button" size="sm" onClick={enableNotifications} className="shrink-0">Enable</Button>
+        </Card>
+      ) : null}
 
       {/* Overview — a data-grounded summary + one surfaced next action,
           instead of three equally-weighted stat tiles with nothing telling
@@ -627,8 +658,11 @@ export function WellnessJourney() {
                     {products === null ? null : products.length === 0 ? (
                       <p className="text-[11px] text-muted-foreground mt-1">Loading products…</p>
                     ) : (
-                      <div className="mt-1.5 max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-                        {filtered.slice(0, 20).map((p) => (
+                      // No cap — this IS the "browse all products" dropdown,
+                      // not a top-N preview; the scroll container is what
+                      // keeps it usable, not truncating the list.
+                      <div className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                        {filtered.map((p) => (
                           <button key={p.id} type="button" onClick={() => selectReminderProduct(p)}
                             className="w-full text-left px-3 py-2 text-xs hover:bg-accent/50 transition-colors truncate">
                             {p.product_name}

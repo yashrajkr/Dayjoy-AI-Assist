@@ -2455,6 +2455,22 @@ export async function customerDeleteReminder(reminderId: string): Promise<{ stat
   return custDelete(`/customer/wellness/reminders/${reminderId}`);
 }
 
+/** Checks the caller's own wellness_reminders for anything due "now" and
+ * delivers each as a row in the shared `notifications` table (same pattern
+ * as the unrelated `checkDueReminders()`/Capability 33 above) — call this
+ * on the same poll cadence, then turn `delivered` into real browser
+ * notifications client-side (see UserLayout.tsx). */
+export async function customerCheckWellnessReminders(): Promise<{
+  delivered: Array<{ id: string; title: string }>;
+  count: number;
+}> {
+  try {
+    return await custJson("POST", "/customer/wellness/reminders/check", {});
+  } catch {
+    return { delivered: [], count: 0 };
+  }
+}
+
 /** Feedback. */
 export async function customerListFeedback(): Promise<CustomerFeedback[]> {
   return custGet("/customer/feedback");
