@@ -22,9 +22,33 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "golden_answer_eval.json"
 
 def test_fixture_loads_and_has_minimum_coverage():
     cases = load_golden_cases(str(FIXTURE_PATH))
-    assert len(cases) >= 10
+    assert 100 <= len(cases) <= 300
     categories = {c.category for c in cases}
     assert {"pricing", "policy", "recommendation", "business_strategy"}.issubset(categories)
+
+
+def test_fixture_covers_all_required_question_types():
+    """Locks in the dataset's required breadth: products, policies,
+    training, distributors, customers, ambiguous questions, Hinglish,
+    follow-ups, uploaded-document questions, and unsupported questions."""
+    cases = load_golden_cases(str(FIXTURE_PATH))
+    categories = {c.category for c in cases}
+    required_families = {
+        "products": {"products", "pricing", "safety"},
+        "policies": {"policy"},
+        "training": {"training"},
+        "distributors": {"onboarding", "compensation", "business_strategy", "action_plan"},
+        "customers": {"customer_support", "company_info"},
+        "ambiguous": {"ambiguous"},
+        "hinglish": {"hinglish"},
+        "follow_up": {"follow_up"},
+        "uploaded_document": {"uploaded_document"},
+        "unsupported": {"unsupported"},
+    }
+    for family, expected_categories in required_families.items():
+        assert expected_categories & categories, f"no coverage for required family: {family}"
+        for cat in expected_categories & categories:
+            assert sum(1 for c in cases if c.category == cat) >= 1
 
 
 def test_good_answer_scores_well():

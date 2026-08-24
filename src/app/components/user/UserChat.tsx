@@ -111,10 +111,12 @@ import {
   createArtifact,
   transformTextSnippet,
   KNOWLEDGE_SCOPE_OPTIONS,
+  getCapabilities,
   type ArtifactType,
   type ChatSource,
   type ChatProductCard,
   type KnowledgeScope,
+  type CapabilityStatus,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -1191,6 +1193,31 @@ export function UserChat() {
   // automatically once the answer finishes speaking. Tap again to end.
   // (Effects that drive this loop are defined after handleSend, below.)
   const [voiceMode, setVoiceMode] = useState(false);
+
+  // Runtime capability status — vision (image understanding) is only
+  // reliably available when the backend's AI provider actually has
+  // credit right now, so this is polled live rather than assumed from
+  // env config. Polling (not one-shot) means the feature turns back on
+  // by itself in the UI within a few minutes of billing being restored,
+  // with no page reload required.
+  const [visionCapability, setVisionCapability] = useState<CapabilityStatus | null>(null);
+  const [webSearchCapability, setWebSearchCapability] = useState<CapabilityStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const caps = await getCapabilities();
+      if (!cancelled && caps) {
+        setVisionCapability(caps.vision);
+        setWebSearchCapability(caps.web_search);
+      }
+    };
+    check();
+    const interval = setInterval(check, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Tools state: camera / QR / OCR modals + attach menu
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -3398,31 +3425,45 @@ export function UserChat() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (visionCapability && !visionCapability.available) return;
                             setAttachMenuOpen(false);
                             setCameraOpen(true);
                           }}
-                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          disabled={!!visionCapability && !visionCapability.available}
+                          title={visionCapability && !visionCapability.available ? visionCapability.message ?? undefined : undefined}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           role="menuitem"
                         >
                           <Camera className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
                           <div>
                             <p className="text-sm font-medium">Take photo</p>
-                            <p className="text-[11px] text-muted-foreground">Capture a product label or document</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {visionCapability && !visionCapability.available
+                                ? "Temporarily unavailable"
+                                : "Capture a product label or document"}
+                            </p>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => {
+                            if (visionCapability && !visionCapability.available) return;
                             setAttachMenuOpen(false);
                             photoInputRef.current?.click();
                           }}
-                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          disabled={!!visionCapability && !visionCapability.available}
+                          title={visionCapability && !visionCapability.available ? visionCapability.message ?? undefined : undefined}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           role="menuitem"
                         >
                           <ImageIcon className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
                           <div>
                             <p className="text-sm font-medium">Photo library</p>
-                            <p className="text-[11px] text-muted-foreground">Attach an image already on your device</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {visionCapability && !visionCapability.available
+                                ? "Temporarily unavailable"
+                                : "Attach an image already on your device"}
+                            </p>
                           </div>
                         </button>
                         <button
@@ -3525,11 +3566,19 @@ export function UserChat() {
                         ? "text-muted-foreground hover:bg-accent/50"
                         : "text-warning bg-gold-accent/15"
                     }`}
-                    title={allowWebSearch ? "Web research is on — click to turn off" : "Web research is off — click to turn on"}
+                    title={
+                      webSearchCapability && !webSearchCapability.available
+                        ? webSearchCapability.message ?? "Web research is temporarily unavailable"
+                        : allowWebSearch
+                          ? "Web research is on — click to turn off"
+                          : "Web research is off — click to turn on"
+                    }
                     aria-pressed={allowWebSearch}
                   >
                     <Globe className="w-3 h-3" aria-hidden="true" />
-                    {allowWebSearch ? "Web on" : "Web off"}
+                    {webSearchCapability && !webSearchCapability.available && allowWebSearch
+                      ? "Web (degraded)"
+                      : allowWebSearch ? "Web on" : "Web off"}
                   </button>
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
