@@ -113,6 +113,15 @@ export type RAGMetadata = {
   model_used: string;
   /** Retrieved chunks (full text + metadata). */
   chunks: RetrievedChunk[];
+  /** Knowledge Conflict Resolution (Capability 9) — set when 2+ matched
+   * documents in the same category had different update dates; the model
+   * was instructed to prefer the newer one. */
+  knowledge_conflict?: {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  } | null;
 };
 
 export type MatchedDocument = {

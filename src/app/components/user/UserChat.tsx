@@ -1010,6 +1010,26 @@ function getRoleWelcome(role: string | null | undefined): { label: string; cta: 
   }
 }
 
+/** Knowledge Conflict Resolution (Capability 9) — reads the
+ * knowledge_conflict block out of the message's (untyped) rag_metadata,
+ * if present. */
+function messageKnowledgeConflict(message: ChatMessage): {
+  category: string;
+  authoritative_document: string;
+  authoritative_updated_at: string | null;
+  other_documents: string[];
+} | null {
+  const meta = message.rag_metadata as { knowledge_conflict?: unknown } | null | undefined;
+  const conflict = meta?.knowledge_conflict;
+  if (!conflict || typeof conflict !== "object") return null;
+  return conflict as {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  };
+}
+
 /**
  * Truthful, contextual per-message trust badge — replaces a literal
  * "Verified" label that previously rendered unconditionally on every
@@ -4706,6 +4726,19 @@ function MessageBubble({
               {message.evidence_strength}
             </span>
           ) : null}
+          {(() => {
+            const conflict = messageKnowledgeConflict(message);
+            if (!conflict) return null;
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+                title={`Multiple ${conflict.category} documents matched — using the more recently updated one ("${conflict.authoritative_document}")`}
+              >
+                <HistoryIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                Updated info used
+              </span>
+            );
+          })()}
           {message.ai_mode && message.ai_mode !== "normal" && AI_MODES[message.ai_mode as AiMode] ? (
             (() => {
               const modeConfig = AI_MODES[message.ai_mode as AiMode];

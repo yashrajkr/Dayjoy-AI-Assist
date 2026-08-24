@@ -638,6 +638,11 @@ from backend.orchestrator.followups import generate_followups  # noqa: E402
 # module docstring for why this is safer than asking the LLM for raw JSON).
 from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
 from backend.orchestrator.answer_validate import classify_grounding_state  # noqa: E402
+from backend.orchestrator.knowledge_conflict import (  # noqa: E402
+    ConflictInfo,
+    build_conflict_guidance,
+    detect_conflict as detect_knowledge_conflict,
+)
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -802,6 +807,13 @@ async def retrieve_context(
                     "evidence_sufficient": rag_result.evidence_sufficient,
                     "evidence_reason": rag_result.evidence_reason,
                 }
+                # Knowledge Conflict Resolution (Capability 9) — flags a
+                # same-category multi-document match with distinguishable
+                # update dates (e.g. old policy vs. new policy both
+                # matched), recommends the newer one as authoritative.
+                conflict = detect_knowledge_conflict(rag_result.matched_documents)
+                if conflict:
+                    rag_metadata["knowledge_conflict"] = conflict.to_dict()
                 # Best-effort fetch related items
                 try:
                     rag_result = await retriever.fetch_related(rag_result, token=token)
@@ -1668,6 +1680,29 @@ async def _personalization_style_addendum(token: Optional[str], user_id: Optiona
     )
 
 
+def _conflict_guidance_from_rag_metadata(rag_metadata: Optional[Dict[str, Any]]) -> str:
+    """Knowledge Conflict Resolution (Capability 9) — reads the
+    `knowledge_conflict` dict retrieve_context() already computed (via
+    detect_knowledge_conflict) and turns it into a system-prompt
+    directive. Rebuilding a ConflictInfo from the dict rather than passing
+    the dataclass through RouteResult keeps rag_metadata as the single
+    source of truth for this (already serialized into ChatResponse), not
+    a second parallel field."""
+    if not rag_metadata:
+        return ""
+    conflict = rag_metadata.get("knowledge_conflict")
+    if not conflict:
+        return ""
+    return build_conflict_guidance(
+        ConflictInfo(
+            category=conflict["category"],
+            authoritative_document=conflict["authoritative_document"],
+            authoritative_updated_at=conflict.get("authoritative_updated_at"),
+            other_documents=conflict.get("other_documents") or [],
+        )
+    )
+
+
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
     """Shared by /chat and /chat/stream — was previously duplicated inline in
     both (see git history), which is exactly how this endpoint pair drifted
@@ -2486,6 +2521,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     personalization_style = await _personalization_style_addendum(token, user_id)
     if personalization_style:
         custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
+    conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
+    if conflict_guidance:
+        custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -2872,6 +2910,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         personalization_style = await _personalization_style_addendum(token, user_id)
         if personalization_style:
             custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
+        conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
+        if conflict_guidance:
+            custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
