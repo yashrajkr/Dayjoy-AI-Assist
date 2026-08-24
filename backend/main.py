@@ -437,6 +437,15 @@ class TitleResponse(BaseModel):
     title: str
 
 
+class TransformTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=3000)
+    instruction: str = Field(..., min_length=1, max_length=200)
+
+
+class TransformTextResponse(BaseModel):
+    result: str
+
+
 def _fallback_title(text: str, max_len: int = 48) -> str:
     """Deterministic title used whenever summarization is unavailable."""
     trimmed = " ".join(text.split())
@@ -2805,6 +2814,67 @@ async def chat_title(req: TitleRequest, user_id: str = Depends(require_user_id))
     if not title or len(title) > 60:
         return TitleResponse(title=fallback)
     return TitleResponse(title=title)
+
+
+@app.post("/transform-text", response_model=TransformTextResponse)
+async def transform_text(req: TransformTextRequest, user_id: str = Depends(require_user_id)) -> TransformTextResponse:
+    """Answer Editing, selection-scoped (Capability 12) — rewrites ONLY
+    the given text snippet per `instruction` and returns JUST the
+    replacement, so the caller can splice it back into the original
+    answer IN PLACE instead of appending a whole new chat turn (which is
+    what the Transform Controls / Smart Text Selection / Inline Follow-up
+    features already do via the normal /chat path — this is the
+    complementary "actually edit the message" path those don't cover).
+
+    Deliberately separate from /chat, same reasoning as /chat/title: no
+    RAG, no safety pipeline, no conversation history — one small,
+    isolated completion. Best-effort: returns the ORIGINAL text unchanged
+    (never an error, never empty) whenever no provider is configured or
+    the call fails, so a caller can always safely splice the result back
+    in without special-casing failure.
+    """
+    check_rate_limit(user_id)
+
+    if not (GROQ_API_KEY or OPENAI_API_KEY):
+        return TransformTextResponse(result=req.text)
+
+    prompt = (
+        f"Rewrite ONLY the following text per this instruction: {req.instruction}\n\n"
+        "Preserve the original meaning and any facts/numbers exactly — only change what the "
+        "instruction asks for. Reply with ONLY the rewritten text, no preamble, no quotes, "
+        "no explanation.\n\n"
+        f'Text: """{req.text}"""'
+    )
+
+    if GROQ_API_KEY:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        model = GROQ_MODEL
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        model = OPENAI_MODEL
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 800,
+                },
+            )
+            if resp.status_code >= 400:
+                return TransformTextResponse(result=req.text)
+            content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception:
+        return TransformTextResponse(result=req.text)
+
+    result = content.strip().strip('"')
+    return TransformTextResponse(result=result or req.text)
 
 
 @app.post("/chat/stream")

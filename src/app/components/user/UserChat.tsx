@@ -98,6 +98,7 @@ import {
   setMessageFeedback,
   deriveTitle,
   hasDefaultTitle,
+  updateMessageContent,
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
@@ -108,6 +109,7 @@ import {
   rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
+  transformTextSnippet,
   KNOWLEDGE_SCOPE_OPTIONS,
   type ArtifactType,
   type ChatSource,
@@ -1212,7 +1214,8 @@ export function UserChat() {
   // user message or page chrome never triggers it). Reuses the existing
   // TransformKind machinery (handleTransform already accepts arbitrary
   // text, not just the whole message) — just applied to the selection.
-  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number; messageId: string | null } | null>(null);
+  const [editingInPlace, setEditingInPlace] = useState(false);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1947,12 +1950,14 @@ export function UserChat() {
     }
     const anchorEl =
       selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
-    if (!anchorEl?.closest(".ai-prose")) {
+    const bubbleEl = anchorEl?.closest(".ai-prose");
+    if (!bubbleEl) {
       setSelectionToolbar(null);
       return;
     }
+    const messageId = bubbleEl.getAttribute("data-message-id") || null;
     const rect = selection.getRangeAt(0).getBoundingClientRect();
-    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top });
+    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top, messageId });
   }, []);
 
   const handleSelectionTransform = useCallback(
@@ -1964,6 +1969,36 @@ export function UserChat() {
     },
     [selectionToolbar, handleTransform],
   );
+
+  // ---- Answer Editing, selection-scoped (Capability 12) ----
+  // Rewrites JUST the selected snippet and splices the result back into
+  // the SAME message in place, unlike every other transform above (which
+  // sends the transformation as a brand-new chat turn).
+  const handleEditInPlace = useCallback(async () => {
+    if (!selectionToolbar?.messageId) return;
+    const { text: selectedText, messageId } = selectionToolbar;
+    setEditingInPlace(true);
+    try {
+      const replacement = await transformTextSnippet(
+        selectedText,
+        "Improve the wording — keep the same meaning and any facts/numbers exactly.",
+      );
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.content.includes(selectedText)) return m;
+          const newContent = m.content.replace(selectedText, replacement);
+          void updateMessageContent(messageId, newContent);
+          return { ...m, content: newContent };
+        }),
+      );
+    } catch {
+      setError("Couldn't edit that text right now. Please try again.");
+    } finally {
+      setEditingInPlace(false);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    }
+  }, [selectionToolbar]);
 
   // ---- Save an assistant answer as a distributor follow-up task ----
   // Feature: Agentic Workflows, scoped safely — this calls the EXISTING,
@@ -3679,6 +3714,21 @@ export function UserChat() {
           >
             Translate
           </button>
+          {/* Answer Editing, selection-scoped (Capability 12) — the ONLY
+              button here that edits the message IN PLACE instead of
+              sending a new chat turn. Only offered when the message has
+              a real, persisted id to update. */}
+          {selectionToolbar.messageId ? (
+            <button
+              type="button"
+              onClick={handleEditInPlace}
+              disabled={editingInPlace}
+              className="px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+              title="Rewrite just this selection, in place"
+            >
+              {editingInPlace ? "Editing…" : "Edit"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -4866,6 +4916,7 @@ function MessageBubble({
           ) : null}
         </div>
         <div
+          data-message-id={message.id ?? ""}
           className={`ai-prose prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
             isBlocked
               ? "border-destructive/30 bg-destructive/5"

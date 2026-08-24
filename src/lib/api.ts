@@ -451,6 +451,31 @@ export async function generateConversationTitle(
 }
 
 /**
+ * Answer Editing, selection-scoped (Capability 12) — rewrites a specific
+ * text snippet per `instruction` and returns JUST the replacement, so the
+ * caller can splice it back into the original message content in place.
+ * Best-effort: the backend itself returns the original text unchanged on
+ * any failure (see /transform-text's docstring), so this never throws for
+ * a provider error — only for a genuine network/auth failure.
+ */
+export async function transformTextSnippet(text: string, instruction: string): Promise<string> {
+  const token = await requireBearerToken();
+  const res = await fetch(`${getApiBaseUrl()}/transform-text`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "X-Client": BRAND.shortName,
+    },
+    body: JSON.stringify({ text, instruction }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Transform text failed (${res.status})`);
+  const data = (await res.json()) as { result: string };
+  return data.result;
+}
+
+/**
  * Feature: User Preference Learning — saves a response-style preference
  * (e.g. `preferred_explanation_level=simple`) to the user's own memory
  * (POST /memory, RLS-scoped to auth.uid()) via the EXISTING remember_fact

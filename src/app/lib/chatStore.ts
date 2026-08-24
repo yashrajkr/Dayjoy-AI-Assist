@@ -249,6 +249,23 @@ export async function appendMessage(
   }
 }
 
+/** Answer Editing, selection-scoped (Capability 12) — persists an
+ * in-place content edit (e.g. a selected snippet rewritten and spliced
+ * back into the message) as an UPDATE, not a new row — distinct from
+ * appendMessage, which always inserts. */
+export async function updateMessageContent(messageId: string, content: string): Promise<void> {
+  if (!supabase) {
+    const m = memoryMessages.find((x) => x.id === messageId);
+    if (m) m.content = content;
+    return;
+  }
+  try {
+    await supabase.from("chat_messages").update({ content }).eq("id", messageId).throwOnError();
+  } catch (e) {
+    console.warn("[chat] updateMessageContent failed", e);
+  }
+}
+
 export async function setMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,
