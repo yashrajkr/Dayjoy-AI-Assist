@@ -219,4 +219,15 @@ def test_plain_question_has_no_format_directive(authed_client, monkeypatch):
         "/chat", json={"message": "What is Dayjoy's refund policy?", "role": "customer", "language": "English"}
     )
     assert res.status_code == 200
-    assert guidance_seen == [""]
+    # No format/example directive should fire for a plain single question —
+    # the Specialized Agent System (Phase 2) still contributes its own
+    # persona/scope guidance for every message by design, so the guidance
+    # isn't empty, but it must contain neither a format nor an example
+    # instruction, confirming those two contributed nothing here.
+    assert fi.format_instruction("What is Dayjoy's refund policy?") == ""
+    assert fi.example_instruction("What is Dayjoy's refund policy?") == ""
+    from backend.orchestrator.agents import dispatch as _dispatch_agent
+    from backend.orchestrator.orchestrator import orchestrate as _orchestrate
+
+    expected_agent_guidance = _dispatch_agent(_orchestrate("What is Dayjoy's refund policy?")).guidance
+    assert guidance_seen == [expected_agent_guidance]

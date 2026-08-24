@@ -623,6 +623,26 @@ from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
 # trigger instead of three separate calls.
 from backend.orchestrator.orchestrator import orchestrate  # noqa: E402
 
+# Specialized Agent System (Next-Generation spec, Phase 2) — a deterministic
+# Supervisor -> Specialist dispatch on top of the same OrchestrationDecision,
+# threaded into custom_guidance below so the answer is actually framed by
+# which specialist handled it (persona/scope guidance), not just labeled for
+# observability. See agents.py's own docstring for the honest scope of what
+# this does and doesn't enforce.
+from backend.orchestrator.agents import dispatch as dispatch_agent  # noqa: E402
+
+
+def _agent_guidance_addendum(message: str, has_attachment: bool = False) -> str:
+    """Best-effort — a dispatch failure must never break the answer, so this
+    degrades to an empty addendum (no persona framing) rather than raising."""
+    try:
+        decision = orchestrate(message)
+        result = dispatch_agent(decision, has_attachment=has_attachment)
+        _llm_logger.debug("agent_dispatch=%s reason=%s", result.agent, result.reason)
+        return result.guidance
+    except Exception:
+        return ""
+
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
 # document chunk), so a match here skips RAG entirely for that turn rather
@@ -2656,6 +2676,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
     if conflict_guidance:
         custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+    agent_guidance = _agent_guidance_addendum(req.message)
+    if agent_guidance:
+        custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -3145,6 +3168,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
         if conflict_guidance:
             custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+        agent_guidance = _agent_guidance_addendum(req.message)
+        if agent_guidance:
+            custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
