@@ -4538,6 +4538,17 @@ except Exception as _reminders_router_err:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+# ---------------------------------------------------------------------------
+try:
+    from backend.coach_api import router as coach_router
+    app.include_router(coach_router)
+except Exception as _coach_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load coach router: %s", _coach_router_err)
+
+
+# ---------------------------------------------------------------------------
 # Business Intelligence — AI Business Operating System dashboard router
 # ---------------------------------------------------------------------------
 try:

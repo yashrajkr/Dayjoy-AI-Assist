@@ -254,6 +254,9 @@ const KnowledgeCenter = lazy(() =>
 const SavedWork = lazy(() =>
   import("./components/user/SavedWork").then((m) => ({ default: m.SavedWork })),
 );
+const AICoach = lazy(() =>
+  import("./components/user/AICoach").then((m) => ({ default: m.AICoach })),
+);
 const ExecutiveDashboard = lazy(() =>
   import("./components/admin/ExecutiveDashboard").then((m) => ({ default: m.ExecutiveDashboard })),
 );
@@ -525,6 +528,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
                   <Suspense fallback={<AppShellFallback />}>
                     <SavedWork />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="coach"
+              element={
+                <ProtectedRoute allowedRoles={[...ANY_LOGGED_IN]}>
+                  <Suspense fallback={<AppShellFallback />}>
+                    <AICoach />
                   </Suspense>
                 </ProtectedRoute>
               }

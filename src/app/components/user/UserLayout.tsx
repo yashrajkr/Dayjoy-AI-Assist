@@ -195,6 +195,7 @@ export function UserLayout() {
     { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
     { to: "/products", icon: Package, label: "Product Discovery", group: "Main" },
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
+    { to: "/coach", icon: Sparkles, label: "AI Coach", group: "Main" },
     { to: "/saved", icon: FolderOpen, label: "Saved Work", group: "Main" },
     { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
@@ -349,6 +350,7 @@ export function UserLayout() {
                   to declutter the main nav — it's a low-frequency destination
                   compared to Dashboard/Wellness. */}
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/coach" icon={Sparkles} label="AI Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/saved" icon={FolderOpen} label="Saved Work" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
                 // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,

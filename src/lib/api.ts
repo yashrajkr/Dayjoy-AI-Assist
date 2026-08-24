@@ -1824,6 +1824,60 @@ export async function checkDueReminders(): Promise<{ delivered: Array<{ id: stri
   }
 }
 
+// ---------------------------------------------------------------------------
+// Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+// — backend/coach_api.py.
+// ---------------------------------------------------------------------------
+
+export type CoachTaskStatus = "pending" | "done";
+export type CoachGoalStatus = "active" | "completed" | "abandoned";
+
+export type CoachTask = {
+  id: string;
+  goal_id: string;
+  task_text: string;
+  day_label: string;
+  sort_order: number;
+  status: CoachTaskStatus;
+  completed_at?: string | null;
+};
+
+export type CoachGoal = {
+  id: string;
+  goal_text: string;
+  status: CoachGoalStatus;
+  created_at?: string;
+  updated_at?: string;
+  tasks: CoachTask[];
+};
+
+export async function createCoachGoal(goalText: string): Promise<CoachGoal> {
+  return distJson("POST", "/coach/goals", { goal_text: goalText });
+}
+
+export async function listCoachGoals(includeInactive = false): Promise<{ goals: CoachGoal[]; total: number }> {
+  return distGet(`/coach/goals?include_inactive=${includeInactive}`);
+}
+
+export async function getCoachGoal(goalId: string): Promise<CoachGoal> {
+  return distGet(`/coach/goals/${goalId}`);
+}
+
+export async function updateCoachGoal(
+  goalId: string,
+  payload: { goal_text?: string; status?: CoachGoalStatus },
+): Promise<{ updated: boolean }> {
+  return distJson("PATCH", `/coach/goals/${goalId}`, payload);
+}
+
+export async function completeCoachTask(taskId: string): Promise<{ completed: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/complete`);
+}
+
+export async function reopenCoachTask(taskId: string): Promise<{ reopened: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/reopen`);
+}
+
 /** Content — generate. */
 export async function distributorGenerateContent(payload: {
   content_type: string;
