@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp } from "lucide-react";
+import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -7,6 +7,7 @@ import { LineChart, ProgressBar, type LineChartPoint } from "../common/Charts";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import { getProducts, type Product } from "../../lib/db";
 import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
   customerListWellnessActivities, customerLogWellnessActivity,
@@ -26,13 +27,79 @@ const GOAL_TYPES = [
   { value: "skin", label: "Skin Health", icon: "✨" },
 ];
 
+/**
+ * Per-goal-type guidance — before this, every goal type showed the exact
+ * same bare "Target / Unit" boxes with zero hint what to put in either
+ * (what does "Target: 12, Unit: (blank)" even mean for "Digestion"?).
+ * `mode: "rating"` covers goal types with no natural physical unit
+ * (energy/stress/digestion/skin/general) — these use a 1-10 daily rating
+ * scale instead of a fabricated unit, the same pattern mood-tracker apps
+ * (Daylio/Bearable) use. `mode: "quantity"` covers goal types that DO have
+ * a real physical unit, offered as a locked choice of units instead of
+ * free text so the value stored is always something the progress bar and
+ * an activity log can actually agree on.
+ */
+const GOAL_TYPE_PRESETS: Record<
+  string,
+  {
+    titlePlaceholder: string;
+    targetLabel: string;
+    targetHint: string;
+    mode: "quantity" | "rating";
+    units: string[];
+    defaultUnit: string;
+    defaultTarget: string;
+  }
+> = {
+  general: { titlePlaceholder: "e.g. Feel more balanced day to day", targetLabel: "Daily wellbeing target", targetHint: "How you want to feel most days, out of 10", mode: "rating", units: ["/10"], defaultUnit: "/10", defaultTarget: "8" },
+  weight: { titlePlaceholder: "e.g. Reach a healthy weight", targetLabel: "Target weight", targetHint: "Your goal weight", mode: "quantity", units: ["kg", "lbs"], defaultUnit: "kg", defaultTarget: "" },
+  energy: { titlePlaceholder: "e.g. Feel more energetic every day", targetLabel: "Daily energy target", targetHint: "Your target energy level, out of 10", mode: "rating", units: ["/10"], defaultUnit: "/10", defaultTarget: "8" },
+  immunity: { titlePlaceholder: "e.g. Stay well through the season", targetLabel: "Sick-free streak", targetHint: "Consecutive days without falling ill", mode: "quantity", units: ["days"], defaultUnit: "days", defaultTarget: "30" },
+  sleep: { titlePlaceholder: "e.g. Get consistent, restful sleep", targetLabel: "Target sleep", targetHint: "Hours of sleep per night", mode: "quantity", units: ["hours"], defaultUnit: "hours", defaultTarget: "8" },
+  fitness: { titlePlaceholder: "e.g. Work out regularly", targetLabel: "Weekly target", targetHint: "How many workouts per week", mode: "quantity", units: ["workouts/wk", "minutes/wk"], defaultUnit: "workouts/wk", defaultTarget: "3" },
+  stress: { titlePlaceholder: "e.g. Feel calmer day to day", targetLabel: "Calm target", targetHint: "Your target calm level, out of 10", mode: "rating", units: ["/10"], defaultUnit: "/10", defaultTarget: "7" },
+  digestion: { titlePlaceholder: "e.g. Improve digestive comfort", targetLabel: "Comfort target", targetHint: "Your target digestive comfort, out of 10", mode: "rating", units: ["/10"], defaultUnit: "/10", defaultTarget: "8" },
+  skin: { titlePlaceholder: "e.g. Clearer, healthier skin", targetLabel: "Skin goal", targetHint: "Your target skin clarity, out of 10", mode: "rating", units: ["/10"], defaultUnit: "/10", defaultTarget: "8" },
+};
+
+/**
+ * Per-activity-type field visibility + labeling — before this, every type
+ * showed the same bare "Value" and "Duration (min)" boxes, so picking
+ * "Water Intake" gave no clue whether Value meant glasses or ml, and still
+ * showed an irrelevant Duration box. "lesson"/"quiz" (leftover
+ * training-progress activity types, not meaningful for a personal wellness
+ * log) are simply not offered as choices any more — the DB still allows
+ * them, only this picker's option list changed.
+ */
+const ACTIVITY_TYPE_PRESETS: Record<
+  string,
+  {
+    label: string;
+    titlePlaceholder: string;
+    showValue: boolean;
+    showDuration: boolean;
+    valueLabel?: string;
+    valueUnit?: string;
+    quickValues?: number[];
+  }
+> = {
+  water_intake: { label: "Water Intake", titlePlaceholder: "Water intake", showValue: true, showDuration: false, valueLabel: "Glasses (250ml)", valueUnit: "glasses", quickValues: [1, 2, 4, 8] },
+  sleep_log: { label: "Sleep", titlePlaceholder: "Last night's sleep", showValue: true, showDuration: false, valueLabel: "Hours slept", valueUnit: "hours" },
+  workout: { label: "Workout", titlePlaceholder: "e.g. Morning walk, strength training", showValue: false, showDuration: true },
+  meditation: { label: "Meditation", titlePlaceholder: "e.g. Breathing session", showValue: false, showDuration: true },
+  meal_log: { label: "Meal", titlePlaceholder: "e.g. Balanced lunch with vegetables", showValue: false, showDuration: false },
+  supplement: { label: "Supplement", titlePlaceholder: "e.g. Took Ashwagandha", showValue: false, showDuration: false },
+  measurement: { label: "Measurement", titlePlaceholder: "e.g. Weight, waist size", showValue: true, showDuration: false, valueLabel: "Value", valueUnit: "" },
+  custom: { label: "Custom", titlePlaceholder: "What did you do?", showValue: true, showDuration: true, valueLabel: "Value", valueUnit: "" },
+};
+
 const REMINDER_TYPES = [
-  { value: "product", label: "Product Usage" },
-  { value: "medication", label: "Medication" },
-  { value: "activity", label: "Activity" },
-  { value: "water", label: "Water Intake" },
-  { value: "measurement", label: "Measurement" },
-  { value: "custom", label: "Custom" },
+  { value: "product", label: "Product Usage", titlePlaceholder: "Pick a product below", usesProduct: true },
+  { value: "medication", label: "Medication", titlePlaceholder: "e.g. Take Ashwagandha", usesProduct: true },
+  { value: "activity", label: "Activity", titlePlaceholder: "e.g. 20-minute walk", usesProduct: false },
+  { value: "water", label: "Water Intake", titlePlaceholder: "e.g. Drink a glass of water", usesProduct: false },
+  { value: "measurement", label: "Measurement", titlePlaceholder: "e.g. Log today's weight", usesProduct: false },
+  { value: "custom", label: "Custom", titlePlaceholder: "What should we remind you about?", usesProduct: false },
 ];
 
 type Tab = "goals" | "activities" | "reminders";
@@ -45,9 +112,17 @@ export function WellnessJourney() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Goal modal
+  // Goal modal — target_value/unit start from the "general" preset instead
+  // of blank, so the very first render already shows a sensible example
+  // rather than an empty box with no clue what to type.
   const [goalModal, setGoalModal] = useState(false);
-  const [goalForm, setGoalForm] = useState({ goal_type: "general", title: "", target_value: "", unit: "", target_date: "" });
+  const [goalForm, setGoalForm] = useState({
+    goal_type: "general",
+    title: "",
+    target_value: GOAL_TYPE_PRESETS.general.defaultTarget,
+    unit: GOAL_TYPE_PRESETS.general.defaultUnit,
+    target_date: "",
+  });
   const [savingGoal, setSavingGoal] = useState(false);
 
   // Activity modal
@@ -57,8 +132,12 @@ export function WellnessJourney() {
 
   // Reminder modal
   const [remModal, setRemModal] = useState(false);
-  const [remForm, setRemForm] = useState({ reminder_type: "product", title: "", time_of_day: "09:00", frequency: "daily" });
+  const [remForm, setRemForm] = useState({ reminder_type: "product", title: "", time_of_day: "09:00", frequency: "daily", product_id: "" });
   const [savingRem, setSavingRem] = useState(false);
+  // Loaded lazily the first time a product-based reminder type is picked —
+  // most reminders never need this list, so it isn't fetched up front.
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [productSearch, setProductSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,6 +154,14 @@ export function WellnessJourney() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Applies a goal type's preset target/unit whenever the user picks a
+  // different type — keeps the fields relevant instead of carrying over a
+  // "/10" unit onto a Weight goal or vice versa.
+  const selectGoalType = (goalType: string) => {
+    const preset = GOAL_TYPE_PRESETS[goalType] ?? GOAL_TYPE_PRESETS.general;
+    setGoalForm({ ...goalForm, goal_type: goalType, target_value: preset.defaultTarget, unit: preset.defaultUnit });
+  };
+
   const saveGoal = async () => {
     if (!goalForm.title.trim()) return;
     setSavingGoal(true);
@@ -84,7 +171,8 @@ export function WellnessJourney() {
         target_value: goalForm.target_value ? parseFloat(goalForm.target_value) : null,
         unit: goalForm.unit, target_date: goalForm.target_date || null,
       });
-      setGoalModal(false); setGoalForm({ goal_type: "general", title: "", target_value: "", unit: "", target_date: "" });
+      setGoalModal(false);
+      setGoalForm({ goal_type: "general", title: "", target_value: GOAL_TYPE_PRESETS.general.defaultTarget, unit: GOAL_TYPE_PRESETS.general.defaultUnit, target_date: "" });
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setSavingGoal(false); }
   };
@@ -105,6 +193,20 @@ export function WellnessJourney() {
   const deleteGoal = async (g: WellnessGoal) => {
     if (!g.id || !window.confirm("Delete this goal?")) return;
     await customerDeleteWellnessGoal(g.id); await load();
+  };
+
+  // Applies a type's default unit and clears whichever of value/duration
+  // that type doesn't use, so e.g. switching from "Workout" (duration) to
+  // "Water Intake" (value) doesn't leave a stale duration behind.
+  const selectActivityType = (activityType: string) => {
+    const preset = ACTIVITY_TYPE_PRESETS[activityType] ?? ACTIVITY_TYPE_PRESETS.custom;
+    setActForm({
+      ...actForm,
+      activity_type: activityType,
+      unit: preset.valueUnit ?? "",
+      value: preset.showValue ? actForm.value : "",
+      duration_minutes: preset.showDuration ? actForm.duration_minutes : "",
+    });
   };
 
   const saveActivity = async () => {
@@ -128,6 +230,31 @@ export function WellnessJourney() {
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setSavingAct(false); }
   };
 
+  // Products are fetched lazily the first time a "product"/"medication"
+  // reminder type is selected — most reminder types never need this list.
+  const ensureProductsLoaded = () => {
+    if (products === null) {
+      setProducts([]); // mark as "loading" so this only fires once
+      void getProducts().then(setProducts);
+    }
+  };
+
+  const selectReminderType = (reminderType: string) => {
+    const preset = REMINDER_TYPES.find((t) => t.value === reminderType);
+    setRemForm({ ...remForm, reminder_type: reminderType, product_id: "" });
+    if (preset?.usesProduct) ensureProductsLoaded();
+  };
+
+  const selectReminderProduct = (product: Product) => {
+    setRemForm({
+      ...remForm,
+      product_id: product.id ?? "",
+      // Only overwrite the title if the user hasn't already typed one —
+      // don't clobber a custom reminder title they already wrote.
+      title: remForm.title.trim() ? remForm.title : product.product_name,
+    });
+  };
+
   const saveReminder = async () => {
     if (!remForm.title.trim()) return;
     setSavingRem(true);
@@ -135,8 +262,10 @@ export function WellnessJourney() {
       await customerCreateReminder({
         reminder_type: remForm.reminder_type, title: remForm.title,
         time_of_day: remForm.time_of_day, frequency: remForm.frequency,
+        product_id: remForm.product_id || null,
       });
-      setRemModal(false); setRemForm({ reminder_type: "product", title: "", time_of_day: "09:00", frequency: "daily" });
+      setRemModal(false); setRemForm({ reminder_type: "product", title: "", time_of_day: "09:00", frequency: "daily", product_id: "" });
+      setProductSearch("");
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setSavingRem(false); }
   };
@@ -264,7 +393,10 @@ export function WellnessJourney() {
                       <span className="text-lg">{goalType?.icon || "🎯"}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{g.title}</p>
-                        <p className="text-[10px] text-muted-foreground">{goalType?.label || "Goal"} · {current}/{target} {g.unit || ""}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {goalType?.label || "Goal"} · {current}/{target}
+                          {g.unit ? (g.unit.startsWith("/") ? g.unit : ` ${g.unit}`) : ""}
+                        </p>
                       </div>
                       {g.is_completed ? <Check className="w-4 h-4 text-primary" /> : null}
                       <Button type="button" variant="ghost" size="icon" onClick={() => deleteGoal(g)} className="h-auto w-auto p-1.5 text-destructive hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /></Button>
@@ -318,7 +450,7 @@ export function WellnessJourney() {
       {/* Reminders tab */}
       {tab === "reminders" && !loading ? (
         <>
-          <Button type="button" className="mb-3" onClick={() => setRemModal(true)}><Plus className="w-4 h-4" /> Add Reminder</Button>
+          <Button type="button" className="mb-3" onClick={() => { setRemModal(true); ensureProductsLoaded(); }}><Plus className="w-4 h-4" /> Add Reminder</Button>
           {reminders.length === 0 ? <Card className="shadow-none"><EmptyState title="No reminders" description="Set reminders for product usage, medications, or activities." icon={<Bell className="w-5 h-5" />} /></Card> : (
             <div className="space-y-2">
               {reminders.map((r) => (
@@ -347,23 +479,59 @@ export function WellnessJourney() {
             <label className="block text-xs font-medium text-muted-foreground mb-1">Goal Type</label>
             <div className="grid grid-cols-3 gap-1.5">
               {GOAL_TYPES.map((t) => (
-                <button key={t.value} type="button" onClick={() => setGoalForm({ ...goalForm, goal_type: t.value })}
+                <button key={t.value} type="button" onClick={() => selectGoalType(t.value)}
                   className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border text-xs ${goalForm.goal_type === t.value ? "border-primary bg-primary/5" : "border-border"}`}>
                   <span className="text-lg">{t.icon}</span>{t.label.split(" ")[0]}
                 </button>
               ))}
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-            <input type="text" value={goalForm.title} onChange={(e) => setGoalForm({ ...goalForm, title: e.target.value })}
-              placeholder="e.g. Drink 3L water daily" className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div><label className="block text-xs font-medium text-muted-foreground mb-1">Target</label><input type="number" value={goalForm.target_value} onChange={(e) => setGoalForm({ ...goalForm, target_value: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
-            <div><label className="block text-xs font-medium text-muted-foreground mb-1">Unit</label><input type="text" value={goalForm.unit} onChange={(e) => setGoalForm({ ...goalForm, unit: e.target.value })} placeholder="L, kg, min" className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
-            <div><label className="block text-xs font-medium text-muted-foreground mb-1">Target Date</label><input type="date" value={goalForm.target_date} onChange={(e) => setGoalForm({ ...goalForm, target_date: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
-          </div>
+          {(() => {
+            const preset = GOAL_TYPE_PRESETS[goalForm.goal_type] ?? GOAL_TYPE_PRESETS.general;
+            return (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+                  <input type="text" value={goalForm.title} onChange={(e) => setGoalForm({ ...goalForm, title: e.target.value })}
+                    placeholder={preset.titlePlaceholder} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">{preset.targetLabel}</label>
+                  <p className="text-[11px] text-muted-foreground mb-1.5">{preset.targetHint}</p>
+                  {preset.mode === "rating" ? (
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="secondary" size="sm" className="h-8 w-8 p-0"
+                        onClick={() => setGoalForm({ ...goalForm, target_value: String(Math.max(1, Number(goalForm.target_value || 8) - 1)) })}>
+                        <Minus className="w-3.5 h-3.5" />
+                      </Button>
+                      <div className="flex-1 text-center text-lg font-semibold">{goalForm.target_value || 8}<span className="text-xs text-muted-foreground font-normal"> /10</span></div>
+                      <Button type="button" variant="secondary" size="sm" className="h-8 w-8 p-0"
+                        onClick={() => setGoalForm({ ...goalForm, target_value: String(Math.min(10, Number(goalForm.target_value || 8) + 1)) })}>
+                        <Plus className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input type="number" value={goalForm.target_value} onChange={(e) => setGoalForm({ ...goalForm, target_value: e.target.value })}
+                        placeholder="Amount" className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                      <div className="flex gap-1 shrink-0">
+                        {preset.units.map((u) => (
+                          <button key={u} type="button" onClick={() => setGoalForm({ ...goalForm, unit: u })}
+                            className={`px-2.5 py-2 rounded-lg border text-xs font-medium ${goalForm.unit === u ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground"}`}>
+                            {u}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Target date (optional)</label>
+                  <input type="date" value={goalForm.target_date} onChange={(e) => setGoalForm({ ...goalForm, target_date: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                </div>
+              </>
+            );
+          })()}
         </div>
       </Modal>
 
@@ -373,17 +541,43 @@ export function WellnessJourney() {
           <Button type="button" onClick={saveActivity} disabled={savingAct}>{savingAct ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Log</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Type</label>
-            <select value={actForm.activity_type} onChange={(e) => setActForm({ ...actForm, activity_type: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
-              {["custom","lesson","quiz","workout","meditation","water_intake","sleep_log","meal_log","supplement","measurement"].map((t) => <option key={t} value={t}>{t.replace("_"," ")}</option>)}
+            <select value={actForm.activity_type} onChange={(e) => selectActivityType(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
+              {Object.entries(ACTIVITY_TYPE_PRESETS).map(([value, p]) => <option key={value} value={value}>{p.label}</option>)}
             </select>
           </div>
-          <div><label className="block text-xs text-muted-foreground mb-1">Title</label>
-            <input type="text" value={actForm.title} onChange={(e) => setActForm({ ...actForm, title: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="block text-xs text-muted-foreground mb-1">Value</label><input type="number" value={actForm.value} onChange={(e) => setActForm({ ...actForm, value: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
-            <div><label className="block text-xs text-muted-foreground mb-1">Duration (min)</label><input type="number" value={actForm.duration_minutes} onChange={(e) => setActForm({ ...actForm, duration_minutes: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
-          </div>
+          {(() => {
+            const preset = ACTIVITY_TYPE_PRESETS[actForm.activity_type] ?? ACTIVITY_TYPE_PRESETS.custom;
+            return (
+              <>
+                <div><label className="block text-xs text-muted-foreground mb-1">Title</label>
+                  <input type="text" value={actForm.title} onChange={(e) => setActForm({ ...actForm, title: e.target.value })}
+                    placeholder={preset.titlePlaceholder} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                </div>
+                {preset.showValue ? (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">{preset.valueLabel}</label>
+                    <input type="number" value={actForm.value} onChange={(e) => setActForm({ ...actForm, value: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                    {preset.quickValues ? (
+                      <div className="flex gap-1.5 mt-1.5">
+                        {preset.quickValues.map((v) => (
+                          <button key={v} type="button" onClick={() => setActForm({ ...actForm, value: String(v) })}
+                            className={`px-2.5 py-1 rounded-full border text-xs font-medium ${actForm.value === String(v) ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground"}`}>
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {preset.showDuration ? (
+                  <div><label className="block text-xs text-muted-foreground mb-1">Duration (minutes)</label>
+                    <input type="number" value={actForm.duration_minutes} onChange={(e) => setActForm({ ...actForm, duration_minutes: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                  </div>
+                ) : null}
+              </>
+            );
+          })()}
           {activeGoals.length > 0 ? (
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Counts toward goal (optional)</label>
@@ -402,12 +596,56 @@ export function WellnessJourney() {
           <Button type="button" onClick={saveReminder} disabled={savingRem}>{savingRem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create</Button></>}>
         <div className="space-y-3">
           <div><label className="block text-xs text-muted-foreground mb-1">Type</label>
-            <select value={remForm.reminder_type} onChange={(e) => setRemForm({ ...remForm, reminder_type: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
+            <select value={remForm.reminder_type} onChange={(e) => selectReminderType(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm">
               {REMINDER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
+          {(() => {
+            const preset = REMINDER_TYPES.find((t) => t.value === remForm.reminder_type) ?? REMINDER_TYPES[0];
+            if (!preset.usesProduct) return null;
+            const filtered = (products ?? []).filter((p) =>
+              !productSearch.trim() || p.product_name.toLowerCase().includes(productSearch.trim().toLowerCase()),
+            );
+            const selected = (products ?? []).find((p) => p.id === remForm.product_id);
+            return (
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Product</label>
+                {selected ? (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 text-sm">
+                    <span className="truncate">{selected.product_name}</span>
+                    <button type="button" onClick={() => setRemForm({ ...remForm, product_id: "" })} className="text-muted-foreground hover:text-foreground shrink-0">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <input type="text" value={productSearch} onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder="Search Dayjoy products…" className="w-full pl-8 pr-3 py-2 rounded-lg border border-border bg-card text-sm" />
+                    </div>
+                    {products === null ? null : products.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground mt-1">Loading products…</p>
+                    ) : (
+                      <div className="mt-1.5 max-h-36 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                        {filtered.slice(0, 20).map((p) => (
+                          <button key={p.id} type="button" onClick={() => selectReminderProduct(p)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-accent/50 transition-colors truncate">
+                            {p.product_name}
+                          </button>
+                        ))}
+                        {filtered.length === 0 ? <p className="px-3 py-2 text-xs text-muted-foreground">No matching products</p> : null}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <div><label className="block text-xs text-muted-foreground mb-1">Title</label>
-            <input type="text" value={remForm.title} onChange={(e) => setRemForm({ ...remForm, title: e.target.value })} placeholder="e.g. Take Ashwagandha" className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+            <input type="text" value={remForm.title} onChange={(e) => setRemForm({ ...remForm, title: e.target.value })}
+              placeholder={(REMINDER_TYPES.find((t) => t.value === remForm.reminder_type) ?? REMINDER_TYPES[0]).titlePlaceholder}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div><label className="block text-xs text-muted-foreground mb-1">Time</label><input type="time" value={remForm.time_of_day} onChange={(e) => setRemForm({ ...remForm, time_of_day: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>

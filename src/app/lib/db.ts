@@ -170,7 +170,12 @@ function normalizeTextToTags(value: unknown): string[] | null {
 }
 
 function mapDemoProducts(): Product[] {
-  return demoProducts.map((p) => ({
+  return demoProducts.map((p, i) => ({
+    // Every other demo mapper (mapDemoFaqs, etc.) assigns a stable id —
+    // this one never did, which is harmless until something needs to
+    // reference a specific demo product by id (e.g. the Wellness Journey
+    // reminder product picker, or a compare/select flow keyed on it).
+    id: `demo-${i}`,
     product_name: p.name,
     brand: p.brand ?? null,
     category: p.category,
