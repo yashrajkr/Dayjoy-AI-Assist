@@ -1416,6 +1416,7 @@ export function UserChat() {
         products?: ChatProductCard[] | null;
         clarification_options?: string[] | null;
         evidence_strength?: string | null;
+        claim_verification?: ChatMessage["claim_verification"];
       } = {};
 
       // Multimodal Understanding (Capabilities 1/2/19/20) — the most
@@ -1481,6 +1482,7 @@ export function UserChat() {
           products: res.products,
           clarification_options: res.clarification_options,
           evidence_strength: res.evidence_strength,
+          claim_verification: res.claim_verification,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1544,6 +1546,7 @@ export function UserChat() {
           products: meta.products ?? null,
           clarification_options: meta.clarification_options ?? null,
           evidence_strength: meta.evidence_strength ?? null,
+          claim_verification: meta.claim_verification ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -4808,6 +4811,18 @@ function MessageBubble({
               title="Evidence Strength — how well this answer is backed by verified DayJoy sources"
             >
               {message.evidence_strength}
+            </span>
+          ) : null}
+          {message.claim_verification?.checked && message.claim_verification.claims.some((c) => c.state === "unverified") ? (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+              title={`Some specific claims in this answer weren't found in the evidence: ${message.claim_verification.claims
+                .filter((c) => c.state === "unverified")
+                .map((c) => c.claim)
+                .join("; ")}`}
+            >
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length} claim
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length === 1 ? "" : "s"} unverified
             </span>
           ) : null}
           {(() => {

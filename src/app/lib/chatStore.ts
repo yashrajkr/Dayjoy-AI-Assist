@@ -59,6 +59,13 @@ export type ChatMessage = {
   // grounding classification. Same transient, client-side-only treatment
   // as follow_ups/products/clarification_options above.
   evidence_strength?: string | null;
+  // Citation Verification / Claim-Level Grounding — per-claim breakdown
+  // from the backend. Same transient, client-side-only treatment as the
+  // fields above.
+  claim_verification?: {
+    checked: boolean;
+    claims: Array<{ claim: string; state: "verified" | "ai_analysis" | "assumption" | "unverified" }>;
+  } | null;
 };
 
 /** In-memory fallback when Supabase is unavailable. */

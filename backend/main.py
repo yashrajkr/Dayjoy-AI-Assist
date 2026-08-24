@@ -509,6 +509,13 @@ class ChatResponse(BaseModel):
     # returned to the client. Deliberately qualitative, never a fabricated
     # confidence percentage — see _EVIDENCE_STRENGTH_LABELS below.
     evidence_strength: Optional[str] = None
+    # Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+    # per-claim verified/ai_analysis/assumption/unverified breakdown from
+    # orchestrator/claim_verify.py. None when the answer didn't qualify
+    # for claim-level checking (too short, not RAG-sourced) or the check
+    # itself couldn't run (no LLM configured, network error) — absence
+    # here is "not checked," never "nothing wrong found."
+    claim_verification: Optional[Dict[str, Any]] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -625,6 +632,7 @@ from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # 
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
 from backend.orchestrator.contradiction import detect_contradiction  # noqa: E402
+from backend.orchestrator.claim_verify import should_verify_claims, verify_claims  # noqa: E402
 
 # Contextual follow-up suggestions — was fully built and tested
 # (backend/tests/ has no direct test file yet, but the module is pure/
@@ -2703,6 +2711,19 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     )
     evidence_strength = _EVIDENCE_STRENGTH_LABELS.get(grounding_state)
 
+    # Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+    # informational only (never triggers a retry — this already runs
+    # after the relevance-mismatch and contradiction checks, both of
+    # which CAN retry; a third automatic regeneration layer risks a
+    # runaway retry chain for marginal benefit). Surfaces a per-claim
+    # verified/ai_analysis/assumption/unverified breakdown the frontend
+    # can show alongside the whole-answer Evidence Strength badge.
+    claim_verification = None
+    if should_verify_claims(answer, route.answer_source or ""):
+        claim_result = await verify_claims(answer, full_context)
+        if claim_result.checked:
+            claim_verification = claim_result.to_dict()
+
     return ChatResponse(
         answer=answer,
         category=category,
@@ -2717,6 +2738,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         answer_source=route.answer_source,
         web_search_provider=route.web_search_provider,
         ai_mode=ai_mode,
+        claim_verification=claim_verification,
         follow_ups=follow_ups,
         products=route.product_cards,
         structured=structured_answer.to_dict(),
@@ -3059,6 +3081,14 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             answer_text=aggregated,
         )
 
+        # Citation Verification / Claim-Level Grounding (Capabilities 7, 8)
+        # — same informational-only wiring as /chat above.
+        claim_verification = None
+        if should_verify_claims(aggregated, route.answer_source or ""):
+            claim_result = await verify_claims(aggregated, full_context)
+            if claim_result.checked:
+                claim_verification = claim_result.to_dict()
+
         yield _sse({
             "done": True,
             "category": category,
@@ -3078,6 +3108,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "structured": structured_answer.to_dict(),
             "clarification_options": route.clarification_options,
             "evidence_strength": _EVIDENCE_STRENGTH_LABELS.get(grounding_state),
+            "claim_verification": claim_verification,
         })
 
     return StreamingResponse(

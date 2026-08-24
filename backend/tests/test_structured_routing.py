@@ -635,3 +635,97 @@ def test_chat_stream_contradiction_flags_handoff_without_retry(authed_client, mo
         body = b"".join(res.iter_bytes()).decode()
     assert '"handoff_required": true' in body or '"handoff_required":true' in body
     assert "contradiction" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Citation Verification / Claim-Level Grounding (claim_verify.py), Capabilities 7, 8
+# ---------------------------------------------------------------------------
+
+
+def test_chat_endpoint_includes_claim_verification_for_substantive_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    long_answer = "Dayjoy Turmeric's DP is 799 rupees, and it is one of our most popular wellness products. " * 2
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([[long_answer]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    from backend.orchestrator.claim_verify import ClaimVerdict, ClaimVerificationResult
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        return ClaimVerificationResult(
+            claims=[ClaimVerdict(claim="DP is 799", state="verified")], checked=True,
+        )
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP of Dayjoy Turmeric?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(claim_calls) == 1
+    assert body["claim_verification"]["checked"] is True
+    assert body["claim_verification"]["claims"][0]["claim"] == "DP is 799"
+
+
+def test_chat_endpoint_skips_claim_verification_for_short_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([["It's 799."]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        raise AssertionError("should not be called for a short answer")
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    assert res.json()["claim_verification"] is None
+    assert claim_calls == []

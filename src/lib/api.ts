@@ -209,6 +209,14 @@ export type ChatResponse = {
    * confidence percentage. One of "Strongly supported" | "Supported" |
    * "Partially supported" | "Needs verification" | "Not verified". */
   evidence_strength?: string | null;
+  /** Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+   * per-claim verified/ai_analysis/assumption/unverified breakdown. null
+   * when the answer didn't qualify for claim-level checking or the check
+   * itself couldn't run. */
+  claim_verification?: {
+    checked: boolean;
+    claims: Array<{ claim: string; state: "verified" | "ai_analysis" | "assumption" | "unverified" }>;
+  } | null;
 };
 
 export type ChatProductCard = {
@@ -599,6 +607,7 @@ export async function streamChatWithBackend(
       structured: finalMeta.structured,
       clarification_options: finalMeta.clarification_options,
       evidence_strength: finalMeta.evidence_strength,
+      claim_verification: finalMeta.claim_verification,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather
