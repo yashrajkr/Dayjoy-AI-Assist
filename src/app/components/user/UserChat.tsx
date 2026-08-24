@@ -1138,6 +1138,9 @@ export function UserChat() {
   // this browser session (not saved to a preference) since it's a
   // per-conversation intent, not a standing style preference.
   const [knowledgeScope, setKnowledgeScope] = useState<KnowledgeScope>("all");
+  // Context Scope Control (Capability 15) — whether this conversation may
+  // fall back to a live web search. Session-scoped, same as knowledgeScope.
+  const [allowWebSearch, setAllowWebSearch] = useState(true);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1360,6 +1363,7 @@ export function UserChat() {
             ai_mode: sentAiMode,
             image_data_url: imageForThisSend,
             knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
+            allow_web_search: allowWebSearch,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1542,7 +1546,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, attachments, currentUser, input, isTemporary, knowledgeScope, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, allowWebSearch, attachments, currentUser, input, isTemporary, knowledgeScope, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -3308,6 +3312,21 @@ export function UserChat() {
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  {/* Context Scope Control (Capability 15) — web research on/off */}
+                  <button
+                    type="button"
+                    onClick={() => setAllowWebSearch((v) => !v)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                      allowWebSearch
+                        ? "text-muted-foreground hover:bg-accent/50"
+                        : "text-warning bg-gold-accent/15"
+                    }`}
+                    title={allowWebSearch ? "Web research is on — click to turn off" : "Web research is off — click to turn on"}
+                    aria-pressed={allowWebSearch}
+                  >
+                    <Globe className="w-3 h-3" aria-hidden="true" />
+                    {allowWebSearch ? "Web on" : "Web off"}
+                  </button>
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}

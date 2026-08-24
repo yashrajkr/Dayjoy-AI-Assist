@@ -32,6 +32,9 @@ export type ChatRequest = {
   /** Knowledge Scope Selector (Capability 16) — narrows retrieval to one
    * category instead of all of DayJoy's knowledge base. */
   knowledge_scope?: KnowledgeScope;
+  /** Context Scope Control (Capability 15) — whether this message may fall
+   * back to a live web search. Defaults to true server-side if omitted. */
+  allow_web_search?: boolean;
 };
 
 export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";

@@ -386,6 +386,14 @@ class ChatRequest(BaseModel):
     # reference — an unrecognized value is rejected with a 422, not
     # silently ignored.
     knowledge_scope: Optional[str] = None
+    # Context Scope Control (Capability 15) — the general form of this
+    # capability (toggle memory/DayJoy KB/uploaded files/tools too) would
+    # risk breaking core answer correctness for signals other than web
+    # search, which is already a clean optional enrichment step — so this
+    # covers the ONE scope toggle that's safe to expose: whether this
+    # message is allowed to fall back to a live web search. True (default)
+    # is unchanged prior behavior.
+    allow_web_search: bool = True
 
 
 class TitleRequest(BaseModel):
@@ -999,7 +1007,7 @@ async def _route_from_kb_result(
 
 async def _route_events(
     token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
-    knowledge_scope: Optional[str] = None,
+    knowledge_scope: Optional[str] = None, allow_web_search: bool = True,
 ) -> AsyncIterator[Tuple[str, Any]]:
     """Router core, shared by /chat and /chat/stream so routing logic can't
     drift between the two endpoints.
@@ -1240,7 +1248,7 @@ async def _route_events(
     used_web_search = False
     mode = "dayjoy"
 
-    if has_context and wants_hybrid_comparison(message):
+    if has_context and wants_hybrid_comparison(message) and allow_web_search:
         # Dayjoy match + an explicit comparison cue: pull web results too so
         # the model can reason across both, with each claim clearly
         # attributed (see HYBRID_MODE_ADDENDUM below).
@@ -1260,7 +1268,7 @@ async def _route_events(
         # question that never left the server.
         category = "general"
         answer_source = "general_llm"
-    elif not has_context:
+    elif not has_context and allow_web_search:
         # No approved Dayjoy knowledge matched (or what matched was too
         # weak to trust) — fall back to a live web search for general
         # questions (world events, general facts) instead of the model
@@ -1277,6 +1285,12 @@ async def _route_events(
             # all once we've decided not to trust them for routing — leaving
             # `context` in would let the model quote them anyway.
             context = ""
+    elif not has_context:
+        # Context Scope Control (Capability 15) — web research explicitly
+        # disabled for this message: answer from general knowledge rather
+        # than silently falling back to a web search the user turned off.
+        answer_source = "general_llm"
+        context = ""
     else:
         answer_source = "dayjoy_knowledge"
 
@@ -1639,10 +1653,10 @@ def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]
 
 async def determine_route(
     token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
-    knowledge_scope: Optional[str] = None,
+    knowledge_scope: Optional[str] = None, allow_web_search: bool = True,
 ) -> RouteResult:
     """Non-streaming convenience wrapper around `_route_events` — used by /chat."""
-    async for kind, payload in _route_events(token, message, casual, ai_mode, knowledge_scope):
+    async for kind, payload in _route_events(token, message, casual, ai_mode, knowledge_scope, allow_web_search):
         if kind == "result":
             return payload
     raise AssertionError("_route_events did not yield a result")  # pragma: no cover
@@ -2284,7 +2298,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
         retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
     retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
-    route = await determine_route(token, retrieval_query, casual, ai_mode, req.knowledge_scope)
+    route = await determine_route(token, retrieval_query, casual, ai_mode, req.knowledge_scope, req.allow_web_search)
     t_after_routing = time.monotonic()
 
     personalization_context = await _maybe_personalization_context(
@@ -2622,7 +2636,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
         retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
         route: Optional[RouteResult] = None
-        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode, req.knowledge_scope):
+        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode, req.knowledge_scope, req.allow_web_search):
             if kind == "status":
                 yield _sse({"status": payload})
             else:
