@@ -13,9 +13,13 @@ import {
   Check,
   Sparkles,
   X,
+  Pause,
+  Play,
+  WifiOff,
 } from "lucide-react";
 import type { VoiceState } from "../../lib/useVoice";
 import type { AIOrbState } from "../three/AIOrb";
+import type { PersistedSettings } from "./VoiceAssistant";
 
 const AIOrb = lazy(() => import("../three/AIOrb").then((m) => ({ default: m.AIOrb })));
 
@@ -24,16 +28,7 @@ type Turn = {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
-};
-
-type PersistedSettings = {
-  languageCode: string;
-  voiceName: string | null;
-  rate: number;
-  pitch: number;
-  volume: number;
-  handsFree: boolean;
-  autoSummarize: boolean;
+  sources?: unknown[] | null;
 };
 
 type LanguageOption = { code: string; label: string; sttCode: string };
@@ -70,6 +65,12 @@ export function VoiceAssistantMobile({
   turns,
   streamingText,
   thinking,
+  toolStatusLabel,
+  aiServiceOnline,
+  quickActions,
+  onQuickAction,
+  paused,
+  onTogglePause,
 }: {
   phase: string;
   orbState: AIOrbState;
@@ -91,6 +92,14 @@ export function VoiceAssistantMobile({
   turns: Turn[];
   streamingText: string;
   thinking: boolean;
+  /** Real backend RAG/tool telemetry for the current request, or null when nothing is running. */
+  toolStatusLabel: string | null;
+  /** Real /health reachability — null while the first check is still in flight. */
+  aiServiceOnline: boolean | null;
+  quickActions: Array<{ label: string; icon: React.ComponentType<{ className?: string }>; prompt: string }>;
+  onQuickAction: (prompt: string) => void;
+  paused: boolean;
+  onTogglePause: () => void;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -129,7 +138,14 @@ export function VoiceAssistantMobile({
           <ChevronLeft className="w-5 h-5" aria-hidden="true" />
         </button>
         <div className="text-center">
-          <p className="text-sm font-semibold">Dayjoy Voice</p>
+          <p className="text-sm font-semibold flex items-center justify-center gap-1.5">
+            Dayjoy Voice
+            {aiServiceOnline === false ? (
+              <span title="AI service offline" aria-label="AI service offline">
+                <WifiOff className="w-3 h-3 text-red-400" aria-hidden="true" />
+              </span>
+            ) : null}
+          </p>
           <p className="text-[11px] text-white/50">{currentLanguageLabel}</p>
         </div>
         <button
@@ -147,15 +163,36 @@ export function VoiceAssistantMobile({
         <PersonalizedOrb orbState={orbState} phase={phase} />
 
         <p className="mt-7 text-sm text-white/60 text-center max-w-[280px]" aria-live="polite">
-          {phaseCopy}
+          {toolStatusLabel ?? phaseCopy}
         </p>
+
+        {/* Quick actions — real starter prompts, shown only before the
+            first exchange so they don't compete with an active
+            conversation. Each seeds a real question, not inserted text. */}
+        {!hasActivity ? (
+          <div className="mt-6 w-full max-w-sm overflow-x-auto no-scrollbar">
+            <div className="flex gap-2 px-1 justify-center flex-wrap">
+              {quickActions.map((qa) => (
+                <button
+                  key={qa.label}
+                  type="button"
+                  onClick={() => onQuickAction(qa.prompt)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/8 border border-white/10 text-xs text-white/80 active:bg-white/15 transition-colors"
+                >
+                  <qa.icon className="w-3.5 h-3.5" aria-hidden="true" />
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* Transient exchange bubble — only the latest turn, never a
             growing list. Absolutely positioned within the stage so it
             doesn't push the orb around as its content changes length. */}
         <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 flex flex-col items-center pointer-events-none">
           <AnimatePresence mode="wait">
-            {hasActivity ? (
+            {hasActivity && settings.captionsEnabled ? (
               <motion.div
                 key={visibleExchangeKey}
                 initial={{ opacity: 0, y: 10 }}
@@ -172,6 +209,11 @@ export function VoiceAssistantMobile({
                 <p className="text-sm leading-relaxed text-white/90">
                   {streamingText || lastAssistantTurn?.content || (thinking ? "…" : "")}
                 </p>
+                {!streamingText && lastAssistantTurn?.sources && lastAssistantTurn.sources.length > 0 ? (
+                  <p className="text-[10px] text-white/40 mt-1.5">
+                    Based on {lastAssistantTurn.sources.length} DayJoy source{lastAssistantTurn.sources.length === 1 ? "" : "s"}
+                  </p>
+                ) : null}
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -200,6 +242,9 @@ export function VoiceAssistantMobile({
             </ControlIcon>
             <ControlIcon onClick={() => setSheetOpen(true)} label="Voice settings">
               <Settings2 className="w-5 h-5" aria-hidden="true" />
+            </ControlIcon>
+            <ControlIcon onClick={onTogglePause} active={paused} label={paused ? "Resume" : "Pause"}>
+              {paused ? <Play className="w-5 h-5" aria-hidden="true" /> : <Pause className="w-5 h-5" aria-hidden="true" />}
             </ControlIcon>
             {ended ? (
               <button
@@ -364,22 +409,41 @@ export function VoiceAssistantMobile({
                       />
                     </div>
 
-                    <div className="flex items-center justify-between py-1">
-                      <div>
-                        <p className="text-sm font-medium">Hands-free mode</p>
-                        <p className="text-[11px] text-white/45">Auto-listen again after each reply</p>
+                    <MobileToggleRow
+                      label="Hands-free mode"
+                      description="Auto-listen again after each reply"
+                      checked={settings.handsFree}
+                      onChange={() => setSettings((s) => ({ ...s, handsFree: !s.handsFree }))}
+                    />
+                    <MobileToggleRow
+                      label="Interruptions"
+                      description="Let you talk over the AI to interrupt it"
+                      checked={settings.interruptionsEnabled}
+                      onChange={() => setSettings((s) => ({ ...s, interruptionsEnabled: !s.interruptionsEnabled }))}
+                    />
+                    <MobileToggleRow
+                      label="Captions"
+                      description="Show live transcript text"
+                      checked={settings.captionsEnabled}
+                      onChange={() => setSettings((s) => ({ ...s, captionsEnabled: !s.captionsEnabled }))}
+                    />
+
+                    <div>
+                      <label className="text-xs font-medium text-white/60 mb-1.5 block">Turn-taking</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(["eager", "normal", "patient"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setSettings((s) => ({ ...s, turnEagerness: mode }))}
+                            className={`py-2 rounded-xl text-xs font-medium capitalize transition-colors ${
+                              settings.turnEagerness === mode ? "bg-primary text-primary-foreground" : "bg-white/8 text-white/60"
+                            }`}
+                          >
+                            {mode}
+                          </button>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={settings.handsFree}
-                        onClick={() => setSettings((s) => ({ ...s, handsFree: !s.handsFree }))}
-                        className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${settings.handsFree ? "bg-primary" : "bg-white/15"}`}
-                      >
-                        <span
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${settings.handsFree ? "translate-x-4" : ""}`}
-                        />
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -388,6 +452,36 @@ export function VoiceAssistantMobile({
           </>
         ) : null}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function MobileToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-[11px] text-white/45">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={onChange}
+        className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${checked ? "bg-primary" : "bg-white/15"}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : ""}`} />
+      </button>
     </div>
   );
 }
@@ -497,4 +591,4 @@ function PersonalizedOrb({ orbState, phase }: { orbState: AIOrbState; phase: str
 }
 
 export default VoiceAssistantMobile;
-export type { PersistedSettings, LanguageOption, Turn as MobileTurn };
+export type { LanguageOption, Turn as MobileTurn };
