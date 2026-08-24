@@ -231,6 +231,25 @@ def _classify_strength(candidate: Dict[str, Any]) -> str:
     return STRENGTH_POSSIBLE
 
 
+# Reasoning Summary (Capability 36) — a safe, concise "why this
+# recommendation?" explanation built from the SAME real signals
+# recommendation_strength already uses, never a paraphrase of hidden
+# model chain-of-thought (there is none here — this whole module is
+# deterministic rule-matching, not an LLM call). Purely additive: every
+# bullet states a fact this module already computed, nothing inferred.
+def _build_reasoning_summary(candidate: Dict[str, Any]) -> List[str]:
+    bullets = [f"Matches your query for \"{candidate.get('matched_condition')}\""]
+    if str(candidate.get("verification_status") or "").lower() == "approved":
+        bullets.append("Verified/approved Dayjoy product")
+    if candidate.get("evidence_source"):
+        bullets.append(f"Backed by {candidate['evidence_source']}")
+    if candidate.get("contraindications"):
+        bullets.append("Has a documented contraindication — check before use")
+    else:
+        bullets.append("No documented contraindications on file")
+    return bullets
+
+
 def _rank(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Ranking per the requirement's priority order, applied as tie-breaks
     since (1) explicit user goal and (3) authoritative recommendation rule
@@ -325,6 +344,7 @@ async def run(token: Optional[str], message: str, max_results: int = 3) -> Dict[
     ranked = _rank(candidates)[:max_results]
     for c in ranked:
         c["recommendation_strength"] = _classify_strength(c)
+        c["reasoning_summary"] = _build_reasoning_summary(c)
     return RecommendationResult(
         status="ok",
         products=ranked,

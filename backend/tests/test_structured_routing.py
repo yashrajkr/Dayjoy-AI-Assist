@@ -53,7 +53,7 @@ def authed_client(client, monkeypatch):
 
 
 def _never_called_retrieve_context(monkeypatch, calls: list):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         calls.append(message)
         return "", [], "general", None
 
@@ -136,7 +136,7 @@ def test_pricing_compound_question_merges_kb_context_in_parallel(authed_client, 
     instead of only ever answering the price half."""
     kb_calls: list = []
 
-    async def _stub_kb(token, message, limit_per_table=3):
+    async def _stub_kb(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         kb_calls.append(message)
         return "Dayjoy Turmeric contains 95% curcuminoids and black pepper extract.", [], "product", None
 
@@ -196,7 +196,7 @@ def test_recommendation_ok_skips_rag_and_uses_structured_context(authed_client, 
     kb_calls: list = []
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context("", category="general"))
 
-    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         kb_calls.append(message)
         return "", [], "general", None
 
@@ -245,7 +245,7 @@ def test_recommendation_ok_merges_supporting_kb_context(authed_client, monkeypat
     material, it's appended (clearly labeled) alongside the authoritative
     structured recommendation — not silently dropped, not replacing it."""
 
-    async def _stub_kb(token, message, limit_per_table=3):
+    async def _stub_kb(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "Ashwagandha is an adaptogen traditionally used for stress support.", [], "product", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_kb)
@@ -301,7 +301,7 @@ def test_recommendation_needs_clarification_returns_question_directly(authed_cli
 def test_recommendation_insufficient_evidence_falls_through_to_rag(authed_client, monkeypatch):
     rag_calls: list = []
 
-    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         rag_calls.append(message)
         return "", [], "general", None
 
@@ -329,7 +329,7 @@ def test_recommendation_insufficient_evidence_falls_through_to_rag(authed_client
 
 
 def _stub_retrieve_context(context: str, sources=None, category: str = "general", rag_metadata=None):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return context, sources or [], category, rag_metadata
 
     return _stub

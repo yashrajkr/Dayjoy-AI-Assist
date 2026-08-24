@@ -29,7 +29,23 @@ export type ChatRequest = {
    * image as a data: URL. When present, the backend answers from the image
    * via a vision-capable model instead of the normal RAG pipeline. */
   image_data_url?: string;
+  /** Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+   * category instead of all of DayJoy's knowledge base. */
+  knowledge_scope?: KnowledgeScope;
+  /** Context Scope Control (Capability 15) — whether this message may fall
+   * back to a live web search. Defaults to true server-side if omitted. */
+  allow_web_search?: boolean;
 };
+
+export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";
+
+export const KNOWLEDGE_SCOPE_OPTIONS: { value: KnowledgeScope; label: string }[] = [
+  { value: "all", label: "All DayJoy knowledge" },
+  { value: "products", label: "Products" },
+  { value: "training", label: "Training" },
+  { value: "policies", label: "Policies" },
+  { value: "faqs", label: "FAQs" },
+];
 
 export type ChatSource = {
   /** Source table (products, faqs, policies, distributor_training, objection_handling, knowledge_chunks). */
@@ -189,6 +205,12 @@ export type ChatProductCard = {
    * numeric confidence score. Absent for a structured pricing card (only
    * product_recommendation results carry this). */
   recommendation_strength?: string | null;
+  /** Reasoning Summary (Capability 36) — safe, deterministic "why this
+   * recommendation" bullets built from real signals (matched condition,
+   * verification status, evidence source, contraindications). Never a
+   * paraphrase of hidden model reasoning — this recommendation path is
+   * rule-based matching, not an LLM call. */
+  reasoning_summary?: string[] | null;
   price?: {
     mrp?: number | null;
     dp?: number | null;

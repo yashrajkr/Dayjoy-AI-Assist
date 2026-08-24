@@ -59,7 +59,7 @@ def authed_client(client, monkeypatch):
 
 
 def stub_retrieve_context(context: str, sources=None, category: str = "general", rag_metadata=None):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return context, sources or [], category, rag_metadata
 
     return _stub

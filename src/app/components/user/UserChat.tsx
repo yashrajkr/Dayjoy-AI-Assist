@@ -73,6 +73,7 @@ import {
   VolumeX,
   AudioLines,
   Lightbulb,
+  Filter,
   CheckCircle2,
   Wand2,
   ListChecks,
@@ -107,9 +108,11 @@ import {
   rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
+  KNOWLEDGE_SCOPE_OPTIONS,
   type ArtifactType,
   type ChatSource,
   type ChatProductCard,
+  type KnowledgeScope,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -724,6 +727,7 @@ function ProductCardPhoto({ src, alt }: { src?: string | null; alt: string }) {
 
 function ProductCard({ product, hideImage = false }: { product: ChatProductCard; hideImage?: boolean }) {
   const price = product.price;
+  const [showWhy, setShowWhy] = useState(false);
   return (
     <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
       <div className="flex items-start gap-2">
@@ -768,6 +772,26 @@ function ProductCard({ product, hideImage = false }: { product: ChatProductCard;
       {product.safety_note ? (
         <p className="mt-1 text-[11px] text-warning">⚠ {product.safety_note}</p>
       ) : null}
+      {/* Reasoning Summary (Capability 36) — safe, concise "why this
+          recommendation?" bullets, never hidden chain-of-thought. */}
+      {product.reasoning_summary && product.reasoning_summary.length > 0 ? (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            onClick={() => setShowWhy((v) => !v)}
+            className="text-[11px] text-primary hover:underline"
+          >
+            {showWhy ? "Hide" : "Why this?"}
+          </button>
+          {showWhy ? (
+            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground list-disc list-inside">
+              {product.reasoning_summary.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -802,7 +826,9 @@ export type TransformKind =
   | "compare"
   | "hinglish"
   | "example"
-  | "translate";
+  | "translate"
+  | "rewrite"
+  | "expand";
 
 /**
  * Advanced Regeneration Controls — variants beyond a plain "try again",
@@ -853,6 +879,8 @@ const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   hinglish: (t) => `Rewrite this in Hinglish (Hindi in Latin script, mixed with English the way it's commonly spoken):\n\n"""${t}"""`,
   example: (t) => `Give a concrete, realistic example that illustrates this:\n\n"""${t}"""`,
   translate: (t) => `Translate this into Hindi:\n\n"""${t}"""`,
+  rewrite: (t) => `Rewrite this to be clearer and better-worded, keeping the same meaning:\n\n"""${t}"""`,
+  expand: (t) => `Expand on this with more context and supporting detail:\n\n"""${t}"""`,
 };
 
 function buildTransformPrompt(kind: TransformKind, text: string): string {
@@ -1140,6 +1168,21 @@ export function UserChat() {
   const [ocrOpen, setOcrOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
+  // Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+  // category instead of all of DayJoy's knowledge base. Persists only for
+  // this browser session (not saved to a preference) since it's a
+  // per-conversation intent, not a standing style preference.
+  const [knowledgeScope, setKnowledgeScope] = useState<KnowledgeScope>("all");
+  // Context Scope Control (Capability 15) — whether this conversation may
+  // fall back to a live web search. Session-scoped, same as knowledgeScope.
+  const [allowWebSearch, setAllowWebSearch] = useState(true);
+  // Smart Text Selection (Capability 34) — a floating toolbar appears when
+  // the user selects text WITHIN an assistant answer (scoped via the
+  // ".ai-prose" class on that bubble's content wrapper, so selecting a
+  // user message or page chrome never triggers it). Reuses the existing
+  // TransformKind machinery (handleTransform already accepts arbitrary
+  // text, not just the whole message) — just applied to the selection.
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number } | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1361,6 +1404,8 @@ export function UserChat() {
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
             image_data_url: imageForThisSend,
+            knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
+            allow_web_search: allowWebSearch,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1543,7 +1588,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, attachments, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, allowWebSearch, attachments, currentUser, input, isTemporary, knowledgeScope, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -1838,6 +1883,34 @@ export function UserChat() {
       void handleSend(prompt);
     },
     [handleSend],
+  );
+
+  // ---- Smart Text Selection (Capability 34) ----
+  const handleMessagesMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (!selection || selection.rangeCount === 0 || text.length < 3) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const anchorEl =
+      selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
+    if (!anchorEl?.closest(".ai-prose")) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top });
+  }, []);
+
+  const handleSelectionTransform = useCallback(
+    (kind: TransformKind) => {
+      if (!selectionToolbar) return;
+      handleTransform(kind, selectionToolbar.text);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    },
+    [selectionToolbar, handleTransform],
   );
 
   // ---- Save an assistant answer as a distributor follow-up task ----
@@ -2692,6 +2765,7 @@ export function UserChat() {
           // narrow phones and surface a stray horizontal scrollbar that
           // scrolled nothing.
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-6"
+          onMouseUp={handleMessagesMouseUp}
           aria-live="polite"
           aria-relevant="additions text"
         >
@@ -3314,6 +3388,47 @@ export function UserChat() {
                       <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
                     </button>
                   ) : null}
+                  {/* Knowledge Scope Selector (Capability 16) */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                          knowledgeScope === "all"
+                            ? "text-muted-foreground hover:bg-accent/50"
+                            : "text-primary bg-primary/10"
+                        }`}
+                        title="Choose what DayJoy AI can search"
+                        aria-haspopup="menu"
+                      >
+                        <Filter className="w-3 h-3" aria-hidden="true" />
+                        {KNOWLEDGE_SCOPE_OPTIONS.find((o) => o.value === knowledgeScope)?.label ?? "All DayJoy knowledge"}
+                        <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {KNOWLEDGE_SCOPE_OPTIONS.map((opt) => (
+                        <DropdownMenuItem key={opt.value} onClick={() => setKnowledgeScope(opt.value)}>
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {/* Context Scope Control (Capability 15) — web research on/off */}
+                  <button
+                    type="button"
+                    onClick={() => setAllowWebSearch((v) => !v)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                      allowWebSearch
+                        ? "text-muted-foreground hover:bg-accent/50"
+                        : "text-warning bg-gold-accent/15"
+                    }`}
+                    title={allowWebSearch ? "Web research is on — click to turn off" : "Web research is off — click to turn on"}
+                    aria-pressed={allowWebSearch}
+                  >
+                    <Globe className="w-3 h-3" aria-hidden="true" />
+                    {allowWebSearch ? "Web on" : "Web off"}
+                  </button>
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}
@@ -3451,6 +3566,51 @@ export function UserChat() {
         onExtracted={handleOcrExtracted}
         title="Extract text from image"
       />
+
+      {/* Smart Text Selection (Capability 34) — floating toolbar over a
+          text selection inside an assistant answer. */}
+      {selectionToolbar ? (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 rounded-xl border border-border bg-card shadow-xl px-1 py-1"
+          style={{ left: selectionToolbar.x, top: Math.max(8, selectionToolbar.y - 44), transform: "translateX(-50%)" }}
+        >
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("detail")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Explain
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("simplify")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Simplify
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("rewrite")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Rewrite
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("expand")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Expand
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("translate")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Translate
+          </button>
+        </div>
+      ) : null}
 
       {/* ============================= Sources / Related panel (overlay drawer) ============================= */}
       {/* Default CLOSED. Opens as a right-side overlay so it doesn't squeeze the chat area. */}

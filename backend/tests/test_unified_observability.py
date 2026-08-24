@@ -42,7 +42,7 @@ def authed_client(client, monkeypatch):
 
 
 def test_unified_trace_fires_even_when_orchestrator_observability_is_disabled(authed_client, monkeypatch, caplog):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "", [], "general", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _stub)
