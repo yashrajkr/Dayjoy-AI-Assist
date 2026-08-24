@@ -68,6 +68,18 @@ export type VoiceState = {
   speak: (text: string) => void;
   stopSpeaking: () => void;
   toggleMute: () => void;
+  /**
+   * "Unlocks" the browser's speech synthesis engine by speaking a silent
+   * utterance synchronously inside a real user gesture (tap/click) — call
+   * this from a click handler, not from an async callback. Several mobile
+   * browsers (iOS Safari, Chrome on Android) require the *first*
+   * `speechSynthesis.speak()` call after page load to happen inside a
+   * user-gesture call stack, or they silently drop it and every later
+   * `speak()` triggered from an async network response (the normal
+   * "AI finished answering, now speak it" path) stays silent forever with
+   * no error event at all. See `speak`'s declaration for the matching fix.
+   */
+  primeSpeech: () => void;
   /** Amplitude 0..1 for waveform animation (updated during speaking). */
   amplitude: number;
   /** System voices available for TTS, filtered to nothing until the browser reports them. */
@@ -99,6 +111,11 @@ const LANG_MAP: Record<string, string> = {
   te: "te-IN",
   gu: "gu-IN",
   pa: "pa-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  or: "or-IN",
+  as: "as-IN",
+  ur: "ur-IN",
 };
 
 export type VoiceOptions = {
@@ -279,6 +296,31 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     setError(null);
   }, []);
 
+  // Bumped on every speak() call; a queued speak-after-cancel timer (see
+  // below) only fires while it still matches the sequence it was issued
+  // with, so an older, already-superseded utterance can't start playing
+  // after a newer one has already taken over.
+  const speakSeqRef = useRef(0);
+  // Chrome (desktop and Android) silently pauses speechSynthesis after
+  // ~15s of continuous speech unless something calls resume() — without
+  // this watchdog, longer AI answers audibly cut off mid-sentence with no
+  // error event at all.
+  const resumeWatchdogRef = useRef<number | null>(null);
+
+  const stopSpeaking = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    speakSeqRef.current += 1;
+    setSpeaking(false);
+    setAmplitude(0);
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (resumeWatchdogRef.current) {
+      window.clearInterval(resumeWatchdogRef.current);
+      resumeWatchdogRef.current = null;
+    }
+  }, []);
+
   const speak = useCallback(
     (text: string) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window) || muted) return;
@@ -295,54 +337,90 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
         .replace(/[#*`_~[]()]/g, "")
         .replace(/\n+/g, ". ")
         .slice(0, 1000);
+      if (!clean.trim()) return;
+
+      const mySeq = ++speakSeqRef.current;
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(clean);
-      const opts = optionsRef.current;
-      utterance.lang = LANG_MAP[language] ?? "en-US";
-      utterance.rate = opts.rate ?? 1.0;
-      utterance.pitch = opts.pitch ?? 1.0;
-      utterance.volume = opts.volume ?? 1.0;
-      if (opts.voiceName) {
-        const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
-        if (match) utterance.voice = match;
-      }
-      utterance.onstart = () => {
-        setSpeaking(true);
-        // Set up audio analysis for waveform
-        try {
-          const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-          audioCtxRef.current = ctx;
-          // Note: SpeechSynthesis doesn't expose an audio node, so we
-          // simulate amplitude with a sine wave for the waveform animation.
-          // Real audio analysis would require a media element source.
-          analyserRef.current = ctx.createAnalyser();
-          trackAmplitude();
-        } catch {
-          // AudioContext not available — waveform will stay flat
+
+      // Chrome has a long-standing bug where a speak() call issued in the
+      // same tick as cancel() is silently dropped — no error, no onstart,
+      // no sound, the exact symptom of "the speaker button doesn't speak"
+      // reported on mobile. Deferring speak() one tick past cancel() lets
+      // the engine actually flush before the new utterance is queued.
+      window.setTimeout(() => {
+        if (speakSeqRef.current !== mySeq) return; // superseded before it ran
+        const utterance = new SpeechSynthesisUtterance(clean);
+        const opts = optionsRef.current;
+        utterance.lang = LANG_MAP[language] ?? "en-US";
+        utterance.rate = opts.rate ?? 1.0;
+        utterance.pitch = opts.pitch ?? 1.0;
+        utterance.volume = opts.volume ?? 1.0;
+        if (opts.voiceName) {
+          const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
+          if (match) utterance.voice = match;
+        } else {
+          // No explicit voice chosen — prefer a system voice that actually
+          // matches the selected language over whatever the browser's
+          // default happens to be, so switching to e.g. Hindi/Tamil/Kannada
+          // is audible instead of silently speaking in an English voice.
+          const langPrefix = (LANG_MAP[language] ?? "en-US").split("-")[0];
+          const match = window.speechSynthesis
+            .getVoices()
+            .find((v) => v.lang.toLowerCase().startsWith(langPrefix));
+          if (match) utterance.voice = match;
         }
-      };
-      utterance.onend = () => {
-        setSpeaking(false);
-        setAmplitude(0);
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        audioCtxRef.current?.close();
-      };
-      utterance.onerror = () => {
-        setSpeaking(false);
-        setAmplitude(0);
-      };
-      window.speechSynthesis.speak(utterance);
+        utterance.onstart = () => {
+          setSpeaking(true);
+          // Set up audio analysis for waveform
+          try {
+            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            audioCtxRef.current = ctx;
+            // Note: SpeechSynthesis doesn't expose an audio node, so we
+            // simulate amplitude with a sine wave for the waveform animation.
+            // Real audio analysis would require a media element source.
+            analyserRef.current = ctx.createAnalyser();
+            trackAmplitude();
+          } catch {
+            // AudioContext not available — waveform will stay flat
+          }
+          if (resumeWatchdogRef.current) window.clearInterval(resumeWatchdogRef.current);
+          resumeWatchdogRef.current = window.setInterval(() => {
+            if (window.speechSynthesis.speaking) {
+              window.speechSynthesis.pause();
+              window.speechSynthesis.resume();
+            }
+          }, 10000);
+        };
+        const cleanup = () => {
+          setSpeaking(false);
+          setAmplitude(0);
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          audioCtxRef.current?.close();
+          if (resumeWatchdogRef.current) {
+            window.clearInterval(resumeWatchdogRef.current);
+            resumeWatchdogRef.current = null;
+          }
+        };
+        utterance.onend = cleanup;
+        utterance.onerror = cleanup;
+        window.speechSynthesis.speak(utterance);
+      }, 30);
     },
     [language, muted, listening, trackAmplitude],
   );
 
-  const stopSpeaking = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+  /** See VoiceState.primeSpeech for why this exists. */
+  const primeSpeech = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      const utterance = new SpeechSynthesisUtterance(" ");
+      utterance.volume = 0;
+      utterance.rate = 10;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Priming is best-effort — a failure here just means the first real
+      // speak() call later carries the unlock risk it always had.
     }
-    setSpeaking(false);
-    setAmplitude(0);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -350,13 +428,30 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
       const next = !m;
       if (next) {
         // Muting also stops any in-progress speech
+        speakSeqRef.current += 1;
         if (typeof window !== "undefined" && "speechSynthesis" in window) {
           window.speechSynthesis.cancel();
         }
         setSpeaking(false);
+        if (resumeWatchdogRef.current) {
+          window.clearInterval(resumeWatchdogRef.current);
+          resumeWatchdogRef.current = null;
+        }
       }
       return next;
     });
+  }, []);
+
+  // Belt-and-braces cleanup on unmount — stop any in-flight speech and the
+  // resume watchdog interval so they don't outlive the component.
+  useEffect(() => {
+    return () => {
+      speakSeqRef.current += 1;
+      if (resumeWatchdogRef.current) window.clearInterval(resumeWatchdogRef.current);
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
   }, []);
 
   return {
@@ -377,6 +472,7 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     speak,
     stopSpeaking,
     toggleMute,
+    primeSpeech,
     amplitude,
     voices,
   };
