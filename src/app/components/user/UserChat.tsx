@@ -65,6 +65,7 @@ import {
   FileDown,
   Maximize2,
   GitCompare,
+  GitBranch,
   Menu,
   MoreVertical,
   Ghost,
@@ -73,6 +74,7 @@ import {
   VolumeX,
   AudioLines,
   Lightbulb,
+  Filter,
   CheckCircle2,
   Wand2,
   ListChecks,
@@ -97,6 +99,7 @@ import {
   deriveTitle,
   hasDefaultTitle,
   sortConversations,
+  updateMessageContent,
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
@@ -107,9 +110,14 @@ import {
   rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
+  transformTextSnippet,
+  KNOWLEDGE_SCOPE_OPTIONS,
+  getCapabilities,
   type ArtifactType,
   type ChatSource,
   type ChatProductCard,
+  type KnowledgeScope,
+  type CapabilityStatus,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -140,6 +148,7 @@ import logoSrc from "../../../assets/dayjoy-logo.png";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
+import { Switch } from "../ui/switch";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -627,12 +636,46 @@ function AnswerTLDR({ text }: { text: string }) {
 const PROGRESSIVE_DISCLOSURE_THRESHOLD = 900;
 const PROGRESSIVE_DISCLOSURE_PREVIEW = 420;
 
-function DetailMarkdown({ text }: { text: string }) {
+/** Inline Follow-up (Capability 35) — a small, hover-revealed action row
+ * attached to ONE answer section rather than the whole message, reusing
+ * the existing Transform Controls machinery scoped to just that
+ * section's text. Only rendered for sections with enough content to be
+ * worth a targeted action (a one-line section doesn't need this). */
+function InlineFollowUp({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
+  if (!onTransform || text.trim().length < 80) return null;
+  return (
+    <div className="not-prose flex items-center gap-2 mt-1 mb-2 opacity-0 group-hover/section:opacity-100 transition-opacity">
+      <button
+        type="button"
+        onClick={() => onTransform("detail", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Explain
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("example", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Give example
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("actionable", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Make actionable
+      </button>
+    </div>
+  );
+}
+
+function DetailMarkdown({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > PROGRESSIVE_DISCLOSURE_THRESHOLD;
   if (!isLong || expanded) {
     return (
-      <>
+      <div className="group/section">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
           {text}
         </ReactMarkdown>
@@ -646,7 +689,8 @@ function DetailMarkdown({ text }: { text: string }) {
             Show less
           </button>
         ) : null}
-      </>
+        <InlineFollowUp text={text} onTransform={onTransform} />
+      </div>
     );
   }
   // Cut on a paragraph/sentence boundary near the preview length so the
@@ -655,7 +699,7 @@ function DetailMarkdown({ text }: { text: string }) {
   const previewEnd = cutAt > 0 && cutAt < PROGRESSIVE_DISCLOSURE_PREVIEW + 200 ? cutAt : PROGRESSIVE_DISCLOSURE_PREVIEW;
   const preview = text.slice(0, previewEnd);
   return (
-    <>
+    <div className="group/section">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
         {preview}
       </ReactMarkdown>
@@ -667,20 +711,20 @@ function DetailMarkdown({ text }: { text: string }) {
         <ChevronUp className="w-3.5 h-3.5 rotate-180" aria-hidden="true" />
         Show more
       </button>
-    </>
+    </div>
   );
 }
 
 /** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
  * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
-function AnswerContent({ content }: { content: string }) {
+function AnswerContent({ content, onTransform }: { content: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const blocks = useMemo(() => parseAnswerBlocks(content), [content]);
   return (
     <>
       {blocks.map((block, i) => {
         if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
         if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
-        return <DetailMarkdown key={i} text={block.text} />;
+        return <DetailMarkdown key={i} text={block.text} onTransform={onTransform} />;
       })}
     </>
   );
@@ -724,6 +768,7 @@ function ProductCardPhoto({ src, alt }: { src?: string | null; alt: string }) {
 
 function ProductCard({ product, hideImage = false }: { product: ChatProductCard; hideImage?: boolean }) {
   const price = product.price;
+  const [showWhy, setShowWhy] = useState(false);
   return (
     <div className="not-prose rounded-xl border border-border bg-accent/30 px-3 py-2.5 my-2 text-sm">
       <div className="flex items-start gap-2">
@@ -735,6 +780,19 @@ function ProductCard({ product, hideImage = false }: { product: ChatProductCard;
           <div className="font-semibold text-foreground truncate">{product.product_name ?? "Dayjoy product"}</div>
           {product.matched_condition ? (
             <div className="text-[11px] text-muted-foreground">Matched for: {product.matched_condition}</div>
+          ) : null}
+          {product.recommendation_strength ? (
+            <span
+              className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                product.recommendation_strength === "Strong recommendation"
+                  ? "text-primary bg-primary/10"
+                  : product.recommendation_strength === "Good option"
+                    ? "text-secondary bg-secondary/10"
+                    : "text-muted-foreground bg-accent"
+              }`}
+            >
+              {product.recommendation_strength}
+            </span>
           ) : null}
         </div>
         {price ? (
@@ -754,6 +812,26 @@ function ProductCard({ product, hideImage = false }: { product: ChatProductCard;
       ) : null}
       {product.safety_note ? (
         <p className="mt-1 text-[11px] text-warning">⚠ {product.safety_note}</p>
+      ) : null}
+      {/* Reasoning Summary (Capability 36) — safe, concise "why this
+          recommendation?" bullets, never hidden chain-of-thought. */}
+      {product.reasoning_summary && product.reasoning_summary.length > 0 ? (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            onClick={() => setShowWhy((v) => !v)}
+            className="text-[11px] text-primary hover:underline"
+          >
+            {showWhy ? "Hide" : "Why this?"}
+          </button>
+          {showWhy ? (
+            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground list-disc list-inside">
+              {product.reasoning_summary.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -789,7 +867,48 @@ export type TransformKind =
   | "compare"
   | "hinglish"
   | "example"
-  | "translate";
+  | "translate"
+  | "rewrite"
+  | "expand";
+
+/**
+ * Advanced Regeneration Controls — variants beyond a plain "try again",
+ * each appending a directive to the ORIGINAL question (not the previous
+ * answer, unlike TransformKind above) so the model regenerates from
+ * scratch with that constraint in mind, rather than editing prior output.
+ */
+export type RegenerateVariant =
+  | "accurate"
+  | "shorter"
+  | "detailed"
+  | "simpler"
+  | "professional"
+  | "actionable"
+  | "different";
+
+const REGENERATE_VARIANT_LABELS: Record<RegenerateVariant, string> = {
+  accurate: "More accurate",
+  shorter: "Shorter",
+  detailed: "More detailed",
+  simpler: "Simpler",
+  professional: "More professional",
+  actionable: "More actionable",
+  different: "Different approach",
+};
+
+const REGENERATE_VARIANT_DIRECTIVES: Record<RegenerateVariant, string> = {
+  accurate: "Please double-check accuracy and be more precise and factually careful than a typical answer.",
+  shorter: "Please answer more concisely than usual — keep only the essential point(s).",
+  detailed: "Please answer in more depth than usual, with the full reasoning and relevant specifics.",
+  simpler: "Please explain more simply, in plain everyday language.",
+  professional: "Please answer in a more polished, professional tone.",
+  actionable: "Please make the answer more actionable — concrete steps the user can act on.",
+  different: "Please answer from a different angle or approach than a typical first answer would.",
+};
+
+function buildRegeneratePrompt(variant: RegenerateVariant, originalQuestion: string): string {
+  return `${originalQuestion}\n\n(${REGENERATE_VARIANT_DIRECTIVES[variant]})`;
+}
 
 const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   simplify: (t) => `Explain this more simply, in plain everyday language:\n\n"""${t}"""`,
@@ -801,6 +920,8 @@ const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   hinglish: (t) => `Rewrite this in Hinglish (Hindi in Latin script, mixed with English the way it's commonly spoken):\n\n"""${t}"""`,
   example: (t) => `Give a concrete, realistic example that illustrates this:\n\n"""${t}"""`,
   translate: (t) => `Translate this into Hindi:\n\n"""${t}"""`,
+  rewrite: (t) => `Rewrite this to be clearer and better-worded, keeping the same meaning:\n\n"""${t}"""`,
+  expand: (t) => `Expand on this with more context and supporting detail:\n\n"""${t}"""`,
 };
 
 function buildTransformPrompt(kind: TransformKind, text: string): string {
@@ -883,6 +1004,9 @@ const SHOW_VOICE_ORB = false;
 /** Attachments are inlined as data URLs, so keep them small. */
 const MAX_ATTACHMENT_BYTES = 10_000_000;
 const MAX_ATTACHMENTS = 5;
+// Advanced File Intelligence (Capabilities 3/21/22/5) — mirrors
+// backend/main.py's MAX_ATTACHED_DOCUMENTS.
+const MAX_ATTACHED_DOCUMENTS_PER_MESSAGE = 3;
 
 type SuggestedPrompt = { title: string; text: string; icon: typeof Leaf };
 
@@ -956,6 +1080,26 @@ function getRoleWelcome(role: string | null | undefined): { label: string; cta: 
     default:
       return { label: "AI Assistant", cta: "Trusted Dayjoy knowledge, on tap." };
   }
+}
+
+/** Knowledge Conflict Resolution (Capability 9) — reads the
+ * knowledge_conflict block out of the message's (untyped) rag_metadata,
+ * if present. */
+function messageKnowledgeConflict(message: ChatMessage): {
+  category: string;
+  authoritative_document: string;
+  authoritative_updated_at: string | null;
+  other_documents: string[];
+} | null {
+  const meta = message.rag_metadata as { knowledge_conflict?: unknown } | null | undefined;
+  const conflict = meta?.knowledge_conflict;
+  if (!conflict || typeof conflict !== "object") return null;
+  return conflict as {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  };
 }
 
 /**
@@ -1082,12 +1226,58 @@ export function UserChat() {
   // (Effects that drive this loop are defined after handleSend, below.)
   const [voiceMode, setVoiceMode] = useState(false);
 
+  // Runtime capability status — vision (image understanding) is only
+  // reliably available when the backend's AI provider actually has
+  // credit right now, so this is polled live rather than assumed from
+  // env config. Polling (not one-shot) means the feature turns back on
+  // by itself in the UI within a few minutes of billing being restored,
+  // with no page reload required.
+  const [visionCapability, setVisionCapability] = useState<CapabilityStatus | null>(null);
+  const [webSearchCapability, setWebSearchCapability] = useState<CapabilityStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const caps = await getCapabilities();
+      if (!cancelled && caps) {
+        setVisionCapability(caps.vision);
+        setWebSearchCapability(caps.web_search);
+      }
+    };
+    check();
+    const interval = setInterval(check, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Tools state: camera / QR / OCR modals + attach menu
   const [cameraOpen, setCameraOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
+  const [attachments, setAttachments] = useState<
+    Array<{ name: string; dataUrl: string; kind: "image" | "document"; mime: string }>
+  >([]);
+  // Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+  // category instead of all of DayJoy's knowledge base. Persists only for
+  // this browser session (not saved to a preference) since it's a
+  // per-conversation intent, not a standing style preference.
+  const [knowledgeScope, setKnowledgeScope] = useState<KnowledgeScope>("all");
+  // Context Scope Control (Capability 15) — whether this conversation may
+  // fall back to a live web search. Session-scoped, same as knowledgeScope.
+  // Off by default, matching ChatGPT/Gemini — the user opts in to web
+  // search per session via the "+" plugins menu rather than it running
+  // silently on every message.
+  const [allowWebSearch, setAllowWebSearch] = useState(false);
+  // Smart Text Selection (Capability 34) — a floating toolbar appears when
+  // the user selects text WITHIN an assistant answer (scoped via the
+  // ".ai-prose" class on that bubble's content wrapper, so selecting a
+  // user message or page chrome never triggers it). Reuses the existing
+  // TransformKind machinery (handleTransform already accepts arbitrary
+  // text, not just the whole message) — just applied to the selection.
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number; messageId: string | null } | null>(null);
+  const [editingInPlace, setEditingInPlace] = useState(false);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1290,7 +1480,29 @@ export function UserChat() {
         follow_ups?: string[] | null;
         products?: ChatProductCard[] | null;
         clarification_options?: string[] | null;
+        evidence_strength?: string | null;
+        claim_verification?: ChatMessage["claim_verification"];
       } = {};
+
+      // Multimodal Understanding (Capabilities 1/2/19/20) — the most
+      // recently attached image, if any, rides along with THIS message
+      // only (attachments themselves stay in the persistent per-conversation
+      // gallery below, unaffected by sending).
+      const documentAttachments = attachments.filter((a) => a.kind === "document");
+      const imageAttachments = attachments.filter((a) => a.kind === "image");
+      // Advanced File Intelligence (Capabilities 3/21/22/5) — documents
+      // take priority over an image if somehow both are attached (matches
+      // the backend's own precedence in main.py's /chat handler).
+      const documentsForThisSend =
+        documentAttachments.length > 0
+          ? documentAttachments
+              .slice(-MAX_ATTACHED_DOCUMENTS_PER_MESSAGE)
+              .map((a) => ({ name: a.name, mime: a.mime, data_url: a.dataUrl }))
+          : undefined;
+      const imageForThisSend =
+        documentAttachments.length === 0 && imageAttachments.length > 0
+          ? imageAttachments[imageAttachments.length - 1].dataUrl
+          : undefined;
 
       try {
         const res = await streamChatWithBackend(
@@ -1301,6 +1513,10 @@ export function UserChat() {
             conversation_id: convId,
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
+            image_data_url: imageForThisSend,
+            attached_documents: documentsForThisSend,
+            knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
+            allow_web_search: allowWebSearch,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1330,6 +1546,8 @@ export function UserChat() {
           follow_ups: res.follow_ups,
           products: res.products,
           clarification_options: res.clarification_options,
+          evidence_strength: res.evidence_strength,
+          claim_verification: res.claim_verification,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1371,6 +1589,11 @@ export function UserChat() {
         assistantId = assistantMsg?.id ?? null;
         const displayedAssistantMsg: ChatMessage = {
           ...((assistantMsg as ChatMessage | null) ?? {
+            // Local-only fallback id (Supabase write failed or this is a
+            // temporary conversation) — without a stable id, per-message
+            // actions like feedback/copy/speak that key off message.id
+            // silently no-op, so this must always be set.
+            id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             conversation_id: convId ?? undefined,
             role: "assistant",
             content: aggregated,
@@ -1392,6 +1615,8 @@ export function UserChat() {
           follow_ups: meta.follow_ups ?? null,
           products: meta.products ?? null,
           clarification_options: meta.clarification_options ?? null,
+          evidence_strength: meta.evidence_strength ?? null,
+          claim_verification: meta.claim_verification ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -1447,6 +1672,7 @@ export function UserChat() {
             setMessages((prev) => [
               ...prev,
               (m as ChatMessage | null) ?? {
+                id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                 conversation_id: convId ?? undefined,
                 role: "assistant",
                 content: stoppedContent,
@@ -1481,7 +1707,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, allowWebSearch, attachments, currentUser, input, isTemporary, knowledgeScope, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -1549,7 +1775,7 @@ export function UserChat() {
   const handleCameraCapture = useCallback((img: CapturedImage) => {
     setAttachments((prev) => [
       ...prev,
-      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const },
+      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const, mime: img.file.type || "image/jpeg" },
     ]);
     setCameraOpen(false);
     // Pre-fill the composer with a context prompt
@@ -1587,10 +1813,14 @@ export function UserChat() {
       reader.onload = () => {
         const dataUrl = typeof reader.result === "string" ? reader.result : "";
         if (!dataUrl) return;
+        // Advanced File Intelligence (Capabilities 3/21/22/5) — a
+        // non-image attachment (PDF/Word/Excel/etc.) is sent to the
+        // backend's document-extraction path instead of the vision path.
+        const kind: "image" | "document" = file.type.startsWith("image/") ? "image" : "document";
         setAttachments((prev) =>
           prev.length >= MAX_ATTACHMENTS
             ? prev
-            : [...prev, { name: file.name, dataUrl, kind: "image" as const }],
+            : [...prev, { name: file.name, dataUrl, kind, mime: file.type || "application/octet-stream" }],
         );
       };
       reader.onerror = () => setError(`Could not read ${file.name}.`);
@@ -1677,6 +1907,28 @@ export function UserChat() {
     await handleSend(lastUserText);
   }, [activeConv, messages, handleSend]);
 
+  // ---- Advanced Regeneration Controls: same drop-trailing-then-resend
+  // shape as plain regenerate above, but resends a directive-augmented
+  // version of the ORIGINAL question rather than the verbatim text. ----
+  const handleRegenerateVariant = useCallback(
+    async (variant: RegenerateVariant) => {
+      if (!activeConv || messages.length === 0) return;
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      if (lastUserIdx === -1) return;
+      const lastUserText = messages[lastUserIdx].content;
+      setMessages((prev) => prev.slice(0, lastUserIdx + 1));
+      setInput("");
+      await handleSend(buildRegeneratePrompt(variant, lastUserText));
+    },
+    [activeConv, messages, handleSend],
+  );
+
   // ---- Feedback ----
   const handleFeedback = useCallback(
     async (messageId: string | undefined, rating: "up" | "down") => {
@@ -1686,6 +1938,9 @@ export function UserChat() {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, feedback: nextFeedback } : m)),
       );
+      // Local-only fallback ids (message never made it to Supabase) aren't a
+      // real row to update — the UI toggle above is all that can happen.
+      if (messageId.startsWith("local-")) return;
       await setMessageFeedback(messageId, nextFeedback);
     },
     [messages],
@@ -1717,9 +1972,18 @@ export function UserChat() {
     [speakingId, voice],
   );
 
+  // Clear speakingId only on a real speaking→idle transition (TTS finished
+  // naturally). Keying this off the bare `!voice.speaking` value instead
+  // raced with the async SpeechSynthesis start: setSpeakingId(id) landed in
+  // the same render as the still-stale voice.speaking === false from before
+  // the utterance's onstart fired, so this effect immediately cleared it
+  // back to null — the icon reverted to "Read aloud" while audio kept
+  // playing, and the next tap restarted playback instead of stopping it.
+  const wasSpeakingRef = useRef(false);
   useEffect(() => {
-    if (!voice.speaking && speakingId) setSpeakingId(null);
-  }, [voice.speaking, speakingId]);
+    if (wasSpeakingRef.current && !voice.speaking) setSpeakingId(null);
+    wasSpeakingRef.current = voice.speaking;
+  }, [voice.speaking]);
 
   // ---- Share a single assistant reply (native share sheet, falling back to clipboard) ----
   const handleShareMessage = useCallback(async (text: string, id: string) => {
@@ -1755,6 +2019,66 @@ export function UserChat() {
     },
     [handleSend],
   );
+
+  // ---- Smart Text Selection (Capability 34) ----
+  const handleMessagesMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (!selection || selection.rangeCount === 0 || text.length < 3) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const anchorEl =
+      selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
+    const bubbleEl = anchorEl?.closest(".ai-prose");
+    if (!bubbleEl) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const messageId = bubbleEl.getAttribute("data-message-id") || null;
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top, messageId });
+  }, []);
+
+  const handleSelectionTransform = useCallback(
+    (kind: TransformKind) => {
+      if (!selectionToolbar) return;
+      handleTransform(kind, selectionToolbar.text);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    },
+    [selectionToolbar, handleTransform],
+  );
+
+  // ---- Answer Editing, selection-scoped (Capability 12) ----
+  // Rewrites JUST the selected snippet and splices the result back into
+  // the SAME message in place, unlike every other transform above (which
+  // sends the transformation as a brand-new chat turn).
+  const handleEditInPlace = useCallback(async () => {
+    if (!selectionToolbar?.messageId) return;
+    const { text: selectedText, messageId } = selectionToolbar;
+    setEditingInPlace(true);
+    try {
+      const replacement = await transformTextSnippet(
+        selectedText,
+        "Improve the wording — keep the same meaning and any facts/numbers exactly.",
+      );
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.content.includes(selectedText)) return m;
+          const newContent = m.content.replace(selectedText, replacement);
+          void updateMessageContent(messageId, newContent);
+          return { ...m, content: newContent };
+        }),
+      );
+    } catch {
+      setError("Couldn't edit that text right now. Please try again.");
+    } finally {
+      setEditingInPlace(false);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    }
+  }, [selectionToolbar]);
 
   // ---- Save an assistant answer as a distributor follow-up task ----
   // Feature: Agentic Workflows, scoped safely — this calls the EXISTING,
@@ -1822,6 +2146,51 @@ export function UserChat() {
       }
     },
     [activeConv],
+  );
+
+  // ---- Conversation Branching (Capability 11) ----
+  // Duplicates the transcript UP TO AND INCLUDING the given message into a
+  // brand-new conversation, then navigates there — the ORIGINAL
+  // conversation is never modified, matching the brief's explicit "do not
+  // destroy the original conversation state." Lets a user try "Improve" /
+  // "Try another approach" / "Explore alternative" from any earlier point
+  // without losing the path they already have.
+  const [branching, setBranching] = useState(false);
+  const handleBranchConversation = useCallback(
+    async (uptoMessage: ChatMessage) => {
+      if (!currentUser || branching) return;
+      setBranching(true);
+      try {
+        const cutIdx = messages.findIndex((m) => m === uptoMessage);
+        const toCopy = cutIdx >= 0 ? messages.slice(0, cutIdx + 1) : messages;
+        const sourceTitle = activeConv?.title || "Conversation";
+        const branched = await createConversation(currentUser.id, `${sourceTitle} (branch)`, language);
+        if (!branched) {
+          setError("Could not create a branched conversation. Please try again.");
+          return;
+        }
+        for (const m of toCopy) {
+          await appendMessage(branched.id, {
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+            safety_status: m.safety_status ?? "safe",
+            handoff_required: m.handoff_required ?? false,
+            confidence: m.confidence ?? null,
+            verification_status: m.verification_status ?? null,
+            handoff_message: m.handoff_message ?? null,
+            rag_metadata: m.rag_metadata ?? null,
+            answer_source: m.answer_source ?? null,
+            ai_mode: m.ai_mode ?? "normal",
+          });
+        }
+        setConversations((prev) => [branched, ...prev]);
+        navigate(`/chat/${branched.id}`);
+      } finally {
+        setBranching(false);
+      }
+    },
+    [activeConv, branching, currentUser, language, messages, navigate],
   );
 
   // ---- Edit-and-resend a sent user message ----
@@ -2608,6 +2977,7 @@ export function UserChat() {
           // narrow phones and surface a stray horizontal scrollbar that
           // scrolled nothing.
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-6"
+          onMouseUp={handleMessagesMouseUp}
           aria-live="polite"
           aria-relevant="additions text"
         >
@@ -2889,6 +3259,12 @@ export function UserChat() {
                           ? handleRegenerate
                           : undefined
                       }
+                      onRegenerateVariant={
+                        m.role === "assistant" && m.id === lastAssistantId
+                          ? handleRegenerateVariant
+                          : undefined
+                      }
+                      onBranch={m.role === "assistant" ? () => handleBranchConversation(m) : undefined}
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
@@ -2952,25 +3328,8 @@ export function UserChat() {
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex gap-3 group"
+                className="flex group"
               >
-                {/* Branded avatar with thinking-state glow */}
-                <div className="relative shrink-0">
-                  <motion.div
-                    className="absolute inset-0 rounded-xl"
-                    aria-hidden="true"
-                    style={{
-                      background:
-                        "radial-gradient(circle, rgba(var(--gold-accent-rgb), 0.6) 0%, transparent 70%)",
-                      filter: "blur(8px)",
-                    }}
-                    animate={{ opacity: [0.4, 0.8, 0.4], scale: [0.95, 1.05, 0.95] }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                  <div className="relative w-9 h-9 rounded-xl overflow-hidden ring-1 ring-gold-accent/40">
-                    <DayjoyLogo variant="mark" size={36} className="block" />
-                  </div>
-                </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs mb-1 flex items-center gap-2">
                     <span className="font-semibold text-foreground">{BRAND.shortName}</span>
@@ -3074,7 +3433,7 @@ export function UserChat() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,.pdf,.txt,.csv,.doc,.docx"
+                      accept="image/*,.pdf,.txt,.csv,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.json"
                       multiple
                       className="hidden"
                       onChange={(e) => {
@@ -3111,6 +3470,38 @@ export function UserChat() {
                         className="absolute bottom-full mb-2 left-0 w-60 rounded-xl border border-border bg-card shadow-xl py-1.5 z-50"
                         role="menu"
                       >
+                        <p className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Plugins
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setAllowWebSearch((v) => !v)}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitemcheckbox"
+                          aria-checked={allowWebSearch}
+                        >
+                          <Globe className={`w-4 h-4 mt-0.5 shrink-0 ${allowWebSearch ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Web search</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {webSearchCapability && !webSearchCapability.available
+                                ? webSearchCapability.message ?? "Temporarily unavailable"
+                                : "Let Dayjoy AI look things up on the web for this chat"}
+                            </p>
+                          </div>
+                          {/* Purely visual — the enclosing button is the single
+                              source of truth for the toggle, so this doesn't
+                              own its own click/onCheckedChange handler (that
+                              double-fired against the button's onClick and
+                              flipped the value straight back). */}
+                          <Switch
+                            checked={allowWebSearch}
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            className="mt-0.5 shrink-0 pointer-events-none"
+                          />
+                        </button>
+                        <div className="my-1 h-px bg-border" aria-hidden="true" />
                         <button
                           type="button"
                           onClick={() => {
@@ -3133,31 +3524,45 @@ export function UserChat() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (visionCapability && !visionCapability.available) return;
                             setAttachMenuOpen(false);
                             setCameraOpen(true);
                           }}
-                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          disabled={!!visionCapability && !visionCapability.available}
+                          title={visionCapability && !visionCapability.available ? visionCapability.message ?? undefined : undefined}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           role="menuitem"
                         >
                           <Camera className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
                           <div>
                             <p className="text-sm font-medium">Take photo</p>
-                            <p className="text-[11px] text-muted-foreground">Capture a product label or document</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {visionCapability && !visionCapability.available
+                                ? "Temporarily unavailable"
+                                : "Capture a product label or document"}
+                            </p>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => {
+                            if (visionCapability && !visionCapability.available) return;
                             setAttachMenuOpen(false);
                             photoInputRef.current?.click();
                           }}
-                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          disabled={!!visionCapability && !visionCapability.available}
+                          title={visionCapability && !visionCapability.available ? visionCapability.message ?? undefined : undefined}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           role="menuitem"
                         >
                           <ImageIcon className="w-4 h-4 mt-0.5 text-primary shrink-0" aria-hidden="true" />
                           <div>
                             <p className="text-sm font-medium">Photo library</p>
-                            <p className="text-[11px] text-muted-foreground">Attach an image already on your device</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {visionCapability && !visionCapability.available
+                                ? "Temporarily unavailable"
+                                : "Attach an image already on your device"}
+                            </p>
                           </div>
                         </button>
                         <button
@@ -3223,6 +3628,62 @@ export function UserChat() {
                       })()}
                       {AI_MODES[aiMode].label}
                       <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                  {/* Knowledge Scope Selector (Capability 16) */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                          knowledgeScope === "all"
+                            ? "text-muted-foreground hover:bg-accent/50"
+                            : "text-primary bg-primary/10"
+                        }`}
+                        title="Choose what DayJoy AI can search"
+                        aria-haspopup="menu"
+                      >
+                        <Filter className="w-3 h-3" aria-hidden="true" />
+                        {KNOWLEDGE_SCOPE_OPTIONS.find((o) => o.value === knowledgeScope)?.label ?? "All DayJoy knowledge"}
+                        <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {KNOWLEDGE_SCOPE_OPTIONS.map((opt) => (
+                        <DropdownMenuItem key={opt.value} onClick={() => setKnowledgeScope(opt.value)}>
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {/* Context Scope Control (Capability 15) — web research on/off.
+                      Toggled from the "+" plugins menu now (ChatGPT/Gemini-style
+                      opt-in); this pill only appears once the user has actually
+                      turned it on, instead of permanently occupying composer
+                      space in either state. Shows a degraded indicator when the
+                      live capability check (webSearchCapability) knows the
+                      provider is currently failing (e.g. quota exceeded) — the
+                      toggle stays functional either way since the backend
+                      already falls back to the model's own knowledge on
+                      failure; this is a status signal, not a hard block. */}
+                  {allowWebSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => setAllowWebSearch(false)}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                        webSearchCapability && !webSearchCapability.available
+                          ? "text-warning bg-gold-accent/15 hover:bg-gold-accent/25"
+                          : "text-primary bg-primary/10 hover:bg-primary/15"
+                      }`}
+                      title={
+                        webSearchCapability && !webSearchCapability.available
+                          ? webSearchCapability.message ?? "Web research is temporarily unavailable"
+                          : "Web search is on for this chat — click to turn off"
+                      }
+                      aria-pressed="true"
+                    >
+                      <Globe className="w-3 h-3" aria-hidden="true" />
+                      {webSearchCapability && !webSearchCapability.available ? "Web search (degraded)" : "Web search"}
                     </button>
                   ) : null}
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
@@ -3323,7 +3784,16 @@ export function UserChat() {
                       className="relative w-16 h-16 rounded-xl overflow-hidden border border-border shrink-0 group shadow-sm"
                       style={{ scrollSnapAlign: "start" }}
                     >
-                      <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      {att.kind === "image" ? (
+                        <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 bg-accent/40 px-1" title={att.name}>
+                          <FileText className="w-4 h-4 text-primary" aria-hidden="true" />
+                          <span className="text-[8px] text-muted-foreground truncate w-full text-center leading-tight">
+                            {att.name}
+                          </span>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
@@ -3362,6 +3832,66 @@ export function UserChat() {
         onExtracted={handleOcrExtracted}
         title="Extract text from image"
       />
+
+      {/* Smart Text Selection (Capability 34) — floating toolbar over a
+          text selection inside an assistant answer. */}
+      {selectionToolbar ? (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 rounded-xl border border-border bg-card shadow-xl px-1 py-1"
+          style={{ left: selectionToolbar.x, top: Math.max(8, selectionToolbar.y - 44), transform: "translateX(-50%)" }}
+        >
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("detail")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Explain
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("simplify")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Simplify
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("rewrite")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Rewrite
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("expand")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Expand
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("translate")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Translate
+          </button>
+          {/* Answer Editing, selection-scoped (Capability 12) — the ONLY
+              button here that edits the message IN PLACE instead of
+              sending a new chat turn. Only offered when the message has
+              a real, persisted id to update. */}
+          {selectionToolbar.messageId ? (
+            <button
+              type="button"
+              onClick={handleEditInPlace}
+              disabled={editingInPlace}
+              className="px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+              title="Rewrite just this selection, in place"
+            >
+              {editingInPlace ? "Editing…" : "Edit"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* ============================= Sources / Related panel (overlay drawer) ============================= */}
       {/* Default CLOSED. Opens as a right-side overlay so it doesn't squeeze the chat area. */}
@@ -3527,6 +4057,43 @@ export function UserChat() {
                                 <div>
                                   <span className="text-muted-foreground">ID:</span>{" "}
                                   <span className="font-mono">{s.id}</span>
+                                </div>
+                              ) : null}
+                              {/* Source Preview System (Capability 6) — document name/
+                                  page/section/date, when the retrieval layer supplied them
+                                  (knowledge_chunks sources from document ingestion). These
+                                  fields already existed on ChatSource but were never
+                                  rendered anywhere in the UI. */}
+                              {isObj && s.document_name ? (
+                                <div>
+                                  <span className="text-muted-foreground">Document:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.document_name}
+                                    {s.document_version ? ` (v${s.document_version})` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && (s.section || s.page_number != null) ? (
+                                <div>
+                                  <span className="text-muted-foreground">Section:</span>{" "}
+                                  <span className="font-medium">
+                                    {s.section ?? "—"}
+                                    {s.page_number != null ? ` · Page ${s.page_number}` : ""}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.document_updated_at ? (
+                                <div>
+                                  <span className="text-muted-foreground">Last updated:</span>{" "}
+                                  <span className="font-medium">
+                                    {new Date(s.document_updated_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {isObj && s.score != null ? (
+                                <div>
+                                  <span className="text-muted-foreground">Relevance:</span>{" "}
+                                  <span className="font-medium">{Math.round(s.score * 100)}%</span>
                                 </div>
                               ) : null}
                               {isObj && s.url ? (
@@ -3821,22 +4388,31 @@ export function UserChat() {
                         key={`${att.name}-${idx}`}
                         className="group relative rounded-lg border border-border overflow-hidden bg-accent/20"
                       >
-                        <img
-                          src={att.dataUrl}
-                          alt={att.name}
-                          className="w-full h-24 object-cover"
-                        />
+                        {att.kind === "image" ? (
+                          <img
+                            src={att.dataUrl}
+                            alt={att.name}
+                            className="w-full h-24 object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-24 flex flex-col items-center justify-center gap-1 px-2">
+                            <FileText className="w-6 h-6 text-primary" aria-hidden="true" />
+                            <span className="text-[10px] text-muted-foreground truncate w-full text-center">{att.name}</span>
+                          </div>
+                        )}
                         {/* Overlay actions on hover */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewAttachment(att)}
-                            className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
-                            aria-label={`Preview ${att.name}`}
-                            title="Preview"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
+                          {att.kind === "image" ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewAttachment(att)}
+                              className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
+                              aria-label={`Preview ${att.name}`}
+                              title="Preview"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => handleDownloadAttachment(att)}
@@ -4241,6 +4817,8 @@ function MessageBubble({
   onCopy,
   copiedId,
   onRegenerate,
+  onRegenerateVariant,
+  onBranch,
   onSpeak,
   speakingId,
   onShare,
@@ -4262,6 +4840,8 @@ function MessageBubble({
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   onRegenerate?: () => void;
+  onRegenerateVariant?: (variant: RegenerateVariant) => void;
+  onBranch?: () => void;
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
@@ -4400,22 +4980,8 @@ function MessageBubble({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="flex gap-3 group"
+      className="flex group"
     >
-      {/* Branded avatar — Dayjoy mark with subtle halo */}
-      <div className="relative shrink-0">
-        <div
-          className="absolute inset-0 rounded-xl opacity-30 blur-md group-hover:opacity-50 transition-opacity"
-          aria-hidden="true"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(var(--primary-rgb), 0.6) 0%, transparent 70%)",
-          }}
-        />
-        <div className="relative w-9 h-9 rounded-xl overflow-hidden ring-1 ring-primary/20">
-          <DayjoyLogo variant="mark" size={36} className="block" />
-        </div>
-      </div>
       <div className="flex-1 min-w-0">
         <div className="text-xs mb-1 flex items-center gap-2">
           {(() => {
@@ -4435,6 +5001,45 @@ function MessageBubble({
                 aria-label={badge.label}
               >
                 <Icon className="w-2.5 h-2.5" aria-hidden="true" />
+              </span>
+            );
+          })()}
+          {message.evidence_strength ? (
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                message.evidence_strength === "Strongly supported" || message.evidence_strength === "Supported"
+                  ? "text-primary bg-primary/8"
+                  : message.evidence_strength === "Not verified"
+                    ? "text-muted-foreground bg-accent"
+                    : "text-warning bg-gold-accent/15"
+              }`}
+              title="Evidence Strength — how well this answer is backed by verified DayJoy sources"
+            >
+              {message.evidence_strength}
+            </span>
+          ) : null}
+          {message.claim_verification?.checked && message.claim_verification.claims.some((c) => c.state === "unverified") ? (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+              title={`Some specific claims in this answer weren't found in the evidence: ${message.claim_verification.claims
+                .filter((c) => c.state === "unverified")
+                .map((c) => c.claim)
+                .join("; ")}`}
+            >
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length} claim
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length === 1 ? "" : "s"} unverified
+            </span>
+          ) : null}
+          {(() => {
+            const conflict = messageKnowledgeConflict(message);
+            if (!conflict) return null;
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+                title={`Multiple ${conflict.category} documents matched — using the more recently updated one ("${conflict.authoritative_document}")`}
+              >
+                <HistoryIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                Updated info used
               </span>
             );
           })()}
@@ -4466,6 +5071,7 @@ function MessageBubble({
           ) : null}
         </div>
         <div
+          data-message-id={message.id ?? ""}
           className={`ai-prose prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
             isBlocked
               ? "border-destructive/30 bg-destructive/5"
@@ -4483,7 +5089,7 @@ function MessageBubble({
               ))}
             </div>
           ) : null}
-          <AnswerContent content={message.content} />
+          <AnswerContent content={message.content} onTransform={onTransform} />
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
@@ -4517,8 +5123,36 @@ function MessageBubble({
             <ThumbsDown className="w-3.5 h-3.5" aria-hidden="true" />
           </ActionButton>
           {onRegenerate ? (
-            <ActionButton onClick={onRegenerate} label="Regenerate">
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+            <>
+              <ActionButton onClick={onRegenerate} label="Regenerate">
+                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+              </ActionButton>
+              {onRegenerateVariant ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="group/action relative inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-accent/60 text-muted-foreground transition-colors"
+                      aria-label="Regeneration options"
+                      title="Regenerate with a variant"
+                    >
+                      <ChevronUp className="w-3 h-3 rotate-180" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    {(Object.keys(REGENERATE_VARIANT_LABELS) as RegenerateVariant[]).map((variant) => (
+                      <DropdownMenuItem key={variant} onClick={() => onRegenerateVariant(variant)}>
+                        {REGENERATE_VARIANT_LABELS[variant]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </>
+          ) : null}
+          {onBranch ? (
+            <ActionButton onClick={onBranch} label="Branch from here — continue in a new conversation">
+              <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
             </ActionButton>
           ) : null}
           {onSpeak ? (

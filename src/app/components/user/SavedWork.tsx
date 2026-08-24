@@ -1,0 +1,467 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  FolderOpen, Loader2, ClipboardList, FileText, GraduationCap,
+  Briefcase, BookOpen, Package, Send, History, Clock, Bell, Check,
+} from "lucide-react";
+import { AppHeader } from "../common/AppHeader";
+import { EmptyState, ErrorState } from "../common/AdminUI";
+import {
+  listArtifacts, listArtifactVersions, continueArtifact, createReminder, updateChecklistState,
+  type Artifact, type ArtifactType, type ReminderRecurrence,
+} from "../../../lib/api";
+
+/** Parses standard GFM checklist syntax ("- [ ] item" / "- [x] item") out
+ * of a checklist artifact's markdown content into individually toggleable
+ * items — plain ReactMarkdown renders these as inert (disabled) checkbox
+ * glyphs, not something the user can actually click. */
+function parseChecklistItems(content: string): string[] {
+  const lines = content.split("\n");
+  const items: string[] = [];
+  for (const line of lines) {
+    const match = line.match(/^\s*-\s*\[[ xX]\]\s*(.+)$/);
+    if (match) items.push(match[1].trim());
+  }
+  return items;
+}
+
+/** Interactive Artifacts (Capability 31) — real toggleable checkboxes for
+ * a checklist artifact, persisted server-side (in place, no new version —
+ * see updateChecklistState's own docstring). Falls back to seeding
+ * checked state from the markdown's own "[x]" markers on first load, then
+ * content_structured.checked_items becomes the source of truth. */
+function InteractiveChecklist({ artifact }: { artifact: Artifact }) {
+  const items = useMemo(() => parseChecklistItems(artifact.content), [artifact.content]);
+  const initialChecked = useMemo(() => {
+    const structured = artifact.content_structured as { checked_items?: number[] } | null | undefined;
+    if (structured?.checked_items) return new Set(structured.checked_items);
+    // Seed from the markdown's own [x] markers the first time.
+    const fromMarkdown = new Set<number>();
+    artifact.content.split("\n").forEach((line, i) => {
+      if (/^\s*-\s*\[[xX]\]/.test(line)) fromMarkdown.add(i);
+    });
+    return fromMarkdown;
+  }, [artifact.content, artifact.content_structured]);
+  const [checked, setChecked] = useState<Set<number>>(initialChecked);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = useCallback(
+    async (idx: number) => {
+      const next = new Set(checked);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      setChecked(next);
+      setSaving(true);
+      try {
+        await updateChecklistState(artifact.id, Array.from(next));
+      } catch {
+        // Best-effort — the optimistic UI state stands even if the save
+        // failed; the next successful toggle will retry persistence.
+      } finally {
+        setSaving(false);
+      }
+    },
+    [artifact.id, checked],
+  );
+
+  if (items.length === 0) return <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>;
+
+  const doneCount = items.filter((_, i) => checked.has(i)).length;
+
+  return (
+    <div className="not-prose">
+      <p className="text-xs text-muted-foreground mb-2">
+        {doneCount} of {items.length} done {saving ? "· saving…" : ""}
+      </p>
+      <ul className="space-y-1.5">
+        {items.map((item, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => toggle(i)}
+              className={`mt-0.5 w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-colors ${
+                checked.has(i) ? "bg-primary border-primary text-primary-foreground" : "border-border"
+              }`}
+              aria-label={checked.has(i) ? `Mark "${item}" as not done` : `Mark "${item}" as done`}
+              aria-pressed={checked.has(i)}
+            >
+              {checked.has(i) ? <Check className="w-3 h-3" aria-hidden="true" /> : null}
+            </button>
+            <span className={`text-sm ${checked.has(i) ? "line-through text-muted-foreground" : ""}`}>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Saved Work — Persistent Canvas / Workspace (Capability 30), Interactive
+ * Artifacts (31, partial — versioning + checklist type, no per-item check
+ * state yet), Persistent Tasks / Task Continuation (32), Answer Change
+ * Tracking (37, partial — full version list, no inline diff highlighting).
+ *
+ * The backend (backend/artifacts_api.py) already fully supported all of
+ * this — create/list/versions/continue — but nothing in the frontend ever
+ * called `listArtifacts()` or `listArtifactVersions()`; a user could save
+ * an answer as an artifact (UserChat.tsx's "Save" action) but never see,
+ * reopen, or continue it again. This page closes that gap.
+ */
+
+const TYPE_ICONS: Record<ArtifactType, typeof FileText> = {
+  action_plan: ClipboardList,
+  report: FileText,
+  checklist: ClipboardList,
+  training_plan: GraduationCap,
+  sales_plan: Briefcase,
+  summary: FileText,
+  business_document: Briefcase,
+  guide: BookOpen,
+};
+
+const TYPE_LABELS: Record<ArtifactType, string> = {
+  action_plan: "Action Plan",
+  report: "Report",
+  checklist: "Checklist",
+  training_plan: "Training Plan",
+  sales_plan: "Sales Plan",
+  summary: "Summary",
+  business_document: "Business Document",
+  guide: "Guide",
+};
+
+function formatDate(iso?: string): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function ArtifactCard({ artifact, onClick }: { artifact: Artifact; onClick: () => void }) {
+  const Icon = TYPE_ICONS[artifact.artifact_type] ?? Package;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left rounded-xl border border-border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-sm truncate">{artifact.title}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            {TYPE_LABELS[artifact.artifact_type] ?? artifact.artifact_type} · v{artifact.version}
+            {artifact.updated_at ? ` · ${formatDate(artifact.updated_at)}` : ""}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{artifact.content}</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function ArtifactDetail({ artifact, onBack, onUpdated }: {
+  artifact: Artifact;
+  onBack: () => void;
+  onUpdated: (updated: Artifact) => void;
+}) {
+  const [versions, setVersions] = useState<Artifact[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(true);
+  const [instruction, setInstruction] = useState("");
+  const [continuing, setContinuing] = useState(false);
+  const [continueError, setContinueError] = useState<string | null>(null);
+  // Scheduled / Proactive Assistance (Capability 33) — "remind me to
+  // follow up on this" against this specific artifact.
+  const [reminderDate, setReminderDate] = useState("");
+  const [reminderRecurrence, setReminderRecurrence] = useState<ReminderRecurrence>("once");
+  const [settingReminder, setSettingReminder] = useState(false);
+  const [reminderSet, setReminderSet] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+
+  const loadVersions = useCallback(async (id: string) => {
+    setVersionsLoading(true);
+    try {
+      const res = await listArtifactVersions(id);
+      setVersions(res.versions);
+    } catch {
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVersions(artifact.id);
+  }, [artifact.id, loadVersions]);
+
+  const handleContinue = useCallback(async () => {
+    const text = instruction.trim();
+    if (!text) return;
+    setContinuing(true);
+    setContinueError(null);
+    try {
+      const updated = await continueArtifact(artifact.id, text);
+      setInstruction("");
+      onUpdated(updated);
+      await loadVersions(updated.id);
+    } catch (e) {
+      setContinueError(e instanceof Error ? e.message : "Couldn't apply that change. Please try again.");
+    } finally {
+      setContinuing(false);
+    }
+  }, [artifact.id, instruction, loadVersions, onUpdated]);
+
+  const handleSetReminder = useCallback(async () => {
+    if (!reminderDate) return;
+    setSettingReminder(true);
+    setReminderError(null);
+    try {
+      await createReminder({
+        title: `Follow up: ${artifact.title}`,
+        body: `Continue your saved ${TYPE_LABELS[artifact.artifact_type]?.toLowerCase() ?? "work"}.`,
+        due_at: new Date(reminderDate).toISOString(),
+        recurrence: reminderRecurrence,
+        artifact_id: artifact.id,
+      });
+      setReminderSet(true);
+      setReminderDate("");
+    } catch (e) {
+      setReminderError(e instanceof Error ? e.message : "Couldn't set that reminder. Please try again.");
+    } finally {
+      setSettingReminder(false);
+    }
+  }, [artifact.artifact_type, artifact.id, artifact.title, reminderDate, reminderRecurrence]);
+
+  return (
+    <div className="max-w-3xl mx-auto w-full">
+      <button
+        type="button"
+        onClick={onBack}
+        className="text-xs text-muted-foreground hover:text-foreground mb-3 inline-flex items-center gap-1"
+      >
+        ← Back to Saved Work
+      </button>
+
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-5 mb-4">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h2 className="font-semibold text-base">{artifact.title}</h2>
+          <span className="text-[11px] text-muted-foreground shrink-0">
+            {TYPE_LABELS[artifact.artifact_type] ?? artifact.artifact_type} · v{artifact.version}
+          </span>
+        </div>
+        <div className="prose prose-sm dark:prose-invert max-w-none mt-3">
+          {artifact.artifact_type === "checklist" ? (
+            <InteractiveChecklist artifact={artifact} />
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>
+          )}
+        </div>
+      </div>
+
+      {/* Task Continuation — AI-assisted edit against this artifact, per the
+          brief's "Continue my distributor onboarding plan" example. */}
+      <div className="rounded-xl border border-border bg-card p-4 mb-4">
+        <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+          <Send className="w-3.5 h-3.5" aria-hidden="true" /> Continue this
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !continuing) handleContinue();
+            }}
+            placeholder="e.g. Make week 2 more aggressive, add a follow-up step…"
+            className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            disabled={continuing}
+          />
+          <button
+            type="button"
+            onClick={handleContinue}
+            disabled={continuing || !instruction.trim()}
+            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {continuing ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : null}
+            Apply
+          </button>
+        </div>
+        {continueError ? <p className="text-xs text-destructive mt-2">{continueError}</p> : null}
+      </div>
+
+      {/* Scheduled / Proactive Assistance (Capability 33) */}
+      <div className="rounded-xl border border-border bg-card p-4 mb-4">
+        <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+          <Bell className="w-3.5 h-3.5" aria-hidden="true" /> Remind me about this
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="datetime-local"
+            value={reminderDate}
+            onChange={(e) => setReminderDate(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            disabled={settingReminder}
+          />
+          <select
+            value={reminderRecurrence}
+            onChange={(e) => setReminderRecurrence(e.target.value as ReminderRecurrence)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            disabled={settingReminder}
+          >
+            <option value="once">Once</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <button
+            type="button"
+            onClick={handleSetReminder}
+            disabled={settingReminder || !reminderDate}
+            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {settingReminder ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+            ) : reminderSet ? (
+              <Check className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : null}
+            {reminderSet ? "Reminder set" : "Set reminder"}
+          </button>
+        </div>
+        {reminderError ? <p className="text-xs text-destructive mt-2">{reminderError}</p> : null}
+        <p className="text-[11px] text-muted-foreground mt-2">
+          You'll see a notification when it's due — check the bell icon in the top bar.
+        </p>
+      </div>
+
+      {/* Answer Change Tracking (Capability 37, partial) — full version
+          lineage; each version is a real, never-overwritten row. */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+          <History className="w-3.5 h-3.5" aria-hidden="true" /> Version history
+        </p>
+        {versionsLoading ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Loading…
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {versions.map((v) => (
+              <div
+                key={v.id}
+                className={`flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg ${
+                  v.id === artifact.id ? "bg-primary/8 text-primary" : "bg-accent/30 text-muted-foreground"
+                }`}
+              >
+                <span>Version {v.version}{v.id === artifact.id ? " (current)" : ""}</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" aria-hidden="true" />
+                  {formatDate(v.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function SavedWork() {
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Artifact | null>(null);
+  const [typeFilter, setTypeFilter] = useState<ArtifactType | "">("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await listArtifacts(typeFilter || undefined);
+      setArtifacts(res.artifacts);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load your saved work.");
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <AppHeader
+        title="Saved Work"
+        subtitle="Action plans, reports, and checklists you've saved from chat — pick up where you left off."
+        icon={FolderOpen}
+      />
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+          {selected ? (
+            <ArtifactDetail
+              artifact={selected}
+              onBack={() => setSelected(null)}
+              onUpdated={(updated) => {
+                setSelected(updated);
+                load();
+              }}
+            />
+          ) : (
+            <>
+              <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter("")}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    typeFilter === "" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent/50"
+                  }`}
+                >
+                  All
+                </button>
+                {(Object.keys(TYPE_LABELS) as ArtifactType[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTypeFilter(t)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      typeFilter === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent/50"
+                    }`}
+                  >
+                    {TYPE_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
+                </div>
+              ) : error ? (
+                <ErrorState message={error} />
+              ) : artifacts.length === 0 ? (
+                <EmptyState
+                  icon={<FolderOpen className="w-8 h-8" aria-hidden="true" />}
+                  title="Nothing saved yet"
+                  description='Use "Save" on an actionable chat answer (a plan, checklist, or report) to keep it here and continue it later.'
+                />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {artifacts.map((a) => (
+                    <ArtifactCard key={a.id} artifact={a} onClick={() => setSelected(a)} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -14,6 +14,7 @@ can import this module without any risk of a circular import.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Protocol, Tuple
 
@@ -116,6 +117,20 @@ class BraveProvider:
         return results
 
 
+# Live capability status, updated by real traffic rather than a separate
+# billable probe call (Tavily/Brave have no free "check my quota" endpoint
+# the way OpenAI's /v1/models list does) — see main.py's GET /capabilities,
+# which reports this for the frontend. Auto-recovers the moment a real
+# search succeeds again after a prior failure (e.g. a plan/quota limit
+# being lifted) — no restart needed, same "no fake completion, no silent
+# failure" spirit as the vision capability check.
+_last_status: dict = {"provider": None, "available": None, "reason": None, "checked_at": 0.0}
+
+
+def get_web_search_status() -> dict:
+    return dict(_last_status)
+
+
 def get_search_providers() -> List[SearchProvider]:
     """Ordered provider chain — primary first, fallback(s) after.
 
@@ -140,6 +155,8 @@ async def web_search_multi(
     providers = get_search_providers()
     any_configured = any(p.is_configured() for p in providers)
 
+    last_failure: Optional[Exception] = None
+    last_failed_provider: Optional[str] = None
     for provider in providers:
         if not provider.is_configured():
             continue
@@ -147,8 +164,20 @@ async def web_search_multi(
             results = await provider.search(query, max_results)
         except Exception as e:
             print(f"[web_search] {provider.name} failed: {e}")
+            last_failure, last_failed_provider = e, provider.name
             continue
+        _last_status.update(
+            provider=provider.name, available=True, reason=None, checked_at=time.time()
+        )
         if results:
             return results, provider.name, any_configured
+
+    if last_failure is not None:
+        reason = "quota_exceeded" if "432" in str(last_failure) else "provider_error"
+        _last_status.update(
+            provider=last_failed_provider, available=False, reason=reason, checked_at=time.time()
+        )
+    elif not any_configured:
+        _last_status.update(provider=None, available=False, reason="not_configured", checked_at=time.time())
 
     return [], None, any_configured

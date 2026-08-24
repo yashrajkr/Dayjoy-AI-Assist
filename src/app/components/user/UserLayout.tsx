@@ -33,6 +33,8 @@ import {
   Archive,
   Trash2,
   MoreVertical,
+  FolderOpen,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -51,6 +53,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { listConversations, pinConversation, archiveConversation, deleteConversation, sortConversations, type Conversation } from "../../lib/chatStore";
+import { checkDueReminders } from "../../../lib/api";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -124,6 +127,20 @@ export function UserLayout() {
     };
   }, [currentUser?.id, location.pathname]);
 
+  // Scheduled / Proactive Assistance (Capability 33) — client-triggered
+  // due-reminder check (see reminders_api.py's module docstring for why
+  // this isn't a server-side cron job): once on load, then every 5
+  // minutes while the app stays open. Best-effort — checkDueReminders()
+  // itself never throws.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    checkDueReminders();
+    const interval = setInterval(() => {
+      checkDueReminders();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
   const handlePinChat = async (id: string, pinned: boolean) => {
     setRecentChats((prev) => sortConversations(prev.map((c) => (c.id === id ? { ...c, pinned } : c))));
     await pinConversation(id, pinned);
@@ -174,11 +191,14 @@ export function UserLayout() {
   const roleLabel = formatRoleLabel(role);
 
   const paletteItems: CommandPaletteItem[] = [
+    { to: "/hub", icon: LayoutGrid, label: "AI Hub", group: "Main" },
     { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
     { to: "/voice", icon: Mic, label: "Voice Assistant", group: "Main" },
     { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
     { to: "/products", icon: Package, label: "Product Discovery", group: "Main" },
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
+    { to: "/coach", icon: Sparkles, label: "AI Coach", group: "Main" },
+    { to: "/saved", icon: FolderOpen, label: "Saved Work", group: "Main" },
     { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
     { to: "/support", icon: LifeBuoy, label: "Support Centre", group: "Main" },
@@ -319,6 +339,7 @@ export function UserLayout() {
                 scan than it needs to be. Collapsed (icon-only) mode drops
                 the labels entirely, same as before. */}
             <NavGroup label={BRAND.shortName} collapsed={collapsed}>
+              <NavItem to="/hub" icon={LayoutGrid} label="AI Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/voice" icon={Mic} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </NavGroup>
@@ -332,6 +353,8 @@ export function UserLayout() {
                   to declutter the main nav — it's a low-frequency destination
                   compared to Dashboard/Wellness. */}
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/coach" icon={Sparkles} label="AI Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/saved" icon={FolderOpen} label="Saved Work" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
                 // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,
                 // AI Sales Coach, ...) live inside the Business Hub workspace's

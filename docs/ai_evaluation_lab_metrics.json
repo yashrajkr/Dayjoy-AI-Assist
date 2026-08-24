@@ -1,0 +1,131 @@
+{
+  "sample_size": 53,
+  "errored": 0,
+  "accuracy_pct_addresses_question": null,
+  "accuracy_checked_n": 0,
+  "grounding_pass_pct": 100.0,
+  "relevance_pass_pct": 100.0,
+  "citation_correctness_pct": 100.0,
+  "clarity_pass_pct": 98.1,
+  "avg_factual_accuracy": 0.981,
+  "avg_overall_rubric_score": 0.955,
+  "avg_latency_ms": 17896.255,
+  "p95_latency_ms": 25162.8,
+  "per_category": {
+    "action_plan": {
+      "n": 3,
+      "avg_overall_score": 0.833,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 23110.4
+    },
+    "ambiguous": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17034.4
+    },
+    "business_strategy": {
+      "n": 3,
+      "avg_overall_score": 0.833,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 24018.6
+    },
+    "company_info": {
+      "n": 2,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17697.4
+    },
+    "comparison": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17788.1
+    },
+    "compensation": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16575.4
+    },
+    "customer_support": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16876.2
+    },
+    "follow_up": {
+      "n": 3,
+      "avg_overall_score": 0.944,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17163.3
+    },
+    "hinglish": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 15678.6
+    },
+    "onboarding": {
+      "n": 3,
+      "avg_overall_score": 0.778,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17605.3
+    },
+    "policy": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16674.8
+    },
+    "pricing": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 18097.6
+    },
+    "products": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16158.0
+    },
+    "recommendation": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 19987.1
+    },
+    "safety": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17093.9
+    },
+    "training": {
+      "n": 3,
+      "avg_overall_score": 0.889,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16386.7
+    },
+    "unsupported": {
+      "n": 3,
+      "avg_overall_score": 0.933,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 16698.4
+    },
+    "uploaded_document": {
+      "n": 3,
+      "avg_overall_score": 1.0,
+      "grounding_pass_pct": 100.0,
+      "avg_latency_ms": 17421.9
+    }
+  },
+  "user_satisfaction": {
+    "available": true,
+    "sample_size": 1,
+    "thumbs_up": 1,
+    "thumbs_down": 0,
+    "satisfaction_rate": 1.0
+  }
+}

@@ -53,7 +53,7 @@ def authed_client(client, monkeypatch):
 
 
 def _never_called_retrieve_context(monkeypatch, calls: list):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         calls.append(message)
         return "", [], "general", None
 
@@ -102,6 +102,31 @@ def test_pricing_found_skips_rag_and_uses_structured_context(authed_client, monk
     assert card["product_id"] == "P-1"
     assert card["product_name"] == "Dayjoy Turmeric"
     assert card["price"] == {"mrp": 999, "dp": 799, "bv": 50, "pv": 50, "currency": "INR"}
+    # Evidence Strength Indicator — a structured pricing hit is a verified
+    # DB row, so it must read as the strongest label, not a generic one.
+    assert body["evidence_strength"] == "Strongly supported"
+
+
+def test_evidence_strength_unverified_when_no_sources(authed_client, monkeypatch):
+    rag_calls: list = []
+    _never_called_retrieve_context(monkeypatch, rag_calls)
+
+    async def _fake_pricing_run(token, message):
+        return {"found": False}
+
+    monkeypatch.setattr(backend_main.pricing_tool, "run", _fake_pricing_run)
+
+    res = authed_client.post(
+        "/chat",
+        json={"message": "What is the DP of a made-up product?", "role": "customer", "language": "English"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    # No LLM configured in this isolated test (GROQ/OPENAI cleared) and no
+    # structured/RAG evidence found — the answer is the degraded fallback
+    # with zero sources, which must read as "Not verified", never a
+    # stronger label than the evidence actually supports.
+    assert body["evidence_strength"] == "Not verified"
 
 
 def test_pricing_compound_question_merges_kb_context_in_parallel(authed_client, monkeypatch):
@@ -111,7 +136,7 @@ def test_pricing_compound_question_merges_kb_context_in_parallel(authed_client, 
     instead of only ever answering the price half."""
     kb_calls: list = []
 
-    async def _stub_kb(token, message, limit_per_table=3):
+    async def _stub_kb(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         kb_calls.append(message)
         return "Dayjoy Turmeric contains 95% curcuminoids and black pepper extract.", [], "product", None
 
@@ -171,7 +196,7 @@ def test_recommendation_ok_skips_rag_and_uses_structured_context(authed_client, 
     kb_calls: list = []
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context("", category="general"))
 
-    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         kb_calls.append(message)
         return "", [], "general", None
 
@@ -220,7 +245,7 @@ def test_recommendation_ok_merges_supporting_kb_context(authed_client, monkeypat
     material, it's appended (clearly labeled) alongside the authoritative
     structured recommendation — not silently dropped, not replacing it."""
 
-    async def _stub_kb(token, message, limit_per_table=3):
+    async def _stub_kb(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "Ashwagandha is an adaptogen traditionally used for stress support.", [], "product", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_kb)
@@ -276,7 +301,7 @@ def test_recommendation_needs_clarification_returns_question_directly(authed_cli
 def test_recommendation_insufficient_evidence_falls_through_to_rag(authed_client, monkeypatch):
     rag_calls: list = []
 
-    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _tracking_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         rag_calls.append(message)
         return "", [], "general", None
 
@@ -304,7 +329,7 @@ def test_recommendation_insufficient_evidence_falls_through_to_rag(authed_client
 
 
 def _stub_retrieve_context(context: str, sources=None, category: str = "general", rag_metadata=None):
-    async def _stub(token, message, limit_per_table=3, top_k=None):
+    async def _stub(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return context, sources or [], category, rag_metadata
 
     return _stub
@@ -523,3 +548,184 @@ def test_refinement_loop_does_not_fire_without_retrieved_evidence(authed_client,
     )
     assert res.status_code == 200
     assert call_count["n"] == 1  # no refinement retry — no evidence to refine against
+
+
+# ---------------------------------------------------------------------------
+# Contradiction Detector (backend/orchestrator/contradiction.py), Capability 26
+# ---------------------------------------------------------------------------
+
+
+def test_contradiction_detected_triggers_corrective_retry(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "stream_groq",
+        _stub_stream_groq([
+            ["The price is 799, but elsewhere it's 899."],  # first pass: self-contradictory
+            ["The price is 799."],  # corrective retry
+        ]),
+    )
+    # Relevance check always passes — isolates this test to the
+    # contradiction path specifically.
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    contradiction_calls: list = []
+
+    async def _fake_detect_contradiction(answer, context):
+        # Single-shot by design (bounded to one extra LLM call per
+        # request, same reasoning as the relevance-mismatch retry) — the
+        # corrective retry's own output is NOT re-checked for
+        # contradiction, just served as-is.
+        contradiction_calls.append(answer)
+        return ContradictionVerdict(has_contradiction=True, explanation="States price is both 799 and 899.", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _fake_detect_contradiction)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the price?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert "899" not in body["answer"]
+    assert "The price is 799." in body["answer"]
+    assert len(contradiction_calls) == 1
+
+
+def test_chat_stream_contradiction_flags_handoff_without_retry(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([["The price is 799, but also 899."]]))
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _fake_detect_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=True, explanation="Price stated twice, differently.", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _fake_detect_contradiction)
+
+    with authed_client.stream(
+        "POST", "/chat/stream", json={"message": "What is the price?", "role": "customer", "language": "English"}
+    ) as res:
+        body = b"".join(res.iter_bytes()).decode()
+    assert '"handoff_required": true' in body or '"handoff_required":true' in body
+    assert "contradiction" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Citation Verification / Claim-Level Grounding (claim_verify.py), Capabilities 7, 8
+# ---------------------------------------------------------------------------
+
+
+def test_chat_endpoint_includes_claim_verification_for_substantive_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    long_answer = "Dayjoy Turmeric's DP is 799 rupees, and it is one of our most popular wellness products. " * 2
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([[long_answer]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    from backend.orchestrator.claim_verify import ClaimVerdict, ClaimVerificationResult
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        return ClaimVerificationResult(
+            claims=[ClaimVerdict(claim="DP is 799", state="verified")], checked=True,
+        )
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP of Dayjoy Turmeric?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(claim_calls) == 1
+    assert body["claim_verification"]["checked"] is True
+    assert body["claim_verification"]["claims"][0]["claim"] == "DP is 799"
+
+
+def test_chat_endpoint_skips_claim_verification_for_short_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([["It's 799."]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        raise AssertionError("should not be called for a short answer")
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    assert res.json()["claim_verification"] is None
+    assert claim_calls == []

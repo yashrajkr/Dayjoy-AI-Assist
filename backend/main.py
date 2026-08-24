@@ -20,6 +20,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -39,7 +40,7 @@ from pydantic import BaseModel, Field
 from collections import defaultdict
 import time
 
-from backend.search_providers import get_search_providers, web_search_multi
+from backend.search_providers import get_search_providers, get_web_search_status, web_search_multi
 from backend.ai_modes import normalize_ai_mode, top_k_for, addendum_for
 
 load_dotenv()
@@ -125,11 +126,38 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Multimodal Understanding (Capabilities 1/2/19/20) — vision-capable model.
+# Live-verified against this account's actual Groq API key (GET
+# https://api.groq.com/openai/v1/models): zero vision-capable models are
+# available on it today (only text models: gpt-oss-120b/20b, qwen3.6-27b,
+# whisper, etc.) — so this deliberately does NOT default to a Groq model.
+# gpt-4o-mini (OPENAI_MODEL's own default) IS vision-capable and is reused
+# here rather than introducing a second model env var; if OPENAI_API_KEY is
+# unset or the account has no credit, image understanding degrades to a
+# clear "not available right now" message (see stream_vision_response)
+# rather than a raw provider error.
+VISION_MODEL = os.getenv("VISION_MODEL", OPENAI_MODEL)
 # Web search API keys (TAVILY_API_KEY, BRAVE_API_KEY) are read directly by
 # their provider classes in backend/search_providers.py, not here.
 ANALYTICS_TABLE = "analytics"  # matches supabase_schema.sql + supabase_schema_v2.sql
 MAX_MESSAGE_LENGTH = 4000
 MAX_HISTORY_TURNS = 6
+# Multimodal Understanding (Capabilities 1/2/19/20) — max length of an
+# attached image's data: URL. ~6M chars ≈ 4.4MB decoded (base64 is ~1.37x
+# source size), loosely matching the frontend's own MAX_ATTACHMENT_BYTES=
+# 10_000_000 cap; enforced independently here since a request can reach
+# this endpoint without going through that UI at all.
+MAX_IMAGE_DATA_URL_CHARS = 6_000_000
+# Advanced File Intelligence (Capabilities 3, 21, 22, 5) — same reasoning
+# as MAX_IMAGE_DATA_URL_CHARS above, sized larger since PDFs/DOCX/XLSX
+# legitimately run bigger than a typical photo. ~16.4MB decoded per file.
+MAX_DOCUMENT_DATA_URL_CHARS = 22_000_000
+MAX_ATTACHED_DOCUMENTS = 3
+# Extracted text is capped per-document before it ever reaches an LLM
+# prompt — a large PDF's full text could otherwise blow the context
+# window on its own; this is generous enough for real document Q&A while
+# keeping a hard ceiling (~10k tokens/doc at ~4 chars/token).
+MAX_EXTRACTED_TEXT_CHARS_PER_DOC = 40_000
 
 # AI Orchestrator (backend/orchestrator/) — Phase 1: intent classification +
 # query planning run alongside the existing `_route_events` router purely for
@@ -338,6 +366,17 @@ async def supabase_delete(
 # ----------------------------------------------------------------------------
 # Models
 # ----------------------------------------------------------------------------
+class AttachedDocument(BaseModel):
+    """One user-attached document (Capabilities 3/21/22/5). `data_url` is a
+    base64 data: URL captured client-side the same way image attachments
+    already are — no binary upload endpoint needed for this ephemeral,
+    per-message use (contrast with backend/artifacts_api.py's persisted
+    file storage, a different concern)."""
+    name: str = Field(..., min_length=1, max_length=255)
+    mime: Optional[str] = None
+    data_url: str = Field(..., max_length=MAX_DOCUMENT_DATA_URL_CHARS)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
     role: str = Field("customer")
@@ -355,6 +394,39 @@ class ChatRequest(BaseModel):
     # values fall back to "normal" in ai_modes.get_mode_config rather than
     # raising, so a stale client sending an unrecognized mode still works.
     ai_mode: str = "normal"
+    # Multimodal Understanding (Capabilities 1/2/19/20) — a single attached
+    # image as a data: URL (the frontend already captures this via
+    # FileReader.readAsDataURL when a user attaches an image). Optional;
+    # when present, both /chat and /chat/stream answer from the image via
+    # stream_vision_response() instead of the normal RAG/routing pipeline.
+    image_data_url: Optional[str] = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)
+    # Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+    # category ("products"/"training"/"policies"/"faqs") instead of all of
+    # DayJoy's knowledge base. "all"/None (the default) is unchanged prior
+    # behavior. Validated against KNOWLEDGE_SCOPES at the route handler
+    # (defined after this class) rather than here, to avoid a forward
+    # reference — an unrecognized value is rejected with a 422, not
+    # silently ignored.
+    knowledge_scope: Optional[str] = None
+    # Context Scope Control (Capability 15) — the general form of this
+    # capability (toggle memory/DayJoy KB/uploaded files/tools too) would
+    # risk breaking core answer correctness for signals other than web
+    # search, which is already a clean optional enrichment step — so this
+    # covers the ONE scope toggle that's safe to expose: whether this
+    # message is allowed to fall back to a live web search. True (default)
+    # is unchanged prior behavior.
+    allow_web_search: bool = True
+    # Advanced File Intelligence / PDF Intelligence / Document Comparison /
+    # Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — up to
+    # MAX_ATTACHED_DOCUMENTS files (PDF/DOCX/PPTX/XLSX/CSV/TXT/JSON, the
+    # SAME formats backend/rag/extractors.py already parses for the admin
+    # knowledge-ingestion pipeline, reused here rather than reimplemented).
+    # When present, both /chat and /chat/stream answer from the extracted
+    # text via stream_document_response() instead of the normal RAG
+    # pipeline — 2+ documents naturally supports comparison/cross-document
+    # reasoning since the extracted text of every document is placed in
+    # context together.
+    attached_documents: Optional[List[AttachedDocument]] = None
 
 
 class TitleRequest(BaseModel):
@@ -363,6 +435,15 @@ class TitleRequest(BaseModel):
 
 class TitleResponse(BaseModel):
     title: str
+
+
+class TransformTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=3000)
+    instruction: str = Field(..., min_length=1, max_length=200)
+
+
+class TransformTextResponse(BaseModel):
+    result: str
 
 
 def _fallback_title(text: str, max_len: int = 48) -> str:
@@ -378,6 +459,19 @@ class ChatSource(BaseModel):
     id: str
     title: Optional[str] = None
     url: Optional[str] = None
+
+
+# Evidence Strength Indicator — maps answer_validate.py's internal
+# GROUNDING_* states onto the exact qualitative labels the brief asks for.
+# Deliberately five discrete strings, never a numeric confidence score (the
+# brief explicitly prohibits fabricated confidence percentages).
+_EVIDENCE_STRENGTH_LABELS = {
+    "verified": "Strongly supported",
+    "recommendation": "Supported",
+    "ai_analysis": "Partially supported",
+    "assumption": "Needs verification",
+    "unverified": "Not verified",
+}
 
 
 class ChatResponse(BaseModel):
@@ -417,6 +511,20 @@ class ChatResponse(BaseModel):
     # clarifying-question answer (orchestrator/clarify.py). Empty for
     # every non-clarification route.
     clarification_options: List[str] = []
+    # Evidence Strength Indicator — a qualitative label derived from
+    # answer_validate.py's existing 5-state grounding classification
+    # (verified/ai_analysis/recommendation/assumption/unverified), which was
+    # previously computed only for internal observability logging and never
+    # returned to the client. Deliberately qualitative, never a fabricated
+    # confidence percentage — see _EVIDENCE_STRENGTH_LABELS below.
+    evidence_strength: Optional[str] = None
+    # Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+    # per-claim verified/ai_analysis/assumption/unverified breakdown from
+    # orchestrator/claim_verify.py. None when the answer didn't qualify
+    # for claim-level checking (too short, not RAG-sourced) or the check
+    # itself couldn't run (no LLM configured, network error) — absence
+    # here is "not checked," never "nothing wrong found."
+    claim_verification: Optional[Dict[str, Any]] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -504,11 +612,36 @@ from backend.orchestrator.conversation_state import build_conversation_state  # 
 from backend.orchestrator.quality import score_answer  # noqa: E402
 from backend.orchestrator.refinement import build_refinement_instruction, needs_refinement  # noqa: E402
 
-# Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
-# Intelligence Layer capabilities 1-2).
-from backend.orchestrator.quality_router import route_query  # noqa: E402
-from backend.orchestrator.user_goal import analyze_user_goal  # noqa: E402
+# Multi-Step Reasoning Pipeline (Advanced Intelligence Layer capability 2).
 from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
+
+# AI Orchestration Brain (Next-Generation spec, Phase 1) — consolidates
+# build_plan + quality_router.route_query + user_goal.analyze_user_goal
+# into one typed decision (see orchestrator.py's own docstring for why
+# this doesn't replace the fine-tuned heuristics elsewhere in this file),
+# used below as the single source of truth for the reasoning-pipeline
+# trigger instead of three separate calls.
+from backend.orchestrator.orchestrator import orchestrate  # noqa: E402
+
+# Specialized Agent System (Next-Generation spec, Phase 2) — a deterministic
+# Supervisor -> Specialist dispatch on top of the same OrchestrationDecision,
+# threaded into custom_guidance below so the answer is actually framed by
+# which specialist handled it (persona/scope guidance), not just labeled for
+# observability. See agents.py's own docstring for the honest scope of what
+# this does and doesn't enforce.
+from backend.orchestrator.agents import dispatch as dispatch_agent  # noqa: E402
+
+
+def _agent_guidance_addendum(message: str, has_attachment: bool = False) -> str:
+    """Best-effort — a dispatch failure must never break the answer, so this
+    degrades to an empty addendum (no persona framing) rather than raising."""
+    try:
+        decision = orchestrate(message)
+        result = dispatch_agent(decision, has_attachment=has_attachment)
+        _llm_logger.debug("agent_dispatch=%s reason=%s", result.agent, result.reason)
+        return result.guidance
+    except Exception:
+        return ""
 
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
@@ -532,6 +665,8 @@ from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION, IN
 # Post-generation answer-relevance check — see module docstring for why this
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
+from backend.orchestrator.contradiction import detect_contradiction  # noqa: E402
+from backend.orchestrator.claim_verify import should_verify_claims, verify_claims  # noqa: E402
 
 # Contextual follow-up suggestions — was fully built and tested
 # (backend/tests/ has no direct test file yet, but the module is pure/
@@ -545,6 +680,12 @@ from backend.orchestrator.followups import generate_followups  # noqa: E402
 # Structured Response JSON — parsed from the answer's own markdown (see
 # module docstring for why this is safer than asking the LLM for raw JSON).
 from backend.orchestrator.answer_structure import structure_answer  # noqa: E402
+from backend.orchestrator.answer_validate import classify_grounding_state  # noqa: E402
+from backend.orchestrator.knowledge_conflict import (  # noqa: E402
+    ConflictInfo,
+    build_conflict_guidance,
+    detect_conflict as detect_knowledge_conflict,
+)
 
 # Personalization — was fully built (context_builder.py's labeled-block
 # assembly, tools/memory.py's recency+pinned-scored memory read) but never
@@ -613,11 +754,20 @@ SEARCH_TABLES = [
 ]
 
 
+# Knowledge Scope Selector (Capability 16) — maps a user-facing scope value
+# onto the category tags SEARCH_TABLES/RAG documents already carry. "all"
+# or None (the default) applies no filter — 100% unchanged behavior for
+# every existing caller that doesn't pass a scope.
+KNOWLEDGE_SCOPES = ("all", "products", "training", "policies", "faqs")
+_SCOPE_TO_CATEGORY = {"products": "product", "training": "training", "policies": "policy", "faqs": "faq"}
+
+
 async def retrieve_context(
     token: Optional[str],
     message: str,
     limit_per_table: int = 3,
     top_k: Optional[int] = None,
+    knowledge_scope: Optional[str] = None,
 ) -> Tuple[str, List[ChatSource], str, Optional[Dict[str, Any]]]:
     """Pull approved rows and rank by simple token overlap.
 
@@ -627,11 +777,18 @@ async def retrieve_context(
     (products / faqs / policies / training). The two are merged with RAG
     sources taking priority.
 
+    `knowledge_scope` (Capability 16 — Knowledge Scope Selector), one of
+    KNOWLEDGE_SCOPES, narrows retrieval to ONE category — "products",
+    "training", "policies", or "faqs" — for BOTH the RAG chunk path and
+    the legacy keyword-table path. "all"/None (the default) applies no
+    filter, matching every prior caller's existing behavior exactly.
+
     Returns (context_string, sources, best_category, rag_metadata).
     `rag_metadata` is None when RAG is unavailable; otherwise it
     contains confidence / verification_status / matched_documents /
     related_items for the chat response.
     """
+    scope_category = _SCOPE_TO_CATEGORY.get(knowledge_scope or "all")
     tokens = {t for t in re.split(r"[^a-z0-9]+", message.lower()) if len(t) >= 3}
 
     rag_metadata: Optional[Dict[str, Any]] = None
@@ -650,6 +807,10 @@ async def retrieve_context(
                 log_query=False,  # chat endpoint logs analytics separately
                 top_k=top_k,
             )
+            if scope_category:
+                rag_result.chunks = [
+                    c for c in rag_result.chunks if c.document_category == scope_category
+                ]
             if rag_result.chunks:
                 rag_context_parts.append(rag_result.to_context_string(max_chars=3000))
                 for c in rag_result.chunks:
@@ -689,6 +850,13 @@ async def retrieve_context(
                     "evidence_sufficient": rag_result.evidence_sufficient,
                     "evidence_reason": rag_result.evidence_reason,
                 }
+                # Knowledge Conflict Resolution (Capability 9) — flags a
+                # same-category multi-document match with distinguishable
+                # update dates (e.g. old policy vs. new policy both
+                # matched), recommends the newer one as authoritative.
+                conflict = detect_knowledge_conflict(rag_result.matched_documents)
+                if conflict:
+                    rag_metadata["knowledge_conflict"] = conflict.to_dict()
                 # Best-effort fetch related items
                 try:
                     rag_result = await retriever.fetch_related(rag_result, token=token)
@@ -708,6 +876,8 @@ async def retrieve_context(
     if tokens:
         best_score = 0
         for table, title_col, extra_cols, category, table_filters in SEARCH_TABLES:
+            if scope_category and category != scope_category:
+                continue
             # limit=1000: this fetches the full approved-row candidate pool
             # for client-side token-overlap scoring below, not the number of
             # results actually used (limit_per_table caps that at 3). 200
@@ -956,7 +1126,8 @@ async def _route_from_kb_result(
 
 
 async def _route_events(
-    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
+    knowledge_scope: Optional[str] = None, allow_web_search: bool = True,
 ) -> AsyncIterator[Tuple[str, Any]]:
     """Router core, shared by /chat and /chat/stream so routing logic can't
     drift between the two endpoints.
@@ -1210,26 +1381,24 @@ async def _route_events(
     # assumptions the rest of this function is built around — see that
     # module's docstring for why that isolation is what makes this safe to
     # wire in as one branch instead of a riskier rewrite of the shared path.
-    quality_decision = route_query(message, plan.intent, plan)
-    # User Goal Analyzer — internal-only structured representation of what
-    # the user actually wants, assembled from signals already computed
-    # above (intent + routing decision), never re-classified with an extra
-    # LLM call. Logged for observability only; never sent to the client or
-    # used to gate behaviour, so a bad guess here can't break an answer.
-    try:
-        goal_profile = analyze_user_goal(message, plan.intent, quality_decision)
-        _llm_logger.debug("user_goal_profile=%s", goal_profile.to_dict())
-    except Exception:
-        pass
-    if quality_decision.use_reasoning:
+    # AI Orchestration Brain — one consolidated decision (intent, strategy,
+    # evidence requirements, response format, internal goal profile) instead
+    # of separately calling route_query + analyze_user_goal. The internal
+    # goal/knowledge-level fields are logged for observability only, never
+    # sent to the client or used to gate behaviour (a bad guess there can't
+    # break an answer) — `requires_reasoning`/`top_k_hint` are the one part
+    # of this decision that actually drives execution below, same as before.
+    decision = orchestrate(message)
+    _llm_logger.debug("orchestration_decision=%s", decision.to_dict())
+    if decision.requires_reasoning:
         yield ("status", "analyzing")
-        route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
+        route_result = await run_reasoning_pipeline(token, message, top_k=decision.top_k_hint)
         yield ("result", route_result)
         return
 
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(
-        token, message, top_k=top_k_for(ai_mode)
+        token, message, top_k=top_k_for(ai_mode), knowledge_scope=knowledge_scope
     )
 
     # A non-empty `context` string doesn't mean the retrieved chunks were
@@ -1253,7 +1422,7 @@ async def _route_events(
     used_web_search = False
     mode = "dayjoy"
 
-    if has_context and wants_hybrid_comparison(message):
+    if has_context and wants_hybrid_comparison(message) and allow_web_search:
         # Dayjoy match + an explicit comparison cue: pull web results too so
         # the model can reason across both, with each claim clearly
         # attributed (see HYBRID_MODE_ADDENDUM below).
@@ -1273,7 +1442,7 @@ async def _route_events(
         # question that never left the server.
         category = "general"
         answer_source = "general_llm"
-    elif not has_context:
+    elif not has_context and allow_web_search:
         # No approved Dayjoy knowledge matched (or what matched was too
         # weak to trust) — fall back to a live web search for general
         # questions (world events, general facts) instead of the model
@@ -1290,6 +1459,12 @@ async def _route_events(
             # all once we've decided not to trust them for routing — leaving
             # `context` in would let the model quote them anyway.
             context = ""
+    elif not has_context:
+        # Context Scope Control (Capability 15) — web research explicitly
+        # disabled for this message: answer from general knowledge rather
+        # than silently falling back to a web search the user turned off.
+        answer_source = "general_llm"
+        context = ""
     else:
         answer_source = "dayjoy_knowledge"
 
@@ -1500,7 +1675,8 @@ async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Option
 
 
 def _assemble_compressed_context(
-    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str
+    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str,
+    task_memory_context: Optional[str] = None,
 ) -> str:
     """Context Compression (orchestrator/context_compress.py) — replaces the
     previous plain "\\n\\n".join() of these four blocks with dedup +
@@ -1508,16 +1684,39 @@ def _assemble_compressed_context(
     highest-priority (never dropped except under extreme budget pressure);
     web results are lowest, since they're supplementary even in hybrid mode
     (HYBRID_MODE_ADDENDUM already tells the model Dayjoy context wins on any
-    conflict)."""
+    conflict). `task_memory_context` (Memory 2.0's task-memory layer,
+    orchestrator/memory_context.py) is the user's own active AI Coach
+    goals/next-steps — same priority tier as personalization, since it's
+    similarly "about this user" rather than approved knowledge."""
     blocks = [
         ContextBlock(label="Current date/time", text=time_context, priority=1) if time_context else None,
         ContextBlock(label="Approved Dayjoy knowledge", text=dayjoy_context, priority=1) if dayjoy_context else None,
         ContextBlock(label="Personalization", text=personalization_context, priority=2)
         if personalization_context
         else None,
+        ContextBlock(label="Active goals", text=task_memory_context, priority=2)
+        if task_memory_context
+        else None,
         ContextBlock(label="Web", text=web_context, priority=3) if web_context else None,
     ]
     return compress_context([b for b in blocks if b is not None])
+
+
+async def _maybe_task_memory_context(token: Optional[str], user_id: Optional[str], casual: bool) -> str:
+    """Memory 2.0's task-memory layer (orchestrator/memory_context.py) — the
+    user's own active AI Coach goals/next-steps, so a brand-new
+    conversation ("what should I work on today?") can still draw on a goal
+    set up in a PAST conversation, which conversation_state.py's
+    history-only open_task can't see. Best-effort: any failure here must
+    never block the chat response."""
+    if casual or not user_id:
+        return ""
+    try:
+        from backend.orchestrator.memory_context import task_memory_prompt_block
+
+        return await task_memory_prompt_block(token, user_id)
+    except Exception:
+        return ""
 
 
 async def _maybe_personalization_context(
@@ -1575,6 +1774,88 @@ async def _maybe_personalization_context(
     ).to_prompt_blocks()
 
 
+# Answer Personalization Controls (Capability 14) — recognized preference
+# keys, written either by Settings (see UserSettings.tsx's Response style
+# section) or by the existing User Preference Learning auto-save
+# (trackTransformUsage() in UserChat.tsx after repeated manual transform
+# use). Maps each key/value onto a plain-English system-prompt directive.
+_PERSONALIZATION_DIRECTIVES: Dict[str, Dict[str, str]] = {
+    "preferred_detail": {
+        "short": "Keep answers concise by default — only the essential point(s).",
+        "concise": "Keep answers concise by default — only the essential point(s).",
+        "balanced": "",  # default behavior — no directive needed
+        "detailed": "Prefer more detailed answers by default — include the full reasoning and relevant specifics.",
+    },
+    "preferred_explanation_level": {
+        "simple": "Explain things in plain, everyday language by default — avoid jargon unless the user uses it first.",
+    },
+    "preferred_response_style": {
+        "actionable": "Prefer actionable framing by default — concrete steps over pure explanation.",
+        "professional": "Use a polished, professional tone by default.",
+        "simple": "Use simple, plain language by default.",
+    },
+    "preferred_language": {
+        "Hindi": "Prefer responding in Hindi by default, unless the user writes in another language.",
+        "Hinglish": "Prefer responding in Hinglish (Hindi in Latin script mixed with English) by default, unless the user writes in another language.",
+    },
+}
+
+
+async def _personalization_style_addendum(token: Optional[str], user_id: Optional[str]) -> str:
+    """Turns the user's own saved preferences (Settings or auto-learned)
+    into an explicit system-prompt directive — previously these preference
+    keys were only ever surfaced as inert "known facts about the user" text
+    (via _maybe_personalization_context, itself gated to reference/
+    recommendation-shaped messages only), which an LLM has no reliable
+    reason to treat as a standing behavioral instruction. This runs on
+    every authenticated message, not conditionally, since a saved style
+    preference should apply everywhere, and is one cheap already-indexed
+    query (list_memory) reused, not a new one."""
+    if not token or not user_id:
+        return ""
+    try:
+        items = await list_memory(token, user_id, limit=20)
+    except Exception:
+        return ""
+    directives: List[str] = []
+    seen_keys = set()
+    for item in items:
+        if not item.key or item.key in seen_keys or item.key not in _PERSONALIZATION_DIRECTIVES:
+            continue
+        directive = _PERSONALIZATION_DIRECTIVES[item.key].get(item.value)
+        if directive:
+            directives.append(directive)
+        seen_keys.add(item.key)
+    if not directives:
+        return ""
+    return "User's saved preferences (apply by default, but always follow explicit in-message instructions first):\n" + "\n".join(
+        f"- {d}" for d in directives
+    )
+
+
+def _conflict_guidance_from_rag_metadata(rag_metadata: Optional[Dict[str, Any]]) -> str:
+    """Knowledge Conflict Resolution (Capability 9) — reads the
+    `knowledge_conflict` dict retrieve_context() already computed (via
+    detect_knowledge_conflict) and turns it into a system-prompt
+    directive. Rebuilding a ConflictInfo from the dict rather than passing
+    the dataclass through RouteResult keeps rag_metadata as the single
+    source of truth for this (already serialized into ChatResponse), not
+    a second parallel field."""
+    if not rag_metadata:
+        return ""
+    conflict = rag_metadata.get("knowledge_conflict")
+    if not conflict:
+        return ""
+    return build_conflict_guidance(
+        ConflictInfo(
+            category=conflict["category"],
+            authoritative_document=conflict["authoritative_document"],
+            authoritative_updated_at=conflict.get("authoritative_updated_at"),
+            other_documents=conflict.get("other_documents") or [],
+        )
+    )
+
+
 def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]:
     """Shared by /chat and /chat/stream — was previously duplicated inline in
     both (see git history), which is exactly how this endpoint pair drifted
@@ -1592,10 +1873,11 @@ def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]
 
 
 async def determine_route(
-    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
+    knowledge_scope: Optional[str] = None, allow_web_search: bool = True,
 ) -> RouteResult:
     """Non-streaming convenience wrapper around `_route_events` — used by /chat."""
-    async for kind, payload in _route_events(token, message, casual, ai_mode):
+    async for kind, payload in _route_events(token, message, casual, ai_mode, knowledge_scope, allow_web_search):
         if kind == "result":
             return payload
     raise AssertionError("_route_events did not yield a result")  # pragma: no cover
@@ -1833,6 +2115,203 @@ async def stream_openai(
         yield tok
 
 
+_ALLOWED_IMAGE_MIME_PREFIXES = ("data:image/jpeg", "data:image/png", "data:image/webp", "data:image/gif")
+
+_vision_logger = logging.getLogger("dayjoy.vision")
+
+
+def validate_image_data_url(data_url: str) -> Optional[str]:
+    """Returns an error message if `data_url` is unsafe/malformed to send to
+    a vision model, else None. Defense in depth even though the frontend
+    already caps size/type at capture time — this endpoint must not trust
+    that any caller went through that UI path."""
+    if not data_url.startswith(_ALLOWED_IMAGE_MIME_PREFIXES):
+        return "Unsupported image type — please attach a JPEG, PNG, WEBP, or GIF."
+    if len(data_url) > MAX_IMAGE_DATA_URL_CHARS:
+        return "Image is too large — please attach a smaller image."
+    return None
+
+
+async def stream_vision_response(message: str, image_data_url: str, language: str) -> AsyncIterator[str]:
+    """Multimodal Understanding (Capabilities 1, 2, 19, 20) — answers a
+    question about an attached image. Deliberately its OWN path, not routed
+    through _stream_chat_completions/RAG: an image question isn't a Dayjoy-
+    knowledge lookup, and "never assume information that cannot be seen or
+    verified" (Capability 2's explicit requirement) means this must NOT mix
+    in RAG context that could bias the model toward describing something
+    that isn't actually in the image.
+
+    OpenAI-only: this Groq account has zero vision-capable models available
+    (live-verified against the actual API key — see VISION_MODEL's
+    definition above), so there is no Groq fallback leg here the way
+    stream_response() has for text. If OPENAI_API_KEY is unset, or the call
+    fails for any reason (including the account having no credit — a real,
+    observed condition in this deployment's OpenAI key as of this writing),
+    this yields one clear, honest sentence rather than a raw provider error
+    or a silently empty response.
+    """
+    vision_status = await _check_vision_available()
+    if not vision_status["available"]:
+        reason = vision_status["reason"]
+        detail = _CAPABILITY_REASON_MESSAGES.get(reason, _CAPABILITY_REASON_MESSAGES["provider_error"])
+        yield f"{detail} In the meantime, please describe what's in the image and I'll help from there."
+        return
+
+    system_prompt = (
+        "You are Dayjoy AI Assist. The user has attached an image. Describe and answer questions "
+        "about ONLY what is actually visible in the image — never invent details, brands, text, or "
+        "product identities you cannot actually see. If the image is unclear or you cannot make out "
+        "something the user asked about, say so plainly rather than guessing. If the user is asking "
+        "about a Dayjoy product shown in the image, describe what you see, but do not assert Dayjoy-"
+        "specific facts (pricing, ingredients, health claims) beyond what's visibly printed on the "
+        "product/packaging itself — for anything else, tell the user to ask as a follow-up so it can "
+        "be checked against approved Dayjoy knowledge."
+    )
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Language: {language}\n\nQuestion: {message}"},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            },
+        ],
+        "temperature": 0.2,
+        "stream": True,
+        "max_tokens": 800,
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    collected = ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST", "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread())[:300]
+                    _vision_logger.warning("vision request failed (%s): %s", resp.status_code, body)
+                else:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload_str = line[5:].strip()
+                        if payload_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                            if delta:
+                                collected += delta
+                                yield delta
+                        except Exception:
+                            continue
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        _vision_logger.warning("vision request network error: %s", e)
+
+    if not collected:
+        yield (
+            "I couldn't process that image right now — please try again in a moment, or describe "
+            "what's in it and I'll help from there."
+        )
+
+
+# ----------------------------------------------------------------------------
+# Advanced File Intelligence / PDF Intelligence / Document Comparison /
+# Cross-Document Reasoning (Capabilities 3, 21, 22, 5)
+# ----------------------------------------------------------------------------
+_document_logger = logging.getLogger("dayjoy.documents")
+
+# Same format families backend/rag/extractors.py already parses for the
+# admin knowledge-ingestion pipeline — reused, not reimplemented.
+_ALLOWED_DOCUMENT_MIME_PREFIXES = (
+    "data:application/pdf",
+    "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "data:application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "data:application/vnd.ms-excel",
+    "data:application/msword",
+    "data:application/vnd.ms-powerpoint",
+    "data:text/plain",
+    "data:text/markdown",
+    "data:text/csv",
+    "data:application/json",
+    # Browsers sometimes report a generic octet-stream for these types
+    # depending on OS file-association config — extract_text() falls back
+    # on the FILENAME extension in that case (see detect_kind()), so this
+    # is accepted here too rather than rejecting a legitimate .pdf/.docx
+    # just because the browser guessed its mime type generically.
+    "data:application/octet-stream",
+)
+
+
+def validate_document_data_url(data_url: str, filename: str) -> Optional[str]:
+    """Returns an error message if `data_url` is unsafe/malformed to
+    extract text from, else None. Mirrors validate_image_data_url's
+    defense-in-depth stance — the frontend already caps size/type at
+    capture time, but this endpoint must not trust that."""
+    if not data_url.startswith(_ALLOWED_DOCUMENT_MIME_PREFIXES):
+        return f"{filename}: unsupported file type — please attach a PDF, Word, PowerPoint, Excel, CSV, text, or JSON file."
+    if len(data_url) > MAX_DOCUMENT_DATA_URL_CHARS:
+        return f"{filename}: file is too large."
+    return None
+
+
+def _decode_data_url(data_url: str) -> bytes:
+    _, _, b64 = data_url.partition(",")
+    return base64.b64decode(b64)
+
+
+def extract_attached_document_text(name: str, data_url: str) -> str:
+    """Extracts and truncates plain text from one attached document, using
+    the SAME extract_text() the admin RAG-ingestion pipeline already uses
+    (backend/rag/extractors.py) — best-effort by design (that module falls
+    back to "" on a per-format failure rather than raising), so a corrupt
+    or scanned/image-only PDF degrades to an honest "couldn't read this"
+    note instead of a crash."""
+    from backend.rag.extractors import extract_text
+
+    try:
+        content = _decode_data_url(data_url)
+        text, _pages, _sections, _meta = extract_text(content, name, mime_type=None)
+    except Exception as e:
+        _document_logger.warning("document extraction failed for %s: %s", name, e)
+        text = ""
+    if not text.strip():
+        return f"[Could not extract readable text from \"{name}\" — it may be a scanned/image-only document, password-protected, or in an unsupported layout.]"
+    if len(text) > MAX_EXTRACTED_TEXT_CHARS_PER_DOC:
+        text = text[:MAX_EXTRACTED_TEXT_CHARS_PER_DOC] + "\n\n[... truncated — document continues beyond what fits here ...]"
+    return text
+
+
+def build_document_context(documents: List["AttachedDocument"]) -> str:
+    """Assembles extracted document text into one labeled context block —
+    each document under its own clearly delimited header so the model can
+    attribute claims to a specific source (required for Document
+    Comparison, Capability 22) and reason across all of them together
+    (Cross-Document Reasoning, Capability 5) without conflating which
+    document said what."""
+    parts = []
+    for i, doc in enumerate(documents, start=1):
+        text = extract_attached_document_text(doc.name, doc.data_url)
+        parts.append(f'[Document {i}: "{doc.name}"]\n{text}')
+    return "\n\n---\n\n".join(parts)
+
+
+_DOCUMENT_QA_GUIDANCE = (
+    "The context below contains the extracted text of one or more documents the user attached "
+    "to this message. Answer ONLY from what is actually present in the document text — never "
+    "invent content that isn't there. Always say which document a claim comes from when more "
+    "than one document is attached (e.g. \"According to Document 1...\"). If asked to compare the "
+    "documents, structure the answer around: what's the same across them, what's different, and "
+    "any notably important additions/removals — do not just summarize each one separately. If a "
+    "document's text could not be extracted (noted in its block), say so plainly rather than "
+    "guessing at its contents."
+)
+
+
 _SOURCE_HEADER_RE = re.compile(r"^\[\d+\]\s*Source:.*$", re.MULTILINE)
 _DATETIME_LINE_RE = re.compile(r"^Current date/time:.*$", re.MULTILINE)
 _LEGACY_TABLE_TAG_RE = re.compile(r"^\[\w+\]\s*")
@@ -2027,6 +2506,117 @@ async def health() -> Dict[str, Any]:
     }
 
 
+_capability_cache: Dict[str, Any] = {"vision": None, "checked_at": 0.0}
+_CAPABILITY_CACHE_TTL_SECONDS = 300.0
+
+
+async def _check_vision_available() -> Dict[str, Any]:
+    """Live, cheaply-cached probe of whether image understanding can
+    actually work right now — not just whether OPENAI_API_KEY is set.
+
+    Deliberately does NOT use OpenAI's /v1/models list: live-verified
+    during this session that endpoint returns 200 even for a key with
+    zero billing credit (it only validates the key, not billing), which
+    made this check silently lie about availability — a real bug caught
+    by testing against the actual live API rather than assuming. Uses a
+    minimal real chat-completions call (max_tokens=1) instead, which
+    OpenAI rejects with 429 insufficient_quota BEFORE billing when credit
+    is exhausted (verified live: the rejected request itself is not
+    charged), so this both costs nothing on the failure path and reflects
+    the condition that actually matters. Cached for
+    _CAPABILITY_CACHE_TTL_SECONDS so that once OpenAI billing is restored,
+    the feature turns back on by itself within a few minutes — no deploy
+    or restart needed — while a burst of chat opens doesn't hammer OpenAI
+    with a probe per request."""
+    now = time.time()
+    cached = _capability_cache["vision"]
+    if cached is not None and (now - _capability_cache["checked_at"]) < _CAPABILITY_CACHE_TTL_SECONDS:
+        return cached
+
+    if not OPENAI_API_KEY:
+        result = {"available": False, "reason": "not_configured"}
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                    json={"model": VISION_MODEL, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                )
+            if resp.status_code == 200:
+                result = {"available": True, "reason": None}
+            elif resp.status_code == 429:
+                result = {"available": False, "reason": "quota_exceeded"}
+            elif resp.status_code == 401:
+                result = {"available": False, "reason": "invalid_key"}
+            else:
+                result = {"available": False, "reason": "provider_error"}
+        except (httpx.TimeoutException, httpx.TransportError):
+            result = {"available": False, "reason": "network_error"}
+
+    _capability_cache["vision"] = result
+    _capability_cache["checked_at"] = now
+    return result
+
+
+_CAPABILITY_REASON_MESSAGES = {
+    "not_configured": "Image understanding isn't set up on this deployment yet.",
+    "quota_exceeded": "Image understanding is temporarily unavailable — the AI provider account has no "
+    "remaining credit. It will start working automatically as soon as that's topped up, no action needed here.",
+    "invalid_key": "Image understanding isn't available right now — the AI provider credentials need to be "
+    "checked by an administrator.",
+    "provider_error": "Image understanding is temporarily unavailable — please try again shortly.",
+    "network_error": "Image understanding is temporarily unavailable — please try again shortly.",
+}
+
+
+_WEB_SEARCH_REASON_MESSAGES = {
+    "not_configured": "Web research isn't set up on this deployment.",
+    "quota_exceeded": "Web research is temporarily unavailable — the search provider's usage limit has been "
+    "reached. It will start working automatically once that's resolved.",
+    "provider_error": "Web research is temporarily unavailable — please try again shortly.",
+}
+
+
+@app.get("/capabilities")
+async def capabilities() -> Dict[str, Any]:
+    """Runtime capability status the frontend polls to decide whether to
+    show/enable capability-gated UI (currently: image understanding, web
+    research). Deliberately live rather than a static flag — see
+    _check_vision_available and search_providers.get_web_search_status."""
+    vision = await _check_vision_available()
+    web_status = get_web_search_status()
+    if web_status["available"] is None:
+        # No real search has run yet since server start — report configured-
+        # ness only, rather than guessing at availability.
+        web_search_capability = {
+            "available": any(p.is_configured() for p in get_search_providers()),
+            "reason": None,
+            "message": None,
+        }
+    else:
+        web_search_capability = {
+            "available": web_status["available"],
+            "reason": web_status["reason"],
+            "message": None if web_status["available"] else _WEB_SEARCH_REASON_MESSAGES.get(
+                web_status["reason"], _WEB_SEARCH_REASON_MESSAGES["provider_error"]
+            ),
+        }
+    from backend.orchestrator.model_router import TASK_CHAT, TASK_VISION, select_model
+
+    chat_model = await select_model(TASK_CHAT)
+    vision_model = await select_model(TASK_VISION)
+    return {
+        "vision": {
+            **vision,
+            "message": None if vision["available"] else _CAPABILITY_REASON_MESSAGES.get(vision["reason"], _CAPABILITY_REASON_MESSAGES["provider_error"]),
+        },
+        "web_search": web_search_capability,
+        "chat": {"available": bool(GROQ_API_KEY or OPENAI_API_KEY)},
+        "models": {"chat": chat_model.to_dict(), "vision": vision_model.to_dict()},
+    }
+
+
 @app.get("/ready")
 async def readiness() -> Dict[str, Any]:
     """Readiness check — verifies dependencies are reachable."""
@@ -2085,12 +2675,88 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             answer_source="unsafe",
         )
 
+    # Advanced File Intelligence / PDF Intelligence / Document Comparison /
+    # Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — attached
+    # documents bypass RAG/routing entirely, same reasoning as the vision
+    # path below: the extracted document text IS the evidence for this
+    # answer, mixing in Dayjoy KB context would blur what's actually in
+    # the attached file(s) vs. what's approved Dayjoy knowledge.
+    if req.attached_documents:
+        if len(req.attached_documents) > MAX_ATTACHED_DOCUMENTS:
+            raise HTTPException(status_code=422, detail=f"Attach at most {MAX_ATTACHED_DOCUMENTS} documents per message.")
+        for doc in req.attached_documents:
+            doc_error = validate_document_data_url(doc.data_url, doc.name)
+            if doc_error:
+                raise HTTPException(status_code=422, detail=doc_error)
+        conv_id = req.conversation_id
+        if token and user_id and not req.is_temporary and not conv_id:
+            conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+        document_context = build_document_context(req.attached_documents)
+        doc_parts: List[str] = []
+        async for tok in stream_response(
+            req.message, [], document_context, req.language, "dayjoy",
+            custom_guidance=_DOCUMENT_QA_GUIDANCE, already_grounded=True,
+        ):
+            doc_parts.append(tok)
+        doc_answer = "".join(doc_parts).strip()
+        await _log_analytics(
+            token, user_id, req, "document", [], 0.9, "document",
+            ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return ChatResponse(
+            answer=doc_answer,
+            category="document",
+            sources=[],
+            safety_status="safe",
+            handoff_required=False,
+            confidence=0.9 if (GROQ_API_KEY or OPENAI_API_KEY) else None,
+            conversation_id=conv_id,
+            answer_source="document",
+            ai_mode="normal",
+            structured=structure_answer(doc_answer).to_dict(),
+        )
+
+    # Multimodal Understanding (Capabilities 1/2/19/20) — an attached image
+    # bypasses RAG/routing entirely (see stream_vision_response's docstring
+    # for why: mixing in Dayjoy KB context here risks biasing the model
+    # toward describing something not actually visible in the image).
+    if req.image_data_url:
+        image_error = validate_image_data_url(req.image_data_url)
+        if image_error:
+            raise HTTPException(status_code=422, detail=image_error)
+        conv_id = req.conversation_id
+        if token and user_id and not req.is_temporary and not conv_id:
+            conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+        vision_parts: List[str] = []
+        async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+            vision_parts.append(tok)
+        vision_answer = "".join(vision_parts).strip()
+        await _log_analytics(
+            token, user_id, req, "vision", [], 0.9, "vision",
+            ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return ChatResponse(
+            answer=vision_answer,
+            category="vision",
+            sources=[],
+            safety_status="safe",
+            handoff_required=False,
+            confidence=0.9 if OPENAI_API_KEY else None,
+            conversation_id=conv_id,
+            answer_source="vision",
+            ai_mode="normal",
+            structured=structure_answer(vision_answer).to_dict(),
+        )
+
     history: List[Dict[str, str]] = []
     conv_id = req.conversation_id
     if token and conv_id:
         history = await load_history(token, conv_id)
     elif token and user_id and not req.is_temporary:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+
+    if req.knowledge_scope and req.knowledge_scope not in KNOWLEDGE_SCOPES:
+        raise HTTPException(status_code=422, detail=f"knowledge_scope must be one of {KNOWLEDGE_SCOPES}")
 
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
@@ -2099,15 +2765,16 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
         retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
     retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
-    route = await determine_route(token, retrieval_query, casual, ai_mode)
+    route = await determine_route(token, retrieval_query, casual, ai_mode, req.knowledge_scope, req.allow_web_search)
     t_after_routing = time.monotonic()
 
     personalization_context = await _maybe_personalization_context(
         token, user_id, req.message, history, casual, req.role
     )
     t_after_personalization = time.monotonic()
+    task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
     full_context = _assemble_compressed_context(
-        current_time_context(), personalization_context, route.context, route.web_context
+        current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
     )
     custom_guidance = await load_ai_custom_guidance()
     fmt_directive = format_instruction(req.message)
@@ -2116,6 +2783,15 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     ex_directive = example_instruction(req.message)
     if ex_directive:
         custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+    personalization_style = await _personalization_style_addendum(token, user_id)
+    if personalization_style:
+        custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
+    conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
+    if conflict_guidance:
+        custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+    agent_guidance = _agent_guidance_addendum(req.message)
+    if agent_guidance:
+        custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -2175,6 +2851,31 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                 already_retried = False
         else:
             already_retried = False
+
+        # Contradiction Detector (Capability 26) — a SEPARATE check from
+        # the relevance-mismatch retry above (does the answer contradict
+        # ITSELF or the evidence, not "does it address the question").
+        # Same isolation-and-gating as verification_ran: only for
+        # RAG-sourced answers, and only once regardless of what happened
+        # above, to keep this to at most one extra LLM call per request.
+        if verification_ran and answer:
+            contradiction = await detect_contradiction(answer, full_context)
+            if contradiction.checked and contradiction.has_contradiction:
+                corrective_context = (
+                    full_context
+                    + "\n\n[SYSTEM NOTE: your previous answer contained a contradiction "
+                    f"({contradiction.explanation}). Re-answer using ONLY the evidence above, "
+                    "making sure every stated fact is consistent with itself and with the evidence.]"
+                )
+                fix_parts: List[str] = []
+                async for tok in stream_response(
+                    req.message, history, corrective_context, req.language, route.mode, custom_guidance,
+                    ai_mode=ai_mode,
+                ):
+                    fix_parts.append(tok)
+                fixed = "".join(fix_parts).strip()
+                if fixed:
+                    answer = fixed
 
         # Answer Refinement Loop (orchestrator/refinement.py) — a SEPARATE,
         # bounded-to-one check from the relevance-mismatch retry above;
@@ -2259,6 +2960,29 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
     follow_ups = generate_followups(route.answer_source, category, req.message)
 
+    structured_answer = structure_answer(answer)
+    grounding_state = classify_grounding_state(
+        structured_answer,
+        answer_source=route.answer_source,
+        verification_status=verification_status,
+        sources=sources,
+        answer_text=answer,
+    )
+    evidence_strength = _EVIDENCE_STRENGTH_LABELS.get(grounding_state)
+
+    # Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+    # informational only (never triggers a retry — this already runs
+    # after the relevance-mismatch and contradiction checks, both of
+    # which CAN retry; a third automatic regeneration layer risks a
+    # runaway retry chain for marginal benefit). Surfaces a per-claim
+    # verified/ai_analysis/assumption/unverified breakdown the frontend
+    # can show alongside the whole-answer Evidence Strength badge.
+    claim_verification = None
+    if should_verify_claims(answer, route.answer_source or ""):
+        claim_result = await verify_claims(answer, full_context)
+        if claim_result.checked:
+            claim_verification = claim_result.to_dict()
+
     return ChatResponse(
         answer=answer,
         category=category,
@@ -2273,10 +2997,12 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         answer_source=route.answer_source,
         web_search_provider=route.web_search_provider,
         ai_mode=ai_mode,
+        claim_verification=claim_verification,
         follow_ups=follow_ups,
         products=route.product_cards,
-        structured=structure_answer(answer).to_dict(),
+        structured=structured_answer.to_dict(),
         clarification_options=route.clarification_options,
+        evidence_strength=evidence_strength,
     )
 
 
@@ -2340,6 +3066,67 @@ async def chat_title(req: TitleRequest, user_id: str = Depends(require_user_id))
     return TitleResponse(title=title)
 
 
+@app.post("/transform-text", response_model=TransformTextResponse)
+async def transform_text(req: TransformTextRequest, user_id: str = Depends(require_user_id)) -> TransformTextResponse:
+    """Answer Editing, selection-scoped (Capability 12) — rewrites ONLY
+    the given text snippet per `instruction` and returns JUST the
+    replacement, so the caller can splice it back into the original
+    answer IN PLACE instead of appending a whole new chat turn (which is
+    what the Transform Controls / Smart Text Selection / Inline Follow-up
+    features already do via the normal /chat path — this is the
+    complementary "actually edit the message" path those don't cover).
+
+    Deliberately separate from /chat, same reasoning as /chat/title: no
+    RAG, no safety pipeline, no conversation history — one small,
+    isolated completion. Best-effort: returns the ORIGINAL text unchanged
+    (never an error, never empty) whenever no provider is configured or
+    the call fails, so a caller can always safely splice the result back
+    in without special-casing failure.
+    """
+    check_rate_limit(user_id)
+
+    if not (GROQ_API_KEY or OPENAI_API_KEY):
+        return TransformTextResponse(result=req.text)
+
+    prompt = (
+        f"Rewrite ONLY the following text per this instruction: {req.instruction}\n\n"
+        "Preserve the original meaning and any facts/numbers exactly — only change what the "
+        "instruction asks for. Reply with ONLY the rewritten text, no preamble, no quotes, "
+        "no explanation.\n\n"
+        f'Text: """{req.text}"""'
+    )
+
+    if GROQ_API_KEY:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        model = GROQ_MODEL
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        model = OPENAI_MODEL
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 800,
+                },
+            )
+            if resp.status_code >= 400:
+                return TransformTextResponse(result=req.text)
+            content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception:
+        return TransformTextResponse(result=req.text)
+
+    result = content.strip().strip('"')
+    return TransformTextResponse(result=result or req.text)
+
+
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming chat endpoint. Requires authentication."""
@@ -2372,12 +3159,92 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         # client's idle timeout.
         yield _sse({"status": "connected"})
 
+        # Advanced File Intelligence / PDF Intelligence / Document
+        # Comparison / Cross-Document Reasoning (Capabilities 3, 21, 22,
+        # 5) — same document-bypasses-RAG early return as /chat above,
+        # streamed.
+        if req.attached_documents:
+            if len(req.attached_documents) > MAX_ATTACHED_DOCUMENTS:
+                yield _sse({"token": "", "done": True, "error": f"Attach at most {MAX_ATTACHED_DOCUMENTS} documents per message."})
+                return
+            for doc in req.attached_documents:
+                doc_error = validate_document_data_url(doc.data_url, doc.name)
+                if doc_error:
+                    yield _sse({"token": "", "done": True, "error": doc_error})
+                    return
+            conv_id = req.conversation_id
+            if token and user_id and not req.is_temporary and not conv_id:
+                conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+            document_context = build_document_context(req.attached_documents)
+            doc_parts: List[str] = []
+            async for tok in stream_response(
+                req.message, [], document_context, req.language, "dayjoy",
+                custom_guidance=_DOCUMENT_QA_GUIDANCE, already_grounded=True,
+            ):
+                doc_parts.append(tok)
+                yield _sse({"token": tok})
+            doc_answer = "".join(doc_parts).strip()
+            await _log_analytics(
+                token, user_id, req, "document", [], 0.9, "document",
+                ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+            )
+            yield _sse({
+                "done": True,
+                "category": "document",
+                "sources": [],
+                "safety_status": "safe",
+                "handoff_required": False,
+                "confidence": 0.9 if (GROQ_API_KEY or OPENAI_API_KEY) else None,
+                "conversation_id": conv_id,
+                "answer_source": "document",
+                "ai_mode": "normal",
+                "structured": structure_answer(doc_answer).to_dict(),
+            })
+            return
+
+        # Multimodal Understanding (Capabilities 1/2/19/20) — same
+        # image-bypasses-RAG early return as /chat above, streamed.
+        if req.image_data_url:
+            image_error = validate_image_data_url(req.image_data_url)
+            if image_error:
+                yield _sse({"token": "", "done": True, "error": image_error})
+                return
+            conv_id = req.conversation_id
+            if token and user_id and not req.is_temporary and not conv_id:
+                conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+            vision_parts: List[str] = []
+            async for tok in stream_vision_response(req.message, req.image_data_url, req.language):
+                vision_parts.append(tok)
+                yield _sse({"token": tok})
+            vision_answer = "".join(vision_parts).strip()
+            await _log_analytics(
+                token, user_id, req, "vision", [], 0.9, "vision",
+                ai_mode="normal", latency_ms=(time.monotonic() - started_at) * 1000,
+            )
+            yield _sse({
+                "done": True,
+                "category": "vision",
+                "sources": [],
+                "safety_status": "safe",
+                "handoff_required": False,
+                "confidence": 0.9 if OPENAI_API_KEY else None,
+                "conversation_id": conv_id,
+                "answer_source": "vision",
+                "ai_mode": "normal",
+                "structured": structure_answer(vision_answer).to_dict(),
+            })
+            return
+
         history: List[Dict[str, str]] = []
         conv_id = req.conversation_id
         if token and conv_id:
             history = await load_history(token, conv_id)
         elif token and user_id and not req.is_temporary:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
+
+        if req.knowledge_scope and req.knowledge_scope not in KNOWLEDGE_SCOPES:
+            yield _sse({"token": "", "done": True, "error": f"knowledge_scope must be one of {KNOWLEDGE_SCOPES}"})
+            return
 
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
@@ -2386,7 +3253,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
         retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
         route: Optional[RouteResult] = None
-        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
+        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode, req.knowledge_scope, req.allow_web_search):
             if kind == "status":
                 yield _sse({"status": payload})
             else:
@@ -2398,8 +3265,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             token, user_id, req.message, history, casual, req.role
         )
         t_after_personalization = time.monotonic()
+        task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
         full_context = _assemble_compressed_context(
-            current_time_context(), personalization_context, route.context, route.web_context
+            current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
         )
         custom_guidance = await load_ai_custom_guidance()
         fmt_directive = format_instruction(req.message)
@@ -2408,6 +3276,15 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         ex_directive = example_instruction(req.message)
         if ex_directive:
             custom_guidance = f"{custom_guidance}\n\n{ex_directive}".strip()
+        personalization_style = await _personalization_style_addendum(token, user_id)
+        if personalization_style:
+            custom_guidance = f"{custom_guidance}\n\n{personalization_style}".strip()
+        conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
+        if conflict_guidance:
+            custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+        agent_guidance = _agent_guidance_addendum(req.message)
+        if agent_guidance:
+            custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
@@ -2444,10 +3321,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             route.direct_answer is None and not casual and not already_grounded
             and route.answer_source in ("dayjoy_knowledge", "hybrid")
         )
+        contradiction_detected = False
         if verification_ran:
             yield _sse({"status": "verifying"})
             verdict = await verify_answer(req.message, aggregated, full_context)
             answer_mismatch = bool(verdict.checked and not verdict.addresses_question)
+            # Contradiction Detector (Capability 26) — streamed tokens are
+            # already sent, so (same reasoning as the relevance check
+            # above) this only FLAGS via handoff_required rather than
+            # retrying; only runs if the relevance check itself passed, to
+            # cap this at one extra LLM call per request.
+            if not answer_mismatch:
+                contradiction = await detect_contradiction(aggregated, full_context)
+                contradiction_detected = bool(contradiction.checked and contradiction.has_contradiction)
 
         confidence, verification_status = _compute_confidence(casual, route)
         # Evidence-verification signal (rag/evidence.py, via rag_metadata) —
@@ -2465,6 +3351,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             or not bool(route.context)
             or evidence_insufficient
             or answer_mismatch
+            or contradiction_detected
         )
         category = route.category
         sources = route.sources + route.web_sources
@@ -2472,6 +3359,11 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         if answer_mismatch:
             handoff_msg = (
                 "This answer may not directly address your exact question. Please rephrase, "
+                "or create a support ticket for a verified response."
+            )
+        elif contradiction_detected:
+            handoff_msg = (
+                "This answer may contain a contradiction — please double-check the details, "
                 "or create a support ticket for a verified response."
             )
         elif handoff_required:
@@ -2504,6 +3396,23 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         follow_ups = generate_followups(route.answer_source, category, req.message)
 
+        structured_answer = structure_answer(aggregated)
+        grounding_state = classify_grounding_state(
+            structured_answer,
+            answer_source=route.answer_source,
+            verification_status=verification_status,
+            sources=sources,
+            answer_text=aggregated,
+        )
+
+        # Citation Verification / Claim-Level Grounding (Capabilities 7, 8)
+        # — same informational-only wiring as /chat above.
+        claim_verification = None
+        if should_verify_claims(aggregated, route.answer_source or ""):
+            claim_result = await verify_claims(aggregated, full_context)
+            if claim_result.checked:
+                claim_verification = claim_result.to_dict()
+
         yield _sse({
             "done": True,
             "category": category,
@@ -2520,8 +3429,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             "ai_mode": ai_mode,
             "follow_ups": follow_ups,
             "products": route.product_cards,
-            "structured": structure_answer(aggregated).to_dict(),
+            "structured": structured_answer.to_dict(),
             "clarification_options": route.clarification_options,
+            "evidence_strength": _EVIDENCE_STRENGTH_LABELS.get(grounding_state),
+            "claim_verification": claim_verification,
         })
 
     return StreamingResponse(
@@ -3727,6 +4638,28 @@ try:
 except Exception as _artifacts_router_err:  # pragma: no cover
     import logging
     logging.getLogger("dayjoy.main").warning("Failed to load artifacts router: %s", _artifacts_router_err)
+
+
+# ---------------------------------------------------------------------------
+# Scheduled / Proactive Assistance — Reminders (capability 33)
+# ---------------------------------------------------------------------------
+try:
+    from backend.reminders_api import router as reminders_router
+    app.include_router(reminders_router)
+except Exception as _reminders_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load reminders router: %s", _reminders_router_err)
+
+
+# ---------------------------------------------------------------------------
+# Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+# ---------------------------------------------------------------------------
+try:
+    from backend.coach_api import router as coach_router
+    app.include_router(coach_router)
+except Exception as _coach_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load coach router: %s", _coach_router_err)
 
 
 # ---------------------------------------------------------------------------

@@ -40,7 +40,9 @@ import {
   ragReplaceDocument,
   ragGetDocument,
   ragHealth,
+  adminKnowledgeFreshness,
   type RAGDocument,
+  type KnowledgeFreshnessReport,
 } from "../../../lib/api";
 
 const STORAGE_BUCKET = "knowledge-documents";
@@ -81,6 +83,104 @@ type DocVersion = {
   change_summary: string | null;
   created_at: string | null;
 };
+
+/** Knowledge Freshness Monitoring (Capability 42) — a self-contained,
+ * collapsible panel showing stale/duplicate/incomplete-metadata documents
+ * flagged by GET /admin/analytics/knowledge-freshness. Deliberately
+ * independent of the document list state above it (own loading/error
+ * state, own fetch) so it degrades gracefully on its own if that endpoint
+ * is slow/unavailable, without affecting the rest of the page. */
+function FreshnessAlerts() {
+  const [report, setReport] = useState<KnowledgeFreshnessReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    adminKnowledgeFreshness()
+      .then((r) => {
+        if (!cancelled) setReport(r);
+      })
+      .catch(() => {
+        if (!cancelled) setReport(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading || !report) return null;
+  const totalIssues =
+    report.stale_documents.length + report.missing_metadata_documents.length + report.duplicate_documents.length;
+  if (totalIssues === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-xl border border-warning/30 bg-warning/5 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-warning/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <FileWarning className="w-4 h-4 text-warning shrink-0" aria-hidden="true" />
+          <span className="text-sm font-medium">
+            {totalIssues} knowledge freshness issue{totalIssues === 1 ? "" : "s"} found
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">{expanded ? "Hide" : "Show"}</span>
+      </button>
+      {expanded ? (
+        <div className="border-t border-warning/20 p-3 space-y-3 text-sm">
+          {report.stale_documents.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                Stale (approved, not updated in {report.stale_after_days}+ days)
+              </p>
+              <ul className="space-y-1">
+                {report.stale_documents.slice(0, 10).map((d) => (
+                  <li key={d.id} className="flex items-center justify-between">
+                    <span className="truncate">{d.file_name}</span>
+                    <span className="text-xs text-muted-foreground shrink-0 ml-2">{d.days_since_update} days ago</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {report.duplicate_documents.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                Possible duplicates (same file name)
+              </p>
+              <ul className="space-y-1">
+                {report.duplicate_documents.slice(0, 10).map((d) => (
+                  <li key={d.file_name} className="flex items-center justify-between">
+                    <span className="truncate">{d.file_name}</span>
+                    <span className="text-xs text-muted-foreground shrink-0 ml-2">{d.count} copies</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {report.missing_metadata_documents.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                Missing category/tags
+              </p>
+              <ul className="space-y-1">
+                {report.missing_metadata_documents.slice(0, 10).map((d) => (
+                  <li key={d.id} className="truncate">{d.file_name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function KnowledgeManager() {
   const { currentUser } = useAuth();
@@ -368,6 +468,8 @@ export function KnowledgeManager() {
           </div>
         </div>
       ) : null}
+
+      <FreshnessAlerts />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard label="Approved" value={counts["approved"] ?? 0} />

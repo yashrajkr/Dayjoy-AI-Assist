@@ -5,6 +5,26 @@ import { useAuth } from "../../../lib/AuthContext";
 import { BRAND } from "../../../lib/brand";
 import { Button } from "../../ui/button";
 import { SettingsDetailShell, SettingsHint } from "./SettingsUI";
+import { listUserMemory, rememberPreference } from "../../../../lib/api";
+
+// Answer Personalization Controls (Capability 14) — discrete selectable
+// preferences, distinct from the free-form memory list below. Each option
+// writes to the SAME preference keys backend/main.py's
+// _personalization_style_addendum() already reads on every message (and
+// that the free-form memory editor below can also set by hand via
+// matching key/value text) — this is just a purpose-built control surface
+// for the specific keys the backend recognizes, instead of requiring the
+// user to type them in as raw key/value pairs.
+const RESPONSE_LENGTH_OPTIONS: { value: string; label: string }[] = [
+  { value: "short", label: "Concise" },
+  { value: "balanced", label: "Balanced" },
+  { value: "detailed", label: "Detailed" },
+];
+const RESPONSE_STYLE_OPTIONS: { value: string; label: string }[] = [
+  { value: "simple", label: "Simple" },
+  { value: "professional", label: "Professional" },
+  { value: "actionable", label: "Action-oriented" },
+];
 
 type UserPreference = {
   id: string;
@@ -19,6 +39,32 @@ export function PersonalizationSettings() {
   const [prefs, setPrefs] = useState<UserPreference[]>([]);
   const [newPrefKey, setNewPrefKey] = useState("");
   const [newPrefValue, setNewPrefValue] = useState("");
+  const [responseLength, setResponseLength] = useState<string | null>(null);
+  const [responseStyle, setResponseStyle] = useState<string | null>(null);
+  const [savingStyle, setSavingStyle] = useState<"length" | "style" | null>(null);
+
+  useEffect(() => {
+    listUserMemory().then((items) => {
+      const length = items.find((i) => i.key === "preferred_detail")?.value;
+      const style = items.find((i) => i.key === "preferred_response_style")?.value;
+      if (length) setResponseLength(length);
+      if (style) setResponseStyle(style);
+    });
+  }, []);
+
+  const selectResponseLength = async (value: string) => {
+    setResponseLength(value);
+    setSavingStyle("length");
+    await rememberPreference("preferred_detail", value);
+    setSavingStyle(null);
+  };
+
+  const selectResponseStyle = async (value: string) => {
+    setResponseStyle(value);
+    setSavingStyle("style");
+    await rememberPreference("preferred_response_style", value);
+    setSavingStyle(null);
+  };
 
   const loadPrefs = useCallback(async () => {
     if (!supabase || !currentUser?.id) return;
@@ -89,6 +135,52 @@ export function PersonalizationSettings() {
       <SettingsHint>
         Save preferences that {BRAND.name} will remember across conversations. Pinned items are prioritized.
       </SettingsHint>
+
+      <div className="rounded-xl border border-border bg-card p-3.5 space-y-3 mb-3">
+        <div>
+          <p className="text-xs font-semibold mb-1.5">Response length</p>
+          <div className="flex gap-2">
+            {RESPONSE_LENGTH_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => selectResponseLength(opt.value)}
+                disabled={savingStyle === "length"}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  responseLength === opt.value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent/50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold mb-1.5">Response style</p>
+          <div className="flex gap-2">
+            {RESPONSE_STYLE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => selectResponseStyle(opt.value)}
+                disabled={savingStyle === "style"}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  responseStyle === opt.value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent/50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Applied to every answer by default — explicit instructions in a message still take priority.
+        </p>
+      </div>
 
       <div className="rounded-xl border border-border bg-card p-3.5 space-y-2">
         {prefs.length === 0 ? (

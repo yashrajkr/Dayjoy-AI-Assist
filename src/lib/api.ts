@@ -25,7 +25,39 @@ export type ChatRequest = {
   is_temporary?: boolean;
   /** AI Mode System — "normal" | "thinking" | "deep_research" | "compare_products". */
   ai_mode?: string;
+  /** Multimodal Understanding (Capability 1/2/19/20) — a single attached
+   * image as a data: URL. When present, the backend answers from the image
+   * via a vision-capable model instead of the normal RAG pipeline. */
+  image_data_url?: string;
+  /** Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+   * category instead of all of DayJoy's knowledge base. */
+  knowledge_scope?: KnowledgeScope;
+  /** Context Scope Control (Capability 15) — whether this message may fall
+   * back to a live web search. Defaults to true server-side if omitted. */
+  allow_web_search?: boolean;
+  /** Advanced File Intelligence / PDF Intelligence / Document Comparison /
+   * Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — up to 3
+   * attached PDF/DOCX/PPTX/XLSX/CSV/TXT/JSON files. When present, the
+   * backend answers from their extracted text instead of the normal RAG
+   * pipeline; 2+ documents supports comparison/cross-document reasoning. */
+  attached_documents?: AttachedDocument[];
 };
+
+export type AttachedDocument = {
+  name: string;
+  mime?: string;
+  data_url: string;
+};
+
+export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";
+
+export const KNOWLEDGE_SCOPE_OPTIONS: { value: KnowledgeScope; label: string }[] = [
+  { value: "all", label: "All DayJoy knowledge" },
+  { value: "products", label: "Products" },
+  { value: "training", label: "Training" },
+  { value: "policies", label: "Policies" },
+  { value: "faqs", label: "FAQs" },
+];
 
 export type ChatSource = {
   /** Source table (products, faqs, policies, distributor_training, objection_handling, knowledge_chunks). */
@@ -81,6 +113,15 @@ export type RAGMetadata = {
   model_used: string;
   /** Retrieved chunks (full text + metadata). */
   chunks: RetrievedChunk[];
+  /** Knowledge Conflict Resolution (Capability 9) — set when 2+ matched
+   * documents in the same category had different update dates; the model
+   * was instructed to prefer the newer one. */
+  knowledge_conflict?: {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  } | null;
 };
 
 export type MatchedDocument = {
@@ -163,6 +204,19 @@ export type ChatResponse = {
    * a clarifying-question answer_source="clarification" reply. Each entry
    * is a complete follow-up message, not a bare label. */
   clarification_options?: string[];
+  /** Evidence Strength Indicator — qualitative label derived server-side
+   * from the existing 5-state grounding classification. Never a fabricated
+   * confidence percentage. One of "Strongly supported" | "Supported" |
+   * "Partially supported" | "Needs verification" | "Not verified". */
+  evidence_strength?: string | null;
+  /** Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+   * per-claim verified/ai_analysis/assumption/unverified breakdown. null
+   * when the answer didn't qualify for claim-level checking or the check
+   * itself couldn't run. */
+  claim_verification?: {
+    checked: boolean;
+    claims: Array<{ claim: string; state: "verified" | "ai_analysis" | "assumption" | "unverified" }>;
+  } | null;
 };
 
 export type ChatProductCard = {
@@ -174,6 +228,18 @@ export type ChatProductCard = {
   usage?: string | null;
   who_can_use?: string | null;
   safety_note?: string | null;
+  /** Recommendation Strength (Capability 29) — "Strong recommendation" |
+   * "Good option" | "Possible option", classified from verification status,
+   * evidence source, and documented contraindications. Never a fabricated
+   * numeric confidence score. Absent for a structured pricing card (only
+   * product_recommendation results carry this). */
+  recommendation_strength?: string | null;
+  /** Reasoning Summary (Capability 36) — safe, deterministic "why this
+   * recommendation" bullets built from real signals (matched condition,
+   * verification status, evidence source, contraindications). Never a
+   * paraphrase of hidden model reasoning — this recommendation path is
+   * rule-based matching, not an LLM call. */
+  reasoning_summary?: string[] | null;
   price?: {
     mrp?: number | null;
     dp?: number | null;
@@ -390,12 +456,66 @@ export async function generateConversationTitle(
 }
 
 /**
+ * Answer Editing, selection-scoped (Capability 12) — rewrites a specific
+ * text snippet per `instruction` and returns JUST the replacement, so the
+ * caller can splice it back into the original message content in place.
+ * Best-effort: the backend itself returns the original text unchanged on
+ * any failure (see /transform-text's docstring), so this never throws for
+ * a provider error — only for a genuine network/auth failure.
+ */
+export async function transformTextSnippet(text: string, instruction: string): Promise<string> {
+  const token = await requireBearerToken();
+  const res = await fetch(`${getApiBaseUrl()}/transform-text`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "X-Client": BRAND.shortName,
+    },
+    body: JSON.stringify({ text, instruction }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Transform text failed (${res.status})`);
+  const data = (await res.json()) as { result: string };
+  return data.result;
+}
+
+/**
  * Feature: User Preference Learning — saves a response-style preference
  * (e.g. `preferred_explanation_level=simple`) to the user's own memory
  * (POST /memory, RLS-scoped to auth.uid()) via the EXISTING remember_fact
  * endpoint. Best-effort: never blocks or surfaces an error to the user —
  * this is a background quality-of-life save, not a critical action.
  */
+export type MemoryItem = {
+  id: string;
+  source: string;
+  key: string | null;
+  value: string;
+  pinned: boolean;
+  updated_at: string | null;
+  relevance: number;
+};
+
+/** Reads this user's own saved memory/preferences (GET /memory). Used to
+ * seed the Response Style controls in Settings with the currently saved
+ * selection. Best-effort: returns [] on any failure. */
+export async function listUserMemory(): Promise<MemoryItem[]> {
+  try {
+    const token = await requireBearerToken();
+    if (!token) return [];
+    const res = await fetch(`${getApiBaseUrl()}/memory`, {
+      headers: { Authorization: `Bearer ${token}`, "X-Client": BRAND.shortName },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: MemoryItem[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function rememberPreference(key: string, value: string): Promise<boolean> {
   try {
     const token = await requireBearerToken();
@@ -516,6 +636,8 @@ export async function streamChatWithBackend(
       products: finalMeta.products,
       structured: finalMeta.structured,
       clarification_options: finalMeta.clarification_options,
+      evidence_strength: finalMeta.evidence_strength,
+      claim_verification: finalMeta.claim_verification,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather
@@ -543,6 +665,29 @@ export async function healthCheck(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Runtime capability status (currently: image understanding). Backend
+ * probes the AI provider live and caches for a few minutes, so this
+ * reflects reality — e.g. flips to available automatically once OpenAI
+ * billing is restored, no redeploy needed.
+ */
+export interface CapabilityStatus {
+  available: boolean;
+  reason: string | null;
+  message: string | null;
+}
+
+export async function getCapabilities(): Promise<{ vision: CapabilityStatus; web_search: CapabilityStatus; chat: { available: boolean } } | null> {
+  const apiBaseUrl = getApiBaseUrl();
+  try {
+    const res = await fetch(`${apiBaseUrl}/capabilities`, { method: "GET" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 
@@ -1265,6 +1410,20 @@ export async function adminKnowledgeGaps(limit = 50): Promise<Array<Record<strin
   return adminGet(`/admin/analytics/knowledge-gaps?limit=${limit}`);
 }
 
+/** Knowledge Freshness Monitoring (Capability 42) —
+ * backend/admin_api.py's admin_knowledge_freshness. */
+export type KnowledgeFreshnessReport = {
+  stale_documents: Array<{ id: string; file_name: string; last_updated: string; days_since_update: number }>;
+  missing_metadata_documents: Array<{ id: string; file_name: string; missing_category: boolean; missing_tags: boolean }>;
+  duplicate_documents: Array<{ file_name: string; count: number; document_ids: string[] }>;
+  total_active_documents: number;
+  stale_after_days: number;
+};
+
+export async function adminKnowledgeFreshness(staleAfterDays = 180): Promise<KnowledgeFreshnessReport> {
+  return adminGet(`/admin/analytics/knowledge-freshness?stale_after_days=${staleAfterDays}`);
+}
+
 /** Feature: Feedback Learning aggregation — backend/admin_api.py's
  * admin_feedback_summary. */
 export type AdminFeedbackSummary = {
@@ -1279,6 +1438,31 @@ export type AdminFeedbackSummary = {
 
 export async function adminFeedbackSummary(): Promise<AdminFeedbackSummary> {
   return adminGet(`/admin/analytics/feedback-summary`);
+}
+
+/** Continuous Improvement System (Next-Gen spec, Phase 14) —
+ * backend/admin_api.py's admin_improvement_candidates. Read-only
+ * reporting: classifies negative-feedback answers into a failure
+ * category for a human to review, never edits anything itself. */
+export type ImprovementCandidate = {
+  category: string;
+  count: number;
+  examples: Array<{
+    question_or_answer_excerpt: string;
+    reason: string;
+    feedback_comment: string | null;
+    answer_source: string | null;
+    created_at: string | null;
+  }>;
+};
+
+export type ImprovementCandidatesReport = {
+  total_negative_feedback_reviewed: number;
+  candidates: ImprovementCandidate[];
+};
+
+export async function adminImprovementCandidates(): Promise<ImprovementCandidatesReport> {
+  return adminGet(`/admin/analytics/improvement-candidates`);
 }
 
 /** Feature: Observability Dashboard — backend/admin_api.py's
@@ -1640,10 +1824,128 @@ export async function editArtifact(
   return distJson("PATCH", `/artifacts/${artifactId}`, payload);
 }
 
+/** Interactive Artifacts (Capability 31) — persists checked checklist item
+ * indices in place (no new version row — see backend's own docstring for
+ * why ticking a checkbox isn't treated as a content revision). */
+export async function updateChecklistState(artifactId: string, checkedItems: number[]): Promise<{ checked_items: number[] }> {
+  return distJson("PATCH", `/artifacts/${artifactId}/checklist-state`, { checked_items: checkedItems });
+}
+
 /** Task Continuation — AI-assisted edit ("make week 2 more aggressive")
  * against an existing artifact, creating a new version. */
 export async function continueArtifact(artifactId: string, instruction: string): Promise<Artifact> {
   return distJson("POST", `/artifacts/${artifactId}/continue`, { instruction });
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled reminders (Scheduled / Proactive Assistance, Capability 33) —
+// backend/reminders_api.py. Named ScheduledReminder (not Reminder) to
+// avoid colliding with the pre-existing product-usage Reminder type further
+// below (WellnessJourney's customerListReminders/etc.) — a different,
+// unrelated feature that happens to share the word "reminder."
+// ---------------------------------------------------------------------------
+
+export type ReminderRecurrence = "once" | "daily" | "weekly" | "monthly";
+
+export type ScheduledReminder = {
+  id: string;
+  user_id?: string;
+  title: string;
+  body?: string | null;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+  due_at: string;
+  recurrence: ReminderRecurrence;
+  is_active: boolean;
+  last_delivered_at?: string | null;
+  created_at?: string;
+};
+
+export async function createReminder(payload: {
+  title: string;
+  body?: string;
+  due_at: string;
+  recurrence?: ReminderRecurrence;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+}): Promise<ScheduledReminder> {
+  return distJson("POST", "/reminders", payload);
+}
+
+export async function listReminders(includeInactive = false): Promise<{ reminders: ScheduledReminder[]; total: number }> {
+  return distGet(`/reminders?include_inactive=${includeInactive}`);
+}
+
+export async function cancelReminder(reminderId: string): Promise<{ cancelled: boolean }> {
+  const headers = await ragHeaders();
+  const res = await resilientFetch(`${getApiBaseUrl()}/reminders/${reminderId}`, { method: "DELETE", headers });
+  if (!res.ok) throw new Error(`Cancel reminder failed (${res.status})`);
+  return await res.json();
+}
+
+/** Best-effort: called on app load and periodically while active. Never
+ * surfaces an error to the user — a missed check just means reminders are
+ * delivered on the next successful one. */
+export async function checkDueReminders(): Promise<{ delivered: Array<{ id: string; title: string }>; count: number }> {
+  try {
+    return await distJson("POST", "/reminders/check");
+  } catch {
+    return { delivered: [], count: 0 };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+// — backend/coach_api.py.
+// ---------------------------------------------------------------------------
+
+export type CoachTaskStatus = "pending" | "done";
+export type CoachGoalStatus = "active" | "completed" | "abandoned";
+
+export type CoachTask = {
+  id: string;
+  goal_id: string;
+  task_text: string;
+  day_label: string;
+  sort_order: number;
+  status: CoachTaskStatus;
+  completed_at?: string | null;
+};
+
+export type CoachGoal = {
+  id: string;
+  goal_text: string;
+  status: CoachGoalStatus;
+  created_at?: string;
+  updated_at?: string;
+  tasks: CoachTask[];
+};
+
+export async function createCoachGoal(goalText: string): Promise<CoachGoal> {
+  return distJson("POST", "/coach/goals", { goal_text: goalText });
+}
+
+export async function listCoachGoals(includeInactive = false): Promise<{ goals: CoachGoal[]; total: number }> {
+  return distGet(`/coach/goals?include_inactive=${includeInactive}`);
+}
+
+export async function getCoachGoal(goalId: string): Promise<CoachGoal> {
+  return distGet(`/coach/goals/${goalId}`);
+}
+
+export async function updateCoachGoal(
+  goalId: string,
+  payload: { goal_text?: string; status?: CoachGoalStatus },
+): Promise<{ updated: boolean }> {
+  return distJson("PATCH", `/coach/goals/${goalId}`, payload);
+}
+
+export async function completeCoachTask(taskId: string): Promise<{ completed: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/complete`);
+}
+
+export async function reopenCoachTask(taskId: string): Promise<{ reopened: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/reopen`);
 }
 
 /** Content — generate. */

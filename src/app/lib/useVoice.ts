@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { spokenify } from "./voiceText";
 
 /**
- * useVoice — Web Speech API hook for Speech-to-Text + Text-to-Speech.
+ * useVoice — Web Speech API hook for Speech-to-Text + Text-to-Speech, plus
+ * real microphone-level metering, configurable turn detection, and a
+ * sentence-chunked speech queue for lower time-to-first-audio.
  *
  * Browser support:
  *   - SpeechRecognition: Chrome, Edge, Safari (webkit prefix)
@@ -9,6 +12,16 @@ import { useEffect, useRef, useState, useCallback } from "react";
  *
  * When the browser doesn't support either API, the hook gracefully
  * degrades — `supported` becomes false and the UI hides the mic button.
+ *
+ * Honesty note (see project docs on avoiding faked telemetry): the Web
+ * Speech Synthesis API does not expose the audio buffer it plays, so there
+ * is no way to derive *real* amplitude from TTS output the way there is
+ * for microphone input. Rather than fake a waveform with a canned
+ * animation loop, the `amplitude` value during speaking is driven by real
+ * `onboundary` word-boundary events fired by the browser as it actually
+ * speaks each word — genuine event data, just coarser than true audio
+ * analysis. During listening, `amplitude` is real RMS mic level from a
+ * live `getUserMedia` + `AnalyserNode` graph.
  *
  * The hook is intentionally framework-agnostic (no React-specific APIs
  * inside the recognition callbacks) to avoid stale-closure bugs.
@@ -37,6 +50,15 @@ function getRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+export type TurnEagerness = "eager" | "normal" | "patient";
+
+/** Silence duration (ms) before an in-progress utterance is treated as a finished turn. */
+const TURN_SILENCE_MS: Record<TurnEagerness, number> = {
+  eager: 650,
+  normal: 1300,
+  patient: 2400,
+};
+
 export type VoiceState = {
   /** True if either speech-to-text or text-to-speech is available. */
   supported: boolean;
@@ -49,6 +71,8 @@ export type VoiceState = {
   muted: boolean;
   transcript: string;
   interimTranscript: string;
+  /** True while backchannel/interruption filtering is watching a passive barge-in mic. */
+  bargeInActive: boolean;
   /** Human-readable message when mic start or recognition fails; null otherwise. */
   error: string | null;
   /** Dismisses the current error message without touching listening state. */
@@ -57,21 +81,57 @@ export type VoiceState = {
   /**
    * Opens the mic *without* cutting off any in-progress speech — used to let
    * the user barge in (start talking while the AI is still speaking, like
-   * ChatGPT's voice mode). The moment real speech is detected, the caller
-   * should stop TTS; `startListening` still cancels TTS immediately, for
-   * the normal tap-to-talk case.
+   * ChatGPT's voice mode). The moment real, non-backchannel speech is
+   * detected, the caller's TTS is cut; short acknowledgements ("okay",
+   * "hmm", "right") are recognized as backchannel and do NOT interrupt.
    */
   startBargeInListening: () => void;
   stopListening: () => void;
   /** Clears the current transcript — call after consuming it so a stale value can't leak into a later render. */
   clearTranscript: () => void;
+  /** Speaks the given text immediately, replacing anything queued or in progress. */
   speak: (text: string) => void;
+  /**
+   * Appends a sentence-sized chunk to the speech queue — spoken back-to-back
+   * with whatever's already queued/playing, without cutting anything off.
+   * Feed this with each newly-completed sentence as an LLM answer streams
+   * in, instead of waiting for the full answer, for a real reduction in
+   * time-to-first-audio (no server-side streaming TTS is wired up, so this
+   * is the honest client-side approximation of it).
+   */
+  enqueueSpeech: (text: string) => void;
+  /** Stops playback and drops anything still queued. */
   stopSpeaking: () => void;
   toggleMute: () => void;
-  /** Amplitude 0..1 for waveform animation (updated during speaking). */
+  /**
+   * "Unlocks" the browser's speech synthesis engine by speaking a silent
+   * utterance synchronously inside a real user gesture (tap/click) — call
+   * this from a click handler, not from an async callback. Several mobile
+   * browsers (iOS Safari, Chrome on Android) require the *first*
+   * `speechSynthesis.speak()` call after page load to happen inside a
+   * user-gesture call stack, or they silently drop it and every later
+   * `speak()` triggered from an async network response (the normal
+   * "AI finished answering, now speak it" path) stays silent forever with
+   * no error event at all. See `speak`'s declaration for the matching fix.
+   */
+  primeSpeech: () => void;
+  /** Amplitude 0..1 — real mic RMS while listening, boundary-event-driven while speaking. */
   amplitude: number;
   /** System voices available for TTS, filtered to nothing until the browser reports them. */
   voices: SpeechSynthesisVoice[];
+  /** Available audio input (microphone) devices — labeled only after mic permission is granted. */
+  inputDevices: MediaDeviceInfo[];
+  selectedInputDeviceId: string | null;
+  setInputDeviceId: (id: string | null) => void;
+  /**
+   * TTS output device selection is NOT implemented: the Web Speech
+   * Synthesis API has no equivalent of HTMLMediaElement.setSinkId, so a
+   * web page cannot redirect where synthesized speech plays — it always
+   * follows the OS/browser's current default output. Exposed as `false` so
+   * callers can show an honest "not supported" state instead of a control
+   * that silently does nothing.
+   */
+  outputDeviceSelectionSupported: false;
 };
 
 function describeRecognitionError(code: string): string {
@@ -99,6 +159,11 @@ const LANG_MAP: Record<string, string> = {
   te: "te-IN",
   gu: "gu-IN",
   pa: "pa-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  or: "or-IN",
+  as: "as-IN",
+  ur: "ur-IN",
 };
 
 export type VoiceOptions = {
@@ -110,6 +175,15 @@ export type VoiceOptions = {
   volume?: number;
   /** Exact system voice name to use, from speechSynthesis.getVoices(). */
   voiceName?: string;
+  /** How long to wait in silence before treating speech as a finished turn. Default "normal". */
+  turnEagerness?: TurnEagerness;
+  /**
+   * Backchannel words ("okay", "hmm", "yeah"...) picked up during a passive
+   * barge-in listen should NOT interrupt AI speech — only real interruption
+   * speech should. Caller supplies the classifier so this hook stays free
+   * of app-specific vocabulary; defaults to "always interrupt" when omitted.
+   */
+  isBackchannel?: (text: string) => boolean;
 };
 
 export function useVoice(language: string = "en", options: VoiceOptions = {}): VoiceState {
@@ -124,22 +198,113 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
   const [muted, setMuted] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const [bargeInActive, setBargeInActive] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedInputDeviceId, setSelectedInputDeviceId] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   // True only while a passive (barge-in) listen is open — the recognizer is
-  // running *underneath* an active TTS playback. The first real speech it
-  // picks up should cut the AI off, same as tapping to interrupt.
+  // running *underneath* an active TTS playback. The first real (non-
+  // backchannel) speech it picks up should cut the AI off.
   const bargeInRef = useRef(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   // Kept in a ref (not state) so `speak()` always reads the latest values
   // without needing to be recreated — settings can change mid-conversation.
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  // --- Turn detection (silence debounce over continuous recognition) -----
+  const silenceTimerRef = useRef<number | null>(null);
+  const accumulatedFinalRef = useRef("");
+  // Some browsers only mark isFinal on recognition.stop(), never mid-stream
+  // even in continuous mode — without this fallback, finalizeTurn firing
+  // from the silence debounce (rather than a browser-driven final result)
+  // could see an empty accumulatedFinalRef and silently drop everything the
+  // user just said.
+  const lastInterimRef = useRef("");
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  // --- Real microphone level metering (listening) -------------------------
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micCtxRef = useRef<AudioContext | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micRafRef = useRef<number | null>(null);
+
+  const stopMicMetering = useCallback(() => {
+    if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
+    micRafRef.current = null;
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current = null;
+    micAnalyserRef.current = null;
+    if (micCtxRef.current) {
+      micCtxRef.current.close().catch(() => undefined);
+      micCtxRef.current = null;
+    }
+  }, []);
+
+  const trackMicAmplitude = useCallback(() => {
+    if (!micAnalyserRef.current) return;
+    const data = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
+    micAnalyserRef.current.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    setAmplitude(Math.min(1, rms * 4));
+    micRafRef.current = requestAnimationFrame(trackMicAmplitude);
+  }, []);
+
+  const startMicMetering = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: selectedInputDeviceId ? { deviceId: { exact: selectedInputDeviceId } } : true,
+      });
+      micStreamRef.current = stream;
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      micCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      micAnalyserRef.current = analyser;
+      trackMicAmplitude();
+
+      // Now that permission is granted, device labels become readable —
+      // refresh the enumerated list so the settings UI can show real names
+      // instead of "Microphone 1".
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => setInputDevices(devices.filter((d) => d.kind === "audioinput")))
+        .catch(() => undefined);
+    } catch (e) {
+      // Metering is best-effort — SpeechRecognition manages its own capture
+      // independently, so a metering failure shouldn't block listening.
+      console.warn("[voice] mic metering unavailable:", e);
+    }
+  }, [selectedInputDeviceId, trackMicAmplitude]);
+
+  // Enumerate input devices on mount (labels are blank until permission is
+  // granted at least once — that's a browser privacy rule, not a bug here).
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => setInputDevices(devices.filter((d) => d.kind === "audioinput")))
+      .catch(() => undefined);
+  }, []);
 
   // Load available system TTS voices — the list is async and browser-dependent.
   useEffect(() => {
@@ -150,110 +315,143 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     return () => window.speechSynthesis.removeEventListener("voiceschanged", load);
   }, []);
 
-  // Initialize recognition
+  // Initialize recognition. `continuous = true` keeps the mic open across
+  // natural pauses instead of the browser auto-stopping on the first one —
+  // "end of turn" is instead decided by our own silence-debounce below, so
+  // it can be tuned per turnEagerness rather than hard-coded to whatever a
+  // given browser's internal cutoff happens to be.
   useEffect(() => {
     const Ctor = getRecognitionCtor();
     if (!Ctor) return;
     const rec = new Ctor();
     rec.lang = LANG_MAP[language] ?? "en-US";
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = true;
+    accumulatedFinalRef.current = "";
+
+    const finalizeTurn = () => {
+      clearSilenceTimer();
+      const finalText = (accumulatedFinalRef.current + " " + lastInterimRef.current).trim();
+      if (finalText) {
+        setTranscript(finalText);
+      }
+      accumulatedFinalRef.current = "";
+      lastInterimRef.current = "";
+      setInterimTranscript("");
+      recognitionRef.current?.stop();
+    };
+
     rec.onresult = (event) => {
       let interim = "";
-      let final = "";
+      let newFinal = "";
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0].transcript;
         if (result.isFinal) {
-          final += text;
+          newFinal += text;
         } else {
           interim += text;
         }
       }
+      if (newFinal) accumulatedFinalRef.current += newFinal;
+      lastInterimRef.current = interim;
+
+      const liveText = (accumulatedFinalRef.current + " " + interim).trim();
+
       // Barge-in: this mic was opened passively under active TTS playback.
-      // The first couple of real characters means the user started talking
-      // over the AI — cut the AI off right now instead of waiting for a
-      // full final result, the same "you can just start talking" behavior
-      // ChatGPT's voice mode has.
-      if (bargeInRef.current && (interim.trim().length > 1 || final.trim().length > 0)) {
-        bargeInRef.current = false;
-        if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
+      // A short backchannel acknowledgement ("okay", "hmm", "right") must
+      // NOT cut the AI off — only real interrupting speech should. Give
+      // short utterances a brief moment to accumulate before deciding,
+      // since "no" and "no wait, actually..." start identically.
+      if (bargeInRef.current && liveText.length > 0) {
+        const classify = optionsRef.current.isBackchannel;
+        const looksLikeInterruption = liveText.length > 12 || !classify || !classify(liveText);
+        if (looksLikeInterruption) {
+          bargeInRef.current = false;
+          setBargeInActive(false);
+          if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+          }
+          speechQueueRef.current = [];
+          setSpeaking(false);
         }
-        setSpeaking(false);
-        setAmplitude(0);
       }
+
       setInterimTranscript(interim);
-      if (final) {
-        setError(null);
-        setTranscript((prev) => prev + final);
+      if (newFinal) setError(null);
+
+      // Reset the "end of turn" debounce on every new fragment of speech —
+      // it only fires once genuine silence follows.
+      clearSilenceTimer();
+      if (liveText) {
+        const eagerness = optionsRef.current.turnEagerness ?? "normal";
+        silenceTimerRef.current = window.setTimeout(finalizeTurn, TURN_SILENCE_MS[eagerness]);
       }
     };
     rec.onerror = (event) => {
       console.warn("[voice] recognition error:", event.error);
+      clearSilenceTimer();
       setListening(false);
+      setBargeInActive(false);
       // "aborted" fires on our own stop()/unmount calls — not a real failure.
       if (event.error !== "aborted") {
         setError(describeRecognitionError(event.error));
       }
     };
     rec.onend = () => {
+      clearSilenceTimer();
       setListening(false);
+      setBargeInActive(false);
       setInterimTranscript("");
+      stopMicMetering();
     };
     recognitionRef.current = rec;
     return () => {
+      clearSilenceTimer();
       rec.abort();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
-
-  // Waveform amplitude tracking during speaking
-  const trackAmplitude = useCallback(() => {
-    if (!analyserRef.current) return;
-    const data = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteTimeDomainData(data);
-    // RMS amplitude
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const v = (data[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / data.length);
-    setAmplitude(Math.min(1, rms * 3));
-    rafRef.current = requestAnimationFrame(trackAmplitude);
-  }, []);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current || listening) return;
     bargeInRef.current = false;
+    setBargeInActive(false);
     // Starting the mic while TTS is still playing risks the mic picking up
     // the speaker's own audio and transcribing it back as user input —
     // interrupt playback first instead of letting the two run concurrently.
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    speechQueueRef.current = [];
     setSpeaking(false);
     setTranscript("");
     setInterimTranscript("");
     setError(null);
+    accumulatedFinalRef.current = "";
+    lastInterimRef.current = "";
     try {
       recognitionRef.current.start();
       setListening(true);
+      void startMicMetering();
     } catch (e) {
       console.warn("[voice] start failed:", e);
       setError("Couldn't start voice input. Please try again.");
     }
-  }, [listening]);
+  }, [listening, startMicMetering]);
 
   // Passive listen — deliberately does NOT cancel speechSynthesis, so it can
-  // run alongside an in-progress answer. onresult (above) watches for real
-  // speech and cuts the AI off the moment it appears.
+  // run alongside an in-progress answer. onresult (above) watches for real,
+  // non-backchannel speech and cuts the AI off the moment it appears.
   const startBargeInListening = useCallback(() => {
     if (!recognitionRef.current || listening) return;
     bargeInRef.current = true;
+    setBargeInActive(true);
     setTranscript("");
     setInterimTranscript("");
     setError(null);
+    accumulatedFinalRef.current = "";
+    lastInterimRef.current = "";
     try {
       recognitionRef.current.start();
       setListening(true);
@@ -261,15 +459,19 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
       // Most likely "already started" — fine to drop, the next speaking
       // cycle will retry.
       bargeInRef.current = false;
+      setBargeInActive(false);
       console.warn("[voice] barge-in listen failed:", e);
     }
   }, [listening]);
 
   const stopListening = useCallback(() => {
     bargeInRef.current = false;
+    setBargeInActive(false);
+    clearSilenceTimer();
     recognitionRef.current?.stop();
     setListening(false);
-  }, []);
+    stopMicMetering();
+  }, [clearSilenceTimer, stopMicMetering]);
 
   const clearTranscript = useCallback(() => {
     setTranscript("");
@@ -278,6 +480,117 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
   const clearError = useCallback(() => {
     setError(null);
   }, []);
+
+  // --- Speech playback: single utterance + sentence queue -----------------
+
+  // Bumped on every speak()/enqueueSpeech() reset; a queued speak-after-
+  // cancel timer only fires while it still matches the sequence it was
+  // issued with, so an older, already-superseded utterance can't start
+  // playing after a newer one has already taken over.
+  const speakSeqRef = useRef(0);
+  // Chrome (desktop and Android) silently pauses speechSynthesis after
+  // ~15s of continuous speech unless something calls resume() — without
+  // this watchdog, longer AI answers audibly cut off mid-sentence with no
+  // error event at all.
+  const resumeWatchdogRef = useRef<number | null>(null);
+  // Sentence-chunk queue for enqueueSpeech — played back-to-back so a
+  // streaming answer can start being heard before the full text has
+  // arrived, without needing server-side streaming TTS.
+  const speechQueueRef = useRef<string[]>([]);
+  const isPlayingQueueRef = useRef(false);
+
+  const stopSpeaking = useCallback(() => {
+    speechQueueRef.current = [];
+    isPlayingQueueRef.current = false;
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    speakSeqRef.current += 1;
+    setSpeaking(false);
+    setAmplitude(0);
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (resumeWatchdogRef.current) {
+      window.clearInterval(resumeWatchdogRef.current);
+      resumeWatchdogRef.current = null;
+    }
+  }, []);
+
+  const buildUtterance = useCallback(
+    (text: string, mySeq: number, onDone: () => void) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const opts = optionsRef.current;
+      utterance.lang = LANG_MAP[language] ?? "en-US";
+      utterance.rate = opts.rate ?? 1.0;
+      utterance.pitch = opts.pitch ?? 1.0;
+      utterance.volume = opts.volume ?? 1.0;
+      if (opts.voiceName) {
+        const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
+        if (match) utterance.voice = match;
+      } else {
+        // No explicit voice chosen — prefer a system voice that actually
+        // matches the selected language over whatever the browser's
+        // default happens to be, so switching to e.g. Hindi/Tamil/Kannada
+        // is audible instead of silently speaking in an English voice.
+        const langPrefix = (LANG_MAP[language] ?? "en-US").split("-")[0];
+        const match = window.speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(langPrefix));
+        if (match) utterance.voice = match;
+      }
+      // Real event-driven pulse: each word boundary bumps amplitude up and
+      // lets it decay, rather than a canned looping animation — see the
+      // hook's top-level honesty note for why this exists instead of true
+      // audio analysis (SpeechSynthesis exposes no audio buffer to Web
+      // Audio API).
+      let decayRaf: number | null = null;
+      const decay = () => {
+        setAmplitude((a) => Math.max(0.12, a * 0.9));
+        decayRaf = requestAnimationFrame(decay);
+      };
+      utterance.onboundary = (ev) => {
+        if (speakSeqRef.current !== mySeq) return;
+        if (ev.name === "word" || ev.name === undefined) setAmplitude(1);
+      };
+      utterance.onstart = () => {
+        if (speakSeqRef.current !== mySeq) return;
+        setSpeaking(true);
+        decayRaf = requestAnimationFrame(decay);
+        if (resumeWatchdogRef.current) window.clearInterval(resumeWatchdogRef.current);
+        resumeWatchdogRef.current = window.setInterval(() => {
+          if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+          }
+        }, 10000);
+      };
+      const cleanup = () => {
+        if (decayRaf) cancelAnimationFrame(decayRaf);
+        if (speakSeqRef.current === mySeq) onDone();
+      };
+      utterance.onend = cleanup;
+      utterance.onerror = cleanup;
+      return utterance;
+    },
+    [language],
+  );
+
+  const playNextInQueue = useCallback(
+    (mySeq: number) => {
+      const next = speechQueueRef.current.shift();
+      if (!next) {
+        isPlayingQueueRef.current = false;
+        setSpeaking(false);
+        setAmplitude(0);
+        if (resumeWatchdogRef.current) {
+          window.clearInterval(resumeWatchdogRef.current);
+          resumeWatchdogRef.current = null;
+        }
+        return;
+      }
+      isPlayingQueueRef.current = true;
+      const utterance = buildUtterance(next, mySeq, () => playNextInQueue(mySeq));
+      window.speechSynthesis.speak(utterance);
+    },
+    [buildUtterance],
+  );
 
   const speak = useCallback(
     (text: string) => {
@@ -289,60 +602,59 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
         recognitionRef.current?.stop();
         setListening(false);
       }
-      // Strip markdown for cleaner speech
-      const clean = text
-        .replace(/```[\s\S]*?```/g, " code block ")
-        .replace(/[#*`_~[]()]/g, "")
-        .replace(/\n+/g, ". ")
-        .slice(0, 1000);
+      // Callers may pass either pre-sanitized speech (voiceText.spokenify
+      // already applied) or raw markdown-ish LLM text — spokenify() is
+      // idempotent on already-clean text, so it's safe to always apply here
+      // as the sanitization safety net every speak() call has always had.
+      const clean = spokenify(text).slice(0, 1000);
+      if (!clean) return;
+
+      const mySeq = ++speakSeqRef.current;
+      speechQueueRef.current = [];
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(clean);
-      const opts = optionsRef.current;
-      utterance.lang = LANG_MAP[language] ?? "en-US";
-      utterance.rate = opts.rate ?? 1.0;
-      utterance.pitch = opts.pitch ?? 1.0;
-      utterance.volume = opts.volume ?? 1.0;
-      if (opts.voiceName) {
-        const match = window.speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
-        if (match) utterance.voice = match;
-      }
-      utterance.onstart = () => {
-        setSpeaking(true);
-        // Set up audio analysis for waveform
-        try {
-          const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-          audioCtxRef.current = ctx;
-          // Note: SpeechSynthesis doesn't expose an audio node, so we
-          // simulate amplitude with a sine wave for the waveform animation.
-          // Real audio analysis would require a media element source.
-          analyserRef.current = ctx.createAnalyser();
-          trackAmplitude();
-        } catch {
-          // AudioContext not available — waveform will stay flat
-        }
-      };
-      utterance.onend = () => {
-        setSpeaking(false);
-        setAmplitude(0);
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        audioCtxRef.current?.close();
-      };
-      utterance.onerror = () => {
-        setSpeaking(false);
-        setAmplitude(0);
-      };
-      window.speechSynthesis.speak(utterance);
+
+      // Chrome has a long-standing bug where a speak() call issued in the
+      // same tick as cancel() is silently dropped — no error, no onstart,
+      // no sound, the exact symptom of "the speaker button doesn't speak"
+      // reported on mobile. Deferring speak() one tick past cancel() lets
+      // the engine actually flush before the new utterance is queued.
+      window.setTimeout(() => {
+        if (speakSeqRef.current !== mySeq) return; // superseded before it ran
+        speechQueueRef.current = [clean];
+        playNextInQueue(mySeq);
+      }, 30);
     },
-    [language, muted, listening, trackAmplitude],
+    [muted, listening, playNextInQueue],
   );
 
-  const stopSpeaking = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+  const enqueueSpeech = useCallback(
+    (text: string) => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window) || muted) return;
+      const clean = spokenify(text);
+      if (!clean) return;
+      speechQueueRef.current.push(clean);
+      if (!isPlayingQueueRef.current) {
+        // First chunk of a new turn — establish a fresh sequence so any
+        // straggling timer from a prior stop() can't resurrect old audio.
+        const mySeq = speakSeqRef.current;
+        playNextInQueue(mySeq);
+      }
+    },
+    [muted, playNextInQueue],
+  );
+
+  /** See VoiceState.primeSpeech for why this exists. */
+  const primeSpeech = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      const utterance = new SpeechSynthesisUtterance(" ");
+      utterance.volume = 0;
+      utterance.rate = 10;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Priming is best-effort — a failure here just means the first real
+      // speak() call later carries the unlock risk it always had.
     }
-    setSpeaking(false);
-    setAmplitude(0);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -350,13 +662,40 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
       const next = !m;
       if (next) {
         // Muting also stops any in-progress speech
+        speakSeqRef.current += 1;
+        speechQueueRef.current = [];
+        isPlayingQueueRef.current = false;
         if (typeof window !== "undefined" && "speechSynthesis" in window) {
           window.speechSynthesis.cancel();
         }
         setSpeaking(false);
+        if (resumeWatchdogRef.current) {
+          window.clearInterval(resumeWatchdogRef.current);
+          resumeWatchdogRef.current = null;
+        }
       }
       return next;
     });
+  }, []);
+
+  const setInputDeviceId = useCallback((id: string | null) => {
+    setSelectedInputDeviceId(id);
+  }, []);
+
+  // Belt-and-braces cleanup on unmount — stop any in-flight speech, mic
+  // metering, and the resume watchdog interval so they don't outlive the
+  // component.
+  useEffect(() => {
+    return () => {
+      speakSeqRef.current += 1;
+      speechQueueRef.current = [];
+      if (resumeWatchdogRef.current) window.clearInterval(resumeWatchdogRef.current);
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      stopMicMetering();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
@@ -368,6 +707,7 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     muted,
     transcript,
     interimTranscript,
+    bargeInActive,
     error,
     clearError,
     startListening,
@@ -375,9 +715,15 @@ export function useVoice(language: string = "en", options: VoiceOptions = {}): V
     stopListening,
     clearTranscript,
     speak,
+    enqueueSpeech,
     stopSpeaking,
     toggleMute,
+    primeSpeech,
     amplitude,
     voices,
+    inputDevices,
+    selectedInputDeviceId,
+    setInputDeviceId,
+    outputDeviceSelectionSupported: false,
   };
 }

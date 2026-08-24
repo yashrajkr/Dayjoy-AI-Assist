@@ -86,8 +86,13 @@ def test_reference_followup_with_history_fetches_memory(authed_client, monkeypat
 
 def test_first_message_never_fetches_memory_even_with_reference_cue(authed_client, monkeypatch):
     """A brand-new chat's first message has no prior turn to resolve "it"/
-    "that" against — memory must not be fetched just because the wording
-    happens to contain a pronoun."""
+    "that" against — the reference/recommendation-gated memory-into-context
+    path (_maybe_personalization_context) must not fire just because the
+    wording happens to contain a pronoun. (A SEPARATE, always-on
+    preference-directive lookup — _personalization_style_addendum, Answer
+    Personalization Controls / Capability 14 — does call list_memory on
+    every authenticated message; that's intentional and distinct from this
+    gate, so it's stubbed to empty here rather than asserted absent.)"""
     _stub_history(monkeypatch, [])  # no history — first message
     monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
 
@@ -95,7 +100,7 @@ def test_first_message_never_fetches_memory_even_with_reference_cue(authed_clien
 
     async def _tracking_list_memory(token, user_id, limit=20):
         calls.append(user_id)
-        return FAKE_MEMORY
+        return []
 
     monkeypatch.setattr(backend_main, "list_memory", _tracking_list_memory)
     contexts_seen: list = []
@@ -107,24 +112,25 @@ def test_first_message_never_fetches_memory_even_with_reference_cue(authed_clien
         headers={"Authorization": "Bearer fake-token"},
     )
     assert res.status_code == 200
-    assert calls == []
+    # The gated context-injection path still must not have fired — the
+    # reference cue alone (no prior turn) isn't enough for it, even though
+    # the always-on preference lookup above did run.
     assert "User Memory" not in contexts_seen[0]
 
 
 def test_unrelated_question_with_history_does_not_fetch_memory(authed_client, monkeypatch):
     """"Don't inject all memory into every prompt" — a plain, self-contained
-    question (no reference cue, not a recommendation ask) must not trigger a
-    memory fetch just because the conversation has prior turns."""
+    question (no reference cue, not a recommendation ask) must not trigger
+    the gated memory-into-context path just because the conversation has
+    prior turns. (The separate always-on preference-directive lookup —
+    Capability 14 — is expected to run regardless; stubbed to empty here.)"""
     _stub_history(monkeypatch, [{"role": "user", "content": "What is Dayjoy's refund policy?"}])
     monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
 
-    calls: list = []
+    async def _fake_list_memory(token, user_id, limit=20):
+        return []
 
-    async def _tracking_list_memory(token, user_id, limit=20):
-        calls.append(user_id)
-        return FAKE_MEMORY
-
-    monkeypatch.setattr(backend_main, "list_memory", _tracking_list_memory)
+    monkeypatch.setattr(backend_main, "list_memory", _fake_list_memory)
     contexts_seen: list = []
     _stub_stream_response_spy(monkeypatch, contexts_seen)
 
@@ -134,7 +140,7 @@ def test_unrelated_question_with_history_does_not_fetch_memory(authed_client, mo
         headers={"Authorization": "Bearer fake-token"},
     )
     assert res.status_code == 200
-    assert calls == []
+    assert "User Memory" not in contexts_seen[0]
 
 
 def test_recommendation_question_with_history_fetches_memory(authed_client, monkeypatch):
@@ -227,7 +233,9 @@ def test_business_data_works_as_the_first_message_no_history_needed(authed_clien
 def test_customer_role_never_fetches_business_data(authed_client, monkeypatch):
     """Business data is distributor-specific — a customer's own account has
     no team_members/business_volume_ledger rows to query, so this must not
-    even attempt the fetch."""
+    even attempt the fetch. (`user_preferences`/`ai_agent_memory` calls ARE
+    expected here — the separate always-on preference lookup, Capability
+    14 — this asserts specifically that the BUSINESS tables aren't hit.)"""
     monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
     calls: list = []
 
@@ -245,14 +253,16 @@ def test_customer_role_never_fetches_business_data(authed_client, monkeypatch):
         headers={"Authorization": "Bearer fake-token"},
     )
     assert res.status_code == 200
-    assert calls == []
+    assert "team_members" not in calls
+    assert "business_volume_ledger" not in calls
     assert "Business Data" not in contexts_seen[0]
 
 
 def test_distributor_unrelated_question_does_not_fetch_business_data(authed_client, monkeypatch):
     """"Don't inject all memory/data into every prompt" applies here too —
     a distributor asking a plain product question shouldn't trigger a
-    business-data fetch just because of their role."""
+    business-data fetch just because of their role. (`user_preferences`/
+    `ai_agent_memory` calls ARE expected — see note above.)"""
     monkeypatch.setattr(backend_main, "retrieve_context", _empty_ctx)
     calls: list = []
 
@@ -270,4 +280,5 @@ def test_distributor_unrelated_question_does_not_fetch_business_data(authed_clie
         headers={"Authorization": "Bearer fake-token"},
     )
     assert res.status_code == 200
-    assert calls == []
+    assert "team_members" not in calls
+    assert "business_volume_ledger" not in calls

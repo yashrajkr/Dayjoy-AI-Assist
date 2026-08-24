@@ -22,10 +22,26 @@ import {
   Ticket,
   Mail,
   FileText as FileTextIcon,
+  Package,
+  Briefcase,
+  GraduationCap,
+  ScrollText,
+  LifeBuoy,
+  Wand2,
+  Wifi,
+  WifiOff,
+  Gauge,
+  Bug,
+  Pause,
+  Play,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { AppHeader } from "../common/AppHeader";
 import { useVoice, type VoiceOptions } from "../../lib/useVoice";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { VoiceAssistantMobile } from "./VoiceAssistantMobile";
+import { spokenify, splitSentences, toConciseSpeech } from "../../lib/voiceText";
+import { parseVoiceCommand, isBackchannelOnly, type VoiceCommand } from "../../lib/voiceCommands";
 import { BRAND } from "../../lib/brand";
 import {
   createConversation,
@@ -37,7 +53,10 @@ import {
   streamChatWithBackend,
   chatWithBackend,
   generateConversationTitle,
+  healthCheck,
+  ragCreateSupportTicket,
   type ChatSource,
+  type ChatProductCard,
 } from "../../../lib/api";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -57,9 +76,47 @@ type Turn = {
   verified?: boolean;
   sources?: ChatSource[] | string[];
   answerSource?: string | null;
+  productCards?: ChatProductCard[] | null;
 };
 
-type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "error" | "offline";
+type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "paused" | "error" | "offline";
+
+/**
+ * Real backend tool/RAG telemetry — these are the exact `status` values the
+ * /chat/stream SSE endpoint emits mid-request (backend/main.py), surfaced
+ * here for the first time in Voice Mode. Not synthesized: if the backend
+ * doesn't emit a status this turn, nothing is shown beyond "Thinking…".
+ */
+const TOOL_STATUS_LABELS: Record<string, string> = {
+  connected: "Thinking…",
+  searching_knowledge: "Searching DayJoy Knowledge…",
+  searching_web: "Searching the web…",
+  checking_pricing: "Checking pricing…",
+  checking_recommendations: "Finding recommendations…",
+  checking_wellness_goals: "Checking your wellness goals…",
+  analyzing: "Analyzing…",
+  verifying: "Verifying the answer…",
+};
+
+const TURN_EAGERNESS_LABELS: Record<"eager" | "normal" | "patient", string> = {
+  eager: "Eager — responds quickly",
+  normal: "Normal — balanced",
+  patient: "Patient — waits longer",
+};
+
+type PendingConfirmation = {
+  type: "create_ticket";
+  query: string;
+};
+
+const QUICK_ACTIONS: Array<{ label: string; icon: typeof Package; prompt: string }> = [
+  { label: "Product Info", icon: Package, prompt: "Tell me about DayJoy's products." },
+  { label: "Business Guidance", icon: Briefcase, prompt: "I'd like some business guidance as a DayJoy distributor." },
+  { label: "Training Help", icon: GraduationCap, prompt: "What training resources are available for me?" },
+  { label: "Policies", icon: ScrollText, prompt: "Can you explain DayJoy's policies I should know about?" },
+  { label: "Customer Support", icon: LifeBuoy, prompt: "I need help with a customer support issue." },
+  { label: "Product Recommendation", icon: Wand2, prompt: "Can you recommend a DayJoy product for me?" },
+];
 
 const LANGUAGES: Array<{ code: string; label: string; sttCode: string }> = [
   { code: "en", label: "English (India)", sttCode: "en-US" },
@@ -70,6 +127,11 @@ const LANGUAGES: Array<{ code: string; label: string; sttCode: string }> = [
   { code: "te", label: "Telugu", sttCode: "te-IN" },
   { code: "gu", label: "Gujarati", sttCode: "gu-IN" },
   { code: "pa", label: "Punjabi", sttCode: "pa-IN" },
+  { code: "kn", label: "Kannada", sttCode: "kn-IN" },
+  { code: "ml", label: "Malayalam", sttCode: "ml-IN" },
+  { code: "or", label: "Odia", sttCode: "or-IN" },
+  { code: "as", label: "Assamese", sttCode: "as-IN" },
+  { code: "ur", label: "Urdu", sttCode: "ur-IN" },
 ];
 
 /** Short, human-readable labels for the AI router's answer_source field. */
@@ -84,7 +146,7 @@ const ANSWER_SOURCE_LABELS: Record<string, string> = {
 
 const SETTINGS_KEY = "dayjoy.voiceAssistant.settings.v1";
 
-type PersistedSettings = {
+export type PersistedSettings = {
   languageCode: string;
   voiceName: string | null;
   rate: number;
@@ -92,6 +154,17 @@ type PersistedSettings = {
   volume: number;
   handsFree: boolean;
   autoSummarize: boolean;
+  /** How long to wait in silence before treating speech as a finished turn. */
+  turnEagerness: "eager" | "normal" | "patient";
+  /** Whether the user can barge in (interrupt) while the AI is speaking. */
+  interruptionsEnabled: boolean;
+  /** Whether the live transcript/caption text is shown at all. */
+  captionsEnabled: boolean;
+  /** How many sentences of a spoken answer to say aloud before offering "I can share more" — lowered by the "shorter answer" voice command. */
+  maxSpokenSentences: number;
+  /** Developer-only latency diagnostics panel in Settings. */
+  showDiagnostics: boolean;
+  micDeviceId: string | null;
 };
 
 function loadSettings(): PersistedSettings {
@@ -111,6 +184,12 @@ function loadSettings(): PersistedSettings {
     // opt in via the Hands-free toggle in session settings.
     handsFree: false,
     autoSummarize: true,
+    turnEagerness: "normal",
+    interruptionsEnabled: true,
+    captionsEnabled: true,
+    maxSpokenSentences: 4,
+    showDiagnostics: false,
+    micDeviceId: null,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -152,6 +231,7 @@ export function VoiceAssistant() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, role } = useAuth();
+  const isMobile = useIsMobile();
 
   const [settings, setSettings] = useState<PersistedSettings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
@@ -162,15 +242,26 @@ export function VoiceAssistant() {
       pitch: settings.pitch,
       volume: settings.volume,
       voiceName: settings.voiceName ?? undefined,
+      turnEagerness: settings.turnEagerness,
+      isBackchannel: isBackchannelOnly,
     }),
-    [settings.rate, settings.pitch, settings.volume, settings.voiceName],
+    [settings.rate, settings.pitch, settings.volume, settings.voiceName, settings.turnEagerness],
   );
   const voice = useVoice(settings.languageCode, voiceOptions);
+
+  useEffect(() => {
+    if (settings.micDeviceId !== voice.selectedInputDeviceId) {
+      voice.setInputDeviceId(settings.micDeviceId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.micDeviceId]);
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [thinking, setThinking] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [phase, setPhase] = useState<SessionPhase>("idle");
+  const [paused, setPaused] = useState(false);
   const [transcriptSearch, setTranscriptSearch] = useState("");
   const [copiedAll, setCopiedAll] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -178,6 +269,31 @@ export function VoiceAssistant() {
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [aiServiceOnline, setAiServiceOnline] = useState<boolean | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
+  const [lastLatency, setLastLatency] = useState<{ sttToRequest: number; firstToken: number; total: number } | null>(
+    null,
+  );
+
+  // Real "is the AI service reachable" check — distinct from "does this
+  // browser support speech APIs" (voice.supported). Both are shown
+  // separately in the header rather than one conflated "Connected" badge,
+  // per the rule against showing a false Connected state when a critical
+  // service is actually down.
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      void healthCheck().then((ok) => {
+        if (!cancelled) setAiServiceOnline(ok);
+      });
+    };
+    check();
+    const interval = window.setInterval(check, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -202,15 +318,41 @@ export function VoiceAssistant() {
   // browsers often silently deny (no permission prompt shown at all,
   // straight to a "Microphone access was denied" error).
   const hasUserStartedMicRef = useRef(false);
+  // Mirrors the latest assistant turn so handleSpeakerTap (defined before
+  // `turns` is filtered/derived further down) always reads the current
+  // value without needing to be redeclared after every derived variable.
+  const lastAssistantTurnRef = useRef<Turn | null>(null);
+  useEffect(() => {
+    const last = [...turns].reverse().find((t) => t.role === "assistant");
+    lastAssistantTurnRef.current = last ?? null;
+  }, [turns]);
   const currentLanguageLabel =
     LANGUAGES.find((l) => l.code === settings.languageCode)?.label ?? "English (India)";
 
-  // Derive the visible orb/session state from voice + network activity.
+  // Personalized, concise greeting (Part 38) — computed once per mount from
+  // the real local time, shown as idle-state copy only (never auto-spoken:
+  // speaking on cold mount with no user gesture yet is exactly the mobile
+  // TTS-unlock problem primeSpeech exists to work around).
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    const timeGreeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    const name = currentUser?.user_metadata?.full_name
+      ? String(currentUser.user_metadata.full_name).split(" ")[0]
+      : null;
+    return `${timeGreeting}${name ? `, ${name}` : ""}. Ask about DayJoy products, business guidance, training, or support.`;
+  }, [currentUser?.user_metadata?.full_name]);
+
+  // Derive the single visible session state from voice + network activity —
+  // one source of truth instead of the UI independently checking multiple
+  // booleans (which can otherwise briefly disagree with each other, e.g.
+  // "thinking" and "listening" both true for a frame during a barge-in).
   useEffect(() => {
     if (!voice.supported) {
       setPhase("offline");
     } else if (voice.error) {
       setPhase("error");
+    } else if (paused) {
+      setPhase("paused");
     } else if (thinking) {
       setPhase("thinking");
     } else if (voice.speaking) {
@@ -220,7 +362,25 @@ export function VoiceAssistant() {
     } else {
       setPhase("idle");
     }
-  }, [voice.supported, voice.error, voice.listening, voice.speaking, thinking]);
+  }, [voice.supported, voice.error, voice.listening, voice.speaking, thinking, paused]);
+
+  // Barge-in: while the AI is speaking and interruptions are enabled, open a
+  // passive listening mic underneath the playback (see useVoice's
+  // startBargeInListening) so the user can just start talking, the same as
+  // tapping the mic to interrupt. Backchannel words ("okay", "hmm") are
+  // filtered out inside useVoice via voiceOptions.isBackchannel and do not
+  // stop playback.
+  useEffect(() => {
+    if (
+      settings.interruptionsEnabled &&
+      voice.speaking &&
+      !voice.listening &&
+      voice.sttSupported &&
+      hasUserStartedMicRef.current
+    ) {
+      voice.startBargeInListening();
+    }
+  }, [settings.interruptionsEnabled, voice.speaking, voice.listening, voice.sttSupported, voice]);
 
   // `behavior: "smooth"` re-fired on every streamed token (streamingText
   // changes many times a second while the assistant is speaking/writing),
@@ -245,13 +405,14 @@ export function VoiceAssistant() {
   }, [currentUser?.id]);
 
   const handleUserUtterance = useCallback(
-    async (text: string) => {
+    async (text: string, opts: { sttFinalAt?: number } = {}) => {
       const trimmed = text.trim();
       if (!trimmed) return;
 
       // Supersede any still-in-flight previous turn rather than letting
       // both run concurrently — see requestSeqRef's declaration for why.
       abortRef.current?.abort();
+      voice.stopSpeaking();
       const mySeq = ++requestSeqRef.current;
       const isStale = () => requestSeqRef.current !== mySeq;
 
@@ -267,9 +428,42 @@ export function VoiceAssistant() {
       setTurns((prev) => [...prev, userTurn]);
       setThinking(true);
       setStreamingText("");
+      setToolStatus(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // Latency tracking (Part 31) — internal-only, surfaced solely via the
+      // opt-in "Show diagnostics" toggle in Settings, never to normal users.
+      const requestStartAt = performance.now();
+      let firstTokenAt: number | null = null;
+
+      // Sentence-chunked progressive speech: as tokens stream in, speak each
+      // completed sentence immediately rather than waiting for the whole
+      // answer — a real reduction in time-to-first-audio given there's no
+      // server-side streaming TTS. Capped at maxSpokenSentences so voice
+      // answers stay concise (Part 26); the full text still always reaches
+      // the transcript.
+      let spokenCount = 0;
+      let trailerQueued = false;
+      const speakNewSentences = (fullTextSoFar: string, isFinalChunk: boolean) => {
+        if (!voice.ttsSupported || voice.muted) return;
+        const sentences = splitSentences(fullTextSoFar);
+        const endsComplete = isFinalChunk || /[.!?]\s*$/.test(fullTextSoFar.trimEnd());
+        const completeCount = endsComplete ? sentences.length : Math.max(0, sentences.length - 1);
+        while (spokenCount < completeCount) {
+          if (spokenCount >= settings.maxSpokenSentences) {
+            if (!trailerQueued) {
+              voice.enqueueSpeech("I can share more if you'd like.");
+              trailerQueued = true;
+            }
+            spokenCount = completeCount; // stop scanning further sentences this turn
+            break;
+          }
+          voice.enqueueSpeech(spokenify(sentences[spokenCount]));
+          spokenCount += 1;
+        }
+      };
 
       let aggregated = "";
       try {
@@ -282,13 +476,20 @@ export function VoiceAssistant() {
           },
           (chunk) => {
             if (isStale()) return;
+            if (firstTokenAt === null) firstTokenAt = performance.now();
             aggregated += chunk;
             setStreamingText(aggregated);
+            speakNewSentences(aggregated, false);
           },
           controller.signal,
+          (status) => {
+            if (isStale()) return;
+            setToolStatus(status);
+          },
         );
         if (isStale()) return; // superseded while this request was in flight
         aggregated = res.answer || aggregated;
+        setToolStatus(null);
 
         const assistantTurn: Turn = {
           id: `a-${Date.now()}`,
@@ -300,6 +501,7 @@ export function VoiceAssistant() {
           verified: res.verification_status === "verified",
           sources: res.sources,
           answerSource: res.answer_source,
+          productCards: res.products,
         };
         setTurns((prev) => [...prev, assistantTurn]);
         setStreamingText("");
@@ -333,45 +535,49 @@ export function VoiceAssistant() {
           }
         }
 
+        // Flush whatever's left unspoken now that the full answer is known
+        // (the trailing fragment that never got a chance to look "complete"
+        // mid-stream, plus anything if streaming produced no chunks at all).
         if (voice.ttsSupported && !voice.muted && aggregated) {
-          voice.speak(aggregated);
+          speakNewSentences(aggregated, true);
         }
+
+        const totalMs = Math.round(performance.now() - requestStartAt);
+        setLastLatency({
+          sttToRequest: opts.sttFinalAt ? Math.round(requestStartAt - opts.sttFinalAt) : 0,
+          firstToken: firstTokenAt !== null ? Math.round(firstTokenAt - requestStartAt) : totalMs,
+          total: totalMs,
+        });
       } catch (e) {
         // Superseded requests are deliberately aborted (see above) — that
         // throws too, but it's not a real failure, so it must not show an
         // error turn for a question the user has already moved past.
         if (isStale()) return;
         console.warn("[voice-assistant] send failed:", e);
+        setToolStatus(null);
+        const errorText = "Sorry, I couldn't reach the assistant just now. Please try again.";
         setTurns((prev) => [
           ...prev,
           {
             id: `err-${Date.now()}`,
             role: "assistant",
-            content: "Sorry, I couldn't reach the assistant just now. Please try again.",
+            content: errorText,
             timestamp: new Date().toISOString(),
             language: currentLanguageLabel,
           },
         ]);
+        if (voice.ttsSupported && !voice.muted) voice.speak(errorText);
       } finally {
         // A stale request's finally must not clear `thinking` out from
         // under the newer request that superseded it (which already set
         // thinking=true for itself).
         if (isStale()) return;
         setThinking(false);
+        setToolStatus(null);
       }
     },
-    [ensureConversation, currentLanguageLabel, role, voice, turns.length],
+    [ensureConversation, currentLanguageLabel, role, voice, turns.length, settings.maxSpokenSentences],
   );
-
-  // Finalized speech recognition result -> send as a turn.
-  useEffect(() => {
-    if (voice.transcript) {
-      const text = voice.transcript;
-      voice.clearTranscript();
-      void handleUserUtterance(text);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.transcript]);
 
   // Hands-free mode: automatically resume listening once the AI stops
   // speaking — but only after the user has explicitly started the mic once
@@ -386,12 +592,37 @@ export function VoiceAssistant() {
   }, [settings.handsFree, voice.sttSupported, voice.speaking, voice.listening, thinking, ended, voice]);
 
   const toggleMic = useCallback(() => {
+    // First real tap of this session — unlock speechSynthesis inside this
+    // click's call stack so the *next* speak() call (fired later from an
+    // async network response, which mobile browsers otherwise treat as
+    // "not a user gesture" and silently drop) actually produces sound.
+    if (!hasUserStartedMicRef.current) {
+      voice.primeSpeech();
+    }
     hasUserStartedMicRef.current = true;
     if (voice.listening) {
       voice.stopListening();
     } else {
       voice.startListening();
     }
+  }, [voice]);
+
+  // Tapping the speaker icon: interrupt if currently speaking, replay the
+  // last answer if there is one, otherwise just toggle mute. Previously
+  // this button only ever toggled mute — with nothing queued to speak yet,
+  // tapping it right after an answer looked exactly like "the speaker
+  // button doesn't speak" (the bug reported), because it was never wired
+  // to actually produce sound, only to allow/block future sound.
+  const handleSpeakerTap = useCallback(() => {
+    if (voice.speaking) {
+      voice.stopSpeaking();
+      return;
+    }
+    if (!voice.muted && lastAssistantTurnRef.current) {
+      voice.speak(lastAssistantTurnRef.current.content);
+      return;
+    }
+    voice.toggleMute();
   }, [voice]);
 
   // The composer's voice-assistant button navigates here with
@@ -444,6 +675,141 @@ export function VoiceAssistant() {
     setEnded(false);
     setStreamingText("");
   }, []);
+
+  // Executes the pending confirmable action for real (Part 36: Preview →
+  // Confirm → Execute) — currently just support-ticket creation, using the
+  // same /rag/support-ticket endpoint the text-chat "low confidence" flow
+  // already uses. Nothing here is simulated: a "yes" really calls the API
+  // and the resulting ticket id comes back from the server.
+  const executeConfirmedAction = useCallback(
+    async (confirmation: PendingConfirmation) => {
+      if (confirmation.type === "create_ticket") {
+        try {
+          const result = await ragCreateSupportTicket({
+            query: confirmation.query,
+            conversation_id: conversationIdRef.current ?? undefined,
+          });
+          const ticketId = (result.ticket?.id as string | number | undefined) ?? null;
+          const reply = ticketId
+            ? `Done — I've created support ticket #${ticketId}. Our team will follow up.`
+            : "Done — I've created the support ticket. Our team will follow up.";
+          const turn: Turn = {
+            id: `sys-${Date.now()}`,
+            role: "assistant",
+            content: reply,
+            timestamp: new Date().toISOString(),
+            language: currentLanguageLabel,
+          };
+          setTurns((prev) => [...prev, turn]);
+          if (voice.ttsSupported && !voice.muted) voice.speak(reply);
+        } catch (e) {
+          console.warn("[voice-assistant] ticket creation failed:", e);
+          const reply = "Sorry, I couldn't create that ticket just now. You can also create one from the Support page.";
+          setTurns((prev) => [
+            ...prev,
+            { id: `sys-${Date.now()}`, role: "assistant", content: reply, timestamp: new Date().toISOString(), language: currentLanguageLabel },
+          ]);
+          if (voice.ttsSupported && !voice.muted) voice.speak(reply);
+        }
+      }
+    },
+    [currentLanguageLabel, voice],
+  );
+
+  // Local interaction-command interception (Part 28/57) — a fixed set of
+  // conversation controls ("stop", "repeat that", "switch to Hindi"...)
+  // handled entirely client-side, before anything reaches the backend. Not
+  // every finalized utterance is a question for the LLM.
+  const handleVoiceCommand = useCallback(
+    (cmd: VoiceCommand): boolean => {
+      switch (cmd.type) {
+        case "stop":
+          voice.stopSpeaking();
+          return true;
+        case "pause":
+          voice.stopSpeaking();
+          voice.stopListening();
+          setPaused(true);
+          return true;
+        case "resume":
+          setPaused(false);
+          voice.startListening();
+          return true;
+        case "repeat": {
+          const last = lastAssistantTurnRef.current;
+          if (last && voice.ttsSupported && !voice.muted) {
+            voice.speak(toConciseSpeech(last.content, settings.maxSpokenSentences).speech);
+          }
+          return true;
+        }
+        case "slower":
+          setSettings((s) => ({ ...s, rate: Math.max(0.5, Math.round((s.rate - 0.2) * 10) / 10) }));
+          return true;
+        case "faster":
+          setSettings((s) => ({ ...s, rate: Math.min(2, Math.round((s.rate + 0.2) * 10) / 10) }));
+          return true;
+        case "shorter":
+          setSettings((s) => ({ ...s, maxSpokenSentences: Math.max(1, s.maxSpokenSentences - 1) }));
+          return true;
+        case "switch_language":
+          setSettings((s) => ({ ...s, languageCode: cmd.languageCode, voiceName: null }));
+          return true;
+        case "switch_to_chat":
+          navigate("/");
+          return true;
+        case "end_conversation":
+          void endSession();
+          return true;
+        case "show_sources": {
+          const last = lastAssistantTurnRef.current;
+          const count = Array.isArray(last?.sources) ? last.sources.length : 0;
+          const reply =
+            count > 0
+              ? `That answer used ${count} DayJoy source${count === 1 ? "" : "s"} — you can see them in the transcript.`
+              : "That answer didn't cite any specific DayJoy sources.";
+          if (voice.ttsSupported && !voice.muted) voice.speak(reply);
+          return true;
+        }
+        case "confirm":
+          if (pendingConfirm) {
+            const confirmation = pendingConfirm;
+            setPendingConfirm(null);
+            void executeConfirmedAction(confirmation);
+            return true;
+          }
+          return false; // not a command in this context — let it fall through to the LLM
+        case "cancel":
+          if (pendingConfirm) {
+            setPendingConfirm(null);
+            const reply = "Okay, I won't do that.";
+            setTurns((prev) => [
+              ...prev,
+              { id: `sys-${Date.now()}`, role: "assistant", content: reply, timestamp: new Date().toISOString(), language: currentLanguageLabel },
+            ]);
+            if (voice.ttsSupported && !voice.muted) voice.speak(reply);
+            return true;
+          }
+          return false;
+        default:
+          return false;
+      }
+    },
+    [voice, settings.maxSpokenSentences, navigate, endSession, pendingConfirm, executeConfirmedAction, currentLanguageLabel],
+  );
+
+  // Finalized speech recognition result -> either a local command or a real
+  // turn sent to the backend.
+  useEffect(() => {
+    if (voice.transcript) {
+      const text = voice.transcript;
+      const sttFinalAt = performance.now();
+      voice.clearTranscript();
+      const command = parseVoiceCommand(text);
+      if (command && handleVoiceCommand(command)) return;
+      void handleUserUtterance(text, { sttFinalAt });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.transcript]);
 
   // Keyboard shortcuts: Space toggles mic, Esc ends session.
   useEffect(() => {
@@ -506,10 +872,11 @@ export function VoiceAssistant() {
   const selectedVoiceLabel = settings.voiceName ?? langVoices[0]?.name ?? "System default";
 
   const phaseCopy: Record<SessionPhase, string> = {
-    idle: "Tap the mic or press Space, and speak naturally.",
+    idle: toolStatus === null && turns.length === 0 ? greeting : "Tap the mic or press Space, and speak naturally.",
     listening: "Listening… speak naturally, interrupt any time.",
-    thinking: "Thinking…",
-    speaking: "Speaking — tap the mic to interrupt.",
+    thinking: toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? "Thinking…" : "Thinking…",
+    speaking: "Speaking — just start talking to interrupt.",
+    paused: "Paused. Say \"resume\" or tap the mic to continue.",
     error: voice.error ?? "Something went wrong.",
     offline: "Voice isn't supported in this browser. Try Chrome or Edge, or switch to chat.",
   };
@@ -528,6 +895,7 @@ export function VoiceAssistant() {
               : "idle";
 
   const lastAssistantTurn = [...turns].reverse().find((t) => t.role === "assistant");
+  const lastUserTurn = [...turns].reverse().find((t) => t.role === "user");
   const smartSuggestions = useMemo(() => {
     const actions: Array<{ label: string; icon: typeof Ticket; onClick: () => void }> = [];
     if (lastAssistantTurn) {
@@ -545,7 +913,24 @@ export function VoiceAssistant() {
     actions.push({
       label: "Create support ticket",
       icon: Ticket,
-      onClick: () => navigate("/support"),
+      // Preview -> Confirm -> Execute (Part 36) — asks first, and only
+      // actually calls /rag/support-ticket once the user confirms (by
+      // voice: "yes"/"confirm", or a second tap here).
+      onClick: () => {
+        if (pendingConfirm?.type === "create_ticket") {
+          setPendingConfirm(null);
+          void executeConfirmedAction(pendingConfirm);
+          return;
+        }
+        const query = lastUserTurn?.content ?? "Voice session support request";
+        setPendingConfirm({ type: "create_ticket", query });
+        const reply = `I can create a support ticket for: "${query}". Should I go ahead?`;
+        setTurns((prev) => [
+          ...prev,
+          { id: `sys-${Date.now()}`, role: "assistant", content: reply, timestamp: new Date().toISOString(), language: currentLanguageLabel },
+        ]);
+        if (voice.ttsSupported && !voice.muted) voice.speak(reply);
+      },
     });
     actions.push({
       label: "Email me this",
@@ -557,7 +942,59 @@ export function VoiceAssistant() {
       },
     });
     return actions;
-  }, [lastAssistantTurn, endSession, navigate, summary, transcriptPlainText]);
+  }, [
+    lastAssistantTurn,
+    lastUserTurn,
+    endSession,
+    summary,
+    transcriptPlainText,
+    pendingConfirm,
+    executeConfirmedAction,
+    currentLanguageLabel,
+    voice,
+  ]);
+
+  if (isMobile) {
+    return (
+      <VoiceAssistantMobile
+        phase={phase}
+        orbState={orbState}
+        phaseCopy={phaseCopy[phase]}
+        voice={voice}
+        toggleMic={toggleMic}
+        onSpeakerTap={handleSpeakerTap}
+        endSession={() => void endSession()}
+        startNewSession={startNewSession}
+        ended={ended}
+        onClose={() => navigate("/")}
+        onSwitchToChat={() => navigate("/")}
+        settings={settings}
+        setSettings={setSettings}
+        languages={LANGUAGES}
+        langVoices={langVoices}
+        selectedVoiceLabel={selectedVoiceLabel}
+        currentLanguageLabel={currentLanguageLabel}
+        turns={turns}
+        streamingText={streamingText}
+        thinking={thinking}
+        toolStatusLabel={toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? null : null}
+        aiServiceOnline={aiServiceOnline}
+        quickActions={QUICK_ACTIONS}
+        onQuickAction={(prompt: string) => void handleUserUtterance(prompt)}
+        paused={paused}
+        onTogglePause={() => {
+          if (paused) {
+            setPaused(false);
+            voice.startListening();
+          } else {
+            voice.stopSpeaking();
+            voice.stopListening();
+            setPaused(true);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
@@ -571,12 +1008,23 @@ export function VoiceAssistant() {
         icon={Mic}
         actions={
           <div className="hidden sm:flex items-center gap-2">
+            {/* Two independent statuses, shown honestly rather than one
+                conflated "Connected" — a browser can support voice while
+                the AI backend is down, or vice versa on an old browser. */}
             <Badge variant={voice.supported && !voice.error ? "success" : "warning"}>
               <span
                 className={`w-1.5 h-1.5 rounded-full ${voice.supported && !voice.error ? "bg-success" : "bg-warning"}`}
                 aria-hidden="true"
               />
-              {voice.supported && !voice.error ? "Connected" : "Offline"}
+              {voice.supported && !voice.error ? "Voice ready" : "Voice unavailable"}
+            </Badge>
+            <Badge variant={aiServiceOnline === false ? "destructive" : aiServiceOnline === null ? "outline" : "success"}>
+              {aiServiceOnline === false ? (
+                <WifiOff className="w-3 h-3" aria-hidden="true" />
+              ) : (
+                <Wifi className="w-3 h-3" aria-hidden="true" />
+              )}
+              {aiServiceOnline === false ? "AI service offline" : aiServiceOnline === null ? "Checking…" : "AI service online"}
             </Badge>
             <Badge variant="outline">{currentLanguageLabel}</Badge>
           </div>
@@ -656,9 +1104,34 @@ export function VoiceAssistant() {
             </div>
 
             <p className="mt-4 text-sm sm:text-base text-muted-foreground text-center max-w-sm" aria-live="polite">
-              {phaseCopy[phase]}
+              {toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? phaseCopy[phase] : phaseCopy[phase]}
             </p>
+
+            {pendingConfirm ? (
+              <p className="mt-2 text-xs text-primary text-center max-w-sm">
+                Say "yes" to confirm, or "no" to cancel.
+              </p>
+            ) : null}
           </div>
+
+          {/* Quick actions — real starter prompts, shown before the first
+              exchange. Each seeds a genuine question sent to the same
+              /chat/stream backend as speaking would, not inserted text. */}
+          {turns.length === 0 && !thinking ? (
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-6 max-w-lg">
+              {QUICK_ACTIONS.map((qa) => (
+                <button
+                  key={qa.label}
+                  type="button"
+                  onClick={() => void handleUserUtterance(qa.prompt)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-accent/30 text-xs font-medium hover:bg-accent/60 transition-colors"
+                >
+                  <qa.icon className="w-3.5 h-3.5" aria-hidden="true" />
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           {/* Inline controls row */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-8">
@@ -745,6 +1218,52 @@ export function VoiceAssistant() {
                   ) : null}
                 </div>
                 <p className="text-sm leading-relaxed">{t.content}</p>
+                {/* Multimodal + Voice Convergence (Next-Gen spec, Phase 12) —
+                    structured product data (verified DB rows only, same
+                    source as UserChat's ProductCard — never AI-generated
+                    text) was captured but never shown here before. Compact
+                    variant rather than reusing UserChat's ProductCard
+                    directly since that's a private, unexported function in
+                    a large unrelated file. */}
+                {t.role === "assistant" && t.productCards && t.productCards.length > 0 ? (
+                  <div className="space-y-1.5 mt-1.5">
+                    {t.productCards.slice(0, 3).map((p, i) => (
+                      <div
+                        key={p.product_id ?? i}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-accent/30 px-2.5 py-1.5 text-xs"
+                      >
+                        <span className="font-medium truncate">{p.product_name ?? "Dayjoy product"}</span>
+                        {p.price ? (
+                          <span className="text-muted-foreground shrink-0">
+                            {p.price.currency ?? "INR"} {p.price.dp ?? p.price.mrp}
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {/* Multimodal + Voice Convergence (Next-Gen spec, Phase 12) —
+                    citations captured on every voice turn (see `sources` in
+                    Turn's type above) were never rendered here before, even
+                    though the exact same evidence is shown for a text-chat
+                    answer. A spoken answer is only as trustworthy as its
+                    text counterpart if the same evidence is visible. */}
+                {t.role === "assistant" && Array.isArray(t.sources) && t.sources.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {t.sources.slice(0, 4).map((s, i) => {
+                      const label = typeof s === "string" ? s : s.title || s.table;
+                      return (
+                        <span
+                          key={typeof s === "string" ? `${t.id}-${i}` : s.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-accent/40 text-[10px] text-muted-foreground"
+                        >
+                          <FileTextIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             ))}
             {streamingText ? (
@@ -820,10 +1339,10 @@ export function VoiceAssistant() {
           variant="outline"
           size="icon"
           className="h-11 w-11 rounded-full"
-          onClick={voice.toggleMute}
-          aria-label={voice.muted ? "Unmute voice" : "Mute voice"}
+          onClick={handleSpeakerTap}
+          aria-label={voice.speaking ? "Stop speaking" : voice.muted ? "Unmute voice" : "Replay last answer"}
           aria-pressed={voice.muted}
-          title={voice.muted ? "Unmute" : "Mute"}
+          title={voice.speaking ? "Stop speaking" : voice.muted ? "Unmute" : "Replay last answer"}
         >
           {voice.muted ? <VolumeX className="w-5 h-5" aria-hidden="true" /> : <Volume2 className="w-5 h-5" aria-hidden="true" />}
         </Button>
@@ -836,6 +1355,26 @@ export function VoiceAssistant() {
           title="Settings"
         >
           <Settings2 className="w-5 h-5" aria-hidden="true" />
+        </Button>
+        <Button
+          variant={paused ? "default" : "outline"}
+          size="icon"
+          className="h-11 w-11 rounded-full"
+          onClick={() => {
+            if (paused) {
+              setPaused(false);
+              voice.startListening();
+            } else {
+              voice.stopSpeaking();
+              voice.stopListening();
+              setPaused(true);
+            }
+          }}
+          aria-label={paused ? "Resume" : "Pause"}
+          aria-pressed={paused}
+          title={paused ? "Resume" : "Pause"}
+        >
+          {paused ? <Play className="w-5 h-5" aria-hidden="true" /> : <Pause className="w-5 h-5" aria-hidden="true" />}
         </Button>
         {/* Desktop only — Space/Esc/Tab shortcuts don't apply on a touch
             keyboard, so this button was dead weight on mobile. */}
@@ -971,6 +1510,88 @@ export function VoiceAssistant() {
             </button>
           </div>
 
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5">
+              <Gauge className="w-3.5 h-3.5" aria-hidden="true" />
+              Turn-taking
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["eager", "normal", "patient"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSettings((s) => ({ ...s, turnEagerness: mode }))}
+                  aria-pressed={settings.turnEagerness === mode}
+                  className={`py-2 rounded-lg text-xs font-medium capitalize border transition-colors ${
+                    settings.turnEagerness === mode
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:bg-accent/40"
+                  }`}
+                  title={TURN_EAGERNESS_LABELS[mode]}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              How long to wait in silence before treating your speech as finished.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-sm font-medium">Interruptions</p>
+              <p className="text-xs text-muted-foreground">Let you talk over the AI to interrupt it (barge-in)</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.interruptionsEnabled}
+              onClick={() => setSettings((s) => ({ ...s, interruptionsEnabled: !s.interruptionsEnabled }))}
+              className={`relative w-10 h-6 rounded-full transition-colors ${settings.interruptionsEnabled ? "bg-primary" : "bg-muted"}`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${settings.interruptionsEnabled ? "translate-x-4" : ""}`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-sm font-medium">Captions</p>
+              <p className="text-xs text-muted-foreground">Show live transcript text (mobile caption bubble)</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.captionsEnabled}
+              onClick={() => setSettings((s) => ({ ...s, captionsEnabled: !s.captionsEnabled }))}
+              className={`relative w-10 h-6 rounded-full transition-colors ${settings.captionsEnabled ? "bg-primary" : "bg-muted"}`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${settings.captionsEnabled ? "translate-x-4" : ""}`}
+              />
+            </button>
+          </div>
+
+          {voice.inputDevices.length > 0 ? (
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Microphone</label>
+              <select
+                value={settings.micDeviceId ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, micDeviceId: e.target.value || null }))}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">System default</option>
+                {voice.inputDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Microphone ${d.deviceId.slice(0, 6)}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-between py-1">
             <div>
               <p className="text-sm font-medium">Auto-summarize on end</p>
@@ -989,12 +1610,49 @@ export function VoiceAssistant() {
             </button>
           </div>
 
+          <div className="flex items-center justify-between py-1">
+            <div className="flex items-center gap-1.5">
+              <Bug className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-medium">Show diagnostics</p>
+                <p className="text-xs text-muted-foreground">Developer-only latency numbers for the last answer</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.showDiagnostics}
+              onClick={() => setSettings((s) => ({ ...s, showDiagnostics: !s.showDiagnostics }))}
+              className={`relative w-10 h-6 rounded-full transition-colors ${settings.showDiagnostics ? "bg-primary" : "bg-muted"}`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${settings.showDiagnostics ? "translate-x-4" : ""}`}
+              />
+            </button>
+          </div>
+
+          {settings.showDiagnostics ? (
+            <div className="rounded-lg border border-border bg-accent/20 px-3 py-2.5 font-mono text-[11px] text-muted-foreground space-y-1">
+              <p>AI service: {aiServiceOnline === null ? "checking…" : aiServiceOnline ? "online" : "offline"}</p>
+              {lastLatency ? (
+                <>
+                  <p>STT final → request sent: {lastLatency.sttToRequest}ms</p>
+                  <p>Request → first token: {lastLatency.firstToken}ms</p>
+                  <p>Total turn latency: {lastLatency.total}ms</p>
+                </>
+              ) : (
+                <p>No completed turn yet this session.</p>
+              )}
+            </div>
+          ) : null}
+
           <div className="rounded-lg border border-dashed border-border px-3 py-2.5">
             <p className="text-xs text-muted-foreground">
               <Badge variant="warning" className="mr-1.5">Coming soon</Badge>
-              Noise suppression, echo cancellation and wake-word (“Hey Dayjoy”) require a dedicated
-              speech provider (e.g. Deepgram/Groq) on the backend — {BRAND.name} currently uses your
-              browser's built-in speech engine.
+              Noise suppression, echo cancellation, wake-word (“Hey Dayjoy”), and TTS output-device
+              selection require a dedicated speech provider and browser APIs that don't exist yet —
+              {" "}{BRAND.name} currently uses your browser's built-in speech engine, which always plays
+              through the system's current default audio output.
             </p>
           </div>
         </div>
