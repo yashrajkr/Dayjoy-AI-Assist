@@ -153,7 +153,7 @@ def authed_client(monkeypatch):
 def test_orchestrator_enabled_does_not_change_chat_response(authed_client, monkeypatch):
     from backend import main as backend_main
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "[products] Dayjoy Spirulina\nRich in protein.", [], "product", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)
@@ -188,7 +188,7 @@ def test_orchestrator_enabled_survives_internal_failure(authed_client, monkeypat
     observability side channel, not a dependency of the response."""
     from backend import main as backend_main
 
-    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _stub_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "", [], "general", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _stub_retrieve_context)

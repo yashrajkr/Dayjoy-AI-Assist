@@ -96,7 +96,7 @@ async def test_pipeline_merges_context_and_sources_across_subquestions(monkeypat
 
     call_log = []
 
-    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         call_log.append(message)
         if "leads" in message:
             return (
@@ -133,7 +133,7 @@ async def test_pipeline_dedupes_sources_shared_across_subquestions(monkeypatch):
 
     monkeypatch.setattr(reasoning, "decompose_business_question", _fake_decompose)
 
-    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return (
             "Same content.",
             [backend_main.ChatSource(table="faqs", id="F-1", title="Shared FAQ")],
@@ -154,7 +154,7 @@ async def test_pipeline_falls_back_gracefully_when_no_evidence_found(monkeypatch
 
     monkeypatch.setattr(reasoning, "decompose_business_question", _fake_decompose)
 
-    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         return "", [], "general", None
 
     monkeypatch.setattr(backend_main, "retrieve_context", _fake_retrieve_context)
@@ -174,7 +174,7 @@ async def test_pipeline_uses_original_message_when_decomposition_yields_one_part
 
     call_log = []
 
-    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None):
+    async def _fake_retrieve_context(token, message, limit_per_table=3, top_k=None, knowledge_scope=None):
         call_log.append(message)
         return "Some content.", [], "general", {"evidence_sufficient": True}
 

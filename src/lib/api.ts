@@ -29,7 +29,20 @@ export type ChatRequest = {
    * image as a data: URL. When present, the backend answers from the image
    * via a vision-capable model instead of the normal RAG pipeline. */
   image_data_url?: string;
+  /** Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+   * category instead of all of DayJoy's knowledge base. */
+  knowledge_scope?: KnowledgeScope;
 };
+
+export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";
+
+export const KNOWLEDGE_SCOPE_OPTIONS: { value: KnowledgeScope; label: string }[] = [
+  { value: "all", label: "All DayJoy knowledge" },
+  { value: "products", label: "Products" },
+  { value: "training", label: "Training" },
+  { value: "policies", label: "Policies" },
+  { value: "faqs", label: "FAQs" },
+];
 
 export type ChatSource = {
   /** Source table (products, faqs, policies, distributor_training, objection_handling, knowledge_chunks). */

@@ -73,6 +73,7 @@ import {
   VolumeX,
   AudioLines,
   Lightbulb,
+  Filter,
   CheckCircle2,
   Wand2,
   ListChecks,
@@ -106,9 +107,11 @@ import {
   rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
+  KNOWLEDGE_SCOPE_OPTIONS,
   type ArtifactType,
   type ChatSource,
   type ChatProductCard,
+  type KnowledgeScope,
 } from "../../../lib/api";
 import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { QRScanner, type ScanResult } from "../tools/QRScanner";
@@ -1130,6 +1133,11 @@ export function UserChat() {
   const [ocrOpen, setOcrOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
+  // Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+  // category instead of all of DayJoy's knowledge base. Persists only for
+  // this browser session (not saved to a preference) since it's a
+  // per-conversation intent, not a standing style preference.
+  const [knowledgeScope, setKnowledgeScope] = useState<KnowledgeScope>("all");
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1351,6 +1359,7 @@ export function UserChat() {
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
             image_data_url: imageForThisSend,
+            knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
           },
           (chunk) => {
             aggregated += chunk;
@@ -1533,7 +1542,7 @@ export function UserChat() {
         void notifyAIResponseReady();
       }
     },
-    [activeConv, aiMode, attachments, currentUser, input, isTemporary, language, messages, navigate, refreshConversations, role, voiceMode],
+    [activeConv, aiMode, attachments, currentUser, input, isTemporary, knowledgeScope, language, messages, navigate, refreshConversations, role, voiceMode],
   );
 
   const toggleVoiceMode = useCallback(() => {
@@ -3273,6 +3282,32 @@ export function UserChat() {
                       <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
                     </button>
                   ) : null}
+                  {/* Knowledge Scope Selector (Capability 16) */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+                          knowledgeScope === "all"
+                            ? "text-muted-foreground hover:bg-accent/50"
+                            : "text-primary bg-primary/10"
+                        }`}
+                        title="Choose what DayJoy AI can search"
+                        aria-haspopup="menu"
+                      >
+                        <Filter className="w-3 h-3" aria-hidden="true" />
+                        {KNOWLEDGE_SCOPE_OPTIONS.find((o) => o.value === knowledgeScope)?.label ?? "All DayJoy knowledge"}
+                        <ChevronUp className="w-2.5 h-2.5 rotate-180" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {KNOWLEDGE_SCOPE_OPTIONS.map((opt) => (
+                        <DropdownMenuItem key={opt.value} onClick={() => setKnowledgeScope(opt.value)}>
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}

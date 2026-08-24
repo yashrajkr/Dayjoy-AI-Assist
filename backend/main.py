@@ -378,6 +378,14 @@ class ChatRequest(BaseModel):
     # when present, both /chat and /chat/stream answer from the image via
     # stream_vision_response() instead of the normal RAG/routing pipeline.
     image_data_url: Optional[str] = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)
+    # Knowledge Scope Selector (Capability 16) — narrows retrieval to one
+    # category ("products"/"training"/"policies"/"faqs") instead of all of
+    # DayJoy's knowledge base. "all"/None (the default) is unchanged prior
+    # behavior. Validated against KNOWLEDGE_SCOPES at the route handler
+    # (defined after this class) rather than here, to avoid a forward
+    # reference — an unrecognized value is rejected with a 422, not
+    # silently ignored.
+    knowledge_scope: Optional[str] = None
 
 
 class TitleRequest(BaseModel):
@@ -657,11 +665,20 @@ SEARCH_TABLES = [
 ]
 
 
+# Knowledge Scope Selector (Capability 16) — maps a user-facing scope value
+# onto the category tags SEARCH_TABLES/RAG documents already carry. "all"
+# or None (the default) applies no filter — 100% unchanged behavior for
+# every existing caller that doesn't pass a scope.
+KNOWLEDGE_SCOPES = ("all", "products", "training", "policies", "faqs")
+_SCOPE_TO_CATEGORY = {"products": "product", "training": "training", "policies": "policy", "faqs": "faq"}
+
+
 async def retrieve_context(
     token: Optional[str],
     message: str,
     limit_per_table: int = 3,
     top_k: Optional[int] = None,
+    knowledge_scope: Optional[str] = None,
 ) -> Tuple[str, List[ChatSource], str, Optional[Dict[str, Any]]]:
     """Pull approved rows and rank by simple token overlap.
 
@@ -671,11 +688,18 @@ async def retrieve_context(
     (products / faqs / policies / training). The two are merged with RAG
     sources taking priority.
 
+    `knowledge_scope` (Capability 16 — Knowledge Scope Selector), one of
+    KNOWLEDGE_SCOPES, narrows retrieval to ONE category — "products",
+    "training", "policies", or "faqs" — for BOTH the RAG chunk path and
+    the legacy keyword-table path. "all"/None (the default) applies no
+    filter, matching every prior caller's existing behavior exactly.
+
     Returns (context_string, sources, best_category, rag_metadata).
     `rag_metadata` is None when RAG is unavailable; otherwise it
     contains confidence / verification_status / matched_documents /
     related_items for the chat response.
     """
+    scope_category = _SCOPE_TO_CATEGORY.get(knowledge_scope or "all")
     tokens = {t for t in re.split(r"[^a-z0-9]+", message.lower()) if len(t) >= 3}
 
     rag_metadata: Optional[Dict[str, Any]] = None
@@ -694,6 +718,10 @@ async def retrieve_context(
                 log_query=False,  # chat endpoint logs analytics separately
                 top_k=top_k,
             )
+            if scope_category:
+                rag_result.chunks = [
+                    c for c in rag_result.chunks if c.document_category == scope_category
+                ]
             if rag_result.chunks:
                 rag_context_parts.append(rag_result.to_context_string(max_chars=3000))
                 for c in rag_result.chunks:
@@ -752,6 +780,8 @@ async def retrieve_context(
     if tokens:
         best_score = 0
         for table, title_col, extra_cols, category, table_filters in SEARCH_TABLES:
+            if scope_category and category != scope_category:
+                continue
             # limit=1000: this fetches the full approved-row candidate pool
             # for client-side token-overlap scoring below, not the number of
             # results actually used (limit_per_table caps that at 3). 200
@@ -968,7 +998,8 @@ async def _route_from_kb_result(
 
 
 async def _route_events(
-    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
+    knowledge_scope: Optional[str] = None,
 ) -> AsyncIterator[Tuple[str, Any]]:
     """Router core, shared by /chat and /chat/stream so routing logic can't
     drift between the two endpoints.
@@ -1185,7 +1216,7 @@ async def _route_events(
 
     yield ("status", "searching_knowledge")
     context, sources, category, rag_metadata = await retrieve_context(
-        token, message, top_k=top_k_for(ai_mode)
+        token, message, top_k=top_k_for(ai_mode), knowledge_scope=knowledge_scope
     )
 
     # A non-empty `context` string doesn't mean the retrieved chunks were
@@ -1607,10 +1638,11 @@ def _compute_confidence(casual: bool, route: "RouteResult") -> Tuple[float, str]
 
 
 async def determine_route(
-    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal"
+    token: Optional[str], message: str, casual: bool, ai_mode: str = "normal",
+    knowledge_scope: Optional[str] = None,
 ) -> RouteResult:
     """Non-streaming convenience wrapper around `_route_events` — used by /chat."""
-    async for kind, payload in _route_events(token, message, casual, ai_mode):
+    async for kind, payload in _route_events(token, message, casual, ai_mode, knowledge_scope):
         if kind == "result":
             return payload
     raise AssertionError("_route_events did not yield a result")  # pragma: no cover
@@ -2242,6 +2274,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     elif token and user_id and not req.is_temporary:
         conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
+    if req.knowledge_scope and req.knowledge_scope not in KNOWLEDGE_SCOPES:
+        raise HTTPException(status_code=422, detail=f"knowledge_scope must be one of {KNOWLEDGE_SCOPES}")
+
     casual = is_casual_message(req.message)
     _run_orchestrator_observability(req.message)
     ai_mode = normalize_ai_mode(req.ai_mode)
@@ -2249,7 +2284,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     if not casual and should_llm_rewrite(req.message, wants_reference_resolution(req.message)):
         retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
     retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
-    route = await determine_route(token, retrieval_query, casual, ai_mode)
+    route = await determine_route(token, retrieval_query, casual, ai_mode, req.knowledge_scope)
     t_after_routing = time.monotonic()
 
     personalization_context = await _maybe_personalization_context(
@@ -2576,6 +2611,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         elif token and user_id and not req.is_temporary:
             conv_id = await ensure_conversation(token, conv_id, user_id, req.message[:80], req.language)
 
+        if req.knowledge_scope and req.knowledge_scope not in KNOWLEDGE_SCOPES:
+            yield _sse({"token": "", "done": True, "error": f"knowledge_scope must be one of {KNOWLEDGE_SCOPES}"})
+            return
+
         casual = is_casual_message(req.message)
         _run_orchestrator_observability(req.message)
         retrieval_query = rewrite_query(req.message, history)
@@ -2583,7 +2622,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             retrieval_query = await llm_rewrite_for_retrieval(retrieval_query, history)
         retrieval_query = enrich_for_deep_research(retrieval_query, ai_mode)
         route: Optional[RouteResult] = None
-        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode):
+        async for kind, payload in _route_events(token, retrieval_query, casual, ai_mode, req.knowledge_scope):
             if kind == "status":
                 yield _sse({"status": payload})
             else:
