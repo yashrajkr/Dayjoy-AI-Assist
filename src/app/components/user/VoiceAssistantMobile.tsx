@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic,
@@ -7,6 +7,7 @@ import {
   VolumeX,
   PhoneOff,
   Settings2,
+  Menu,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -56,6 +57,7 @@ export function VoiceAssistantMobile({
   ended,
   onClose,
   onSwitchToChat,
+  onOpenDrawer,
   settings,
   setSettings,
   languages,
@@ -67,8 +69,6 @@ export function VoiceAssistantMobile({
   thinking,
   toolStatusLabel,
   aiServiceOnline,
-  quickActions,
-  onQuickAction,
   paused,
   onTogglePause,
 }: {
@@ -83,6 +83,10 @@ export function VoiceAssistantMobile({
   ended: boolean;
   onClose: () => void;
   onSwitchToChat: () => void;
+  /** Opens the real app sidebar (all sections) — from UserLayout's Outlet
+   *  context. Undefined only if this ever renders outside that layout, in
+   *  which case the menu button falls back to onClose. */
+  onOpenDrawer?: () => void;
   settings: PersistedSettings;
   setSettings: (updater: (s: PersistedSettings) => PersistedSettings) => void;
   languages: LanguageOption[];
@@ -96,8 +100,6 @@ export function VoiceAssistantMobile({
   toolStatusLabel: string | null;
   /** Real /health reachability — null while the first check is still in flight. */
   aiServiceOnline: boolean | null;
-  quickActions: Array<{ label: string; icon: React.ComponentType<{ className?: string }>; prompt: string }>;
-  onQuickAction: (prompt: string) => void;
   paused: boolean;
   onTogglePause: () => void;
 }) {
@@ -115,6 +117,20 @@ export function VoiceAssistantMobile({
   const visibleExchangeKey = streamingText ? "streaming" : lastAssistantTurn?.id ?? lastUserTurn?.id ?? "none";
   const hasActivity = turns.length > 0 || voice.listening || voice.speaking || thinking || !!streamingText;
 
+  // Captions behave like ChatGPT's — visible while an exchange is live,
+  // then fade away a few seconds after the AI finishes speaking rather than
+  // sitting on screen permanently like a chat history box. Any new activity
+  // (new turn, streaming resumes, mic reopens) cancels the fade and shows
+  // it again immediately.
+  const [captionVisible, setCaptionVisible] = useState(true);
+  useEffect(() => {
+    setCaptionVisible(true);
+    if (thinking || streamingText || voice.listening || voice.speaking) return;
+    if (!lastAssistantTurn) return;
+    const t = window.setTimeout(() => setCaptionVisible(false), 4500);
+    return () => window.clearTimeout(t);
+  }, [visibleExchangeKey, thinking, streamingText, voice.listening, voice.speaking, lastAssistantTurn]);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0B0908] text-white">
       {/* Ambient background glow — brand-colored, not a flat black void */}
@@ -129,13 +145,17 @@ export function VoiceAssistantMobile({
 
       {/* Top bar */}
       <div className="relative shrink-0 flex items-center justify-between px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2">
+        {/* Opens the real app sidebar (all sections), not a "back" that
+            exits voice mode — tapping this used to fully close the voice
+            screen, which read as broken when someone just wanted to switch
+            to another section without ending their voice session. */}
         <button
           type="button"
-          onClick={onClose}
-          aria-label="Close voice assistant"
+          onClick={onOpenDrawer ?? onClose}
+          aria-label="Open navigation"
           className="w-10 h-10 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors"
         >
-          <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+          <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
         <div className="text-center">
           <p className="text-sm font-semibold flex items-center justify-center gap-1.5">
@@ -158,55 +178,40 @@ export function VoiceAssistantMobile({
         </button>
       </div>
 
-      {/* Orb stage */}
-      <div className="relative flex-1 min-h-0 flex flex-col items-center justify-center px-6">
+      {/* Orb stage — orb sits in the upper portion of the screen (not
+          vertically centered) so there's open space below for the caption
+          and controls, matching the reference layout rather than pinning
+          everything to the middle of a tall phone screen. */}
+      <div className="relative flex-1 min-h-0 flex flex-col items-center px-6 pt-6 sm:pt-10">
         <PersonalizedOrb orbState={orbState} phase={phase} />
 
         <p className="mt-7 text-sm text-white/60 text-center max-w-[280px]" aria-live="polite">
           {toolStatusLabel ?? phaseCopy}
         </p>
 
-        {/* Quick actions — real starter prompts, shown only before the
-            first exchange so they don't compete with an active
-            conversation. Each seeds a real question, not inserted text. */}
-        {!hasActivity ? (
-          <div className="mt-6 w-full max-w-sm overflow-x-auto no-scrollbar">
-            <div className="flex gap-2 px-1 justify-center flex-wrap">
-              {quickActions.map((qa) => (
-                <button
-                  key={qa.label}
-                  type="button"
-                  onClick={() => onQuickAction(qa.prompt)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/8 border border-white/10 text-xs text-white/80 active:bg-white/15 transition-colors"
-                >
-                  <qa.icon className="w-3.5 h-3.5" aria-hidden="true" />
-                  {qa.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Transient exchange bubble — only the latest turn, never a
-            growing list. Absolutely positioned within the stage so it
-            doesn't push the orb around as its content changes length. */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 flex flex-col items-center pointer-events-none">
+        {/* Transient caption — plain floating text, no card/box (a
+            permanent bordered bubble read as a chat-history element rather
+            than a live caption). Only the latest exchange is ever shown,
+            and it fades away a few seconds after the AI finishes speaking
+            instead of sitting on screen — see the captionVisible effect
+            above. */}
+        <div className="absolute bottom-6 left-0 right-0 px-6 flex flex-col items-center pointer-events-none">
           <AnimatePresence mode="wait">
-            {hasActivity && settings.captionsEnabled ? (
+            {hasActivity && settings.captionsEnabled && captionVisible ? (
               <motion.div
                 key={visibleExchangeKey}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.25 }}
-                className="pointer-events-auto w-full max-w-sm rounded-2xl bg-white/8 backdrop-blur-md border border-white/10 px-4 py-3 max-h-40 overflow-y-auto"
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.3 }}
+                className="w-full max-w-sm text-center"
               >
                 {lastUserTurn ? (
-                  <p className="text-[11px] font-medium text-white/45 mb-1 truncate">
+                  <p className="text-[11px] font-medium text-white/40 mb-1 truncate">
                     You: {lastUserTurn.content}
                   </p>
                 ) : null}
-                <p className="text-sm leading-relaxed text-white/90">
+                <p className="text-sm leading-relaxed text-white/90 [text-shadow:0_1px_12px_rgba(0,0,0,0.6)]">
                   {streamingText || lastAssistantTurn?.content || (thinking ? "…" : "")}
                 </p>
                 {!streamingText && lastAssistantTurn?.sources && lastAssistantTurn.sources.length > 0 ? (
@@ -240,9 +245,9 @@ export function VoiceAssistantMobile({
             >
               {voice.muted ? <VolumeX className="w-5 h-5" aria-hidden="true" /> : <Volume2 className="w-5 h-5" aria-hidden="true" />}
             </ControlIcon>
-            <ControlIcon onClick={() => setSheetOpen(true)} label="Voice settings">
-              <Settings2 className="w-5 h-5" aria-hidden="true" />
-            </ControlIcon>
+            {/* Settings lives only in the top bar now — this row previously
+                duplicated it, which read as two separate settings entry
+                points doing the same thing. */}
             <ControlIcon onClick={onTogglePause} active={paused} label={paused ? "Resume" : "Pause"}>
               {paused ? <Play className="w-5 h-5" aria-hidden="true" /> : <Pause className="w-5 h-5" aria-hidden="true" />}
             </ControlIcon>
@@ -323,8 +328,19 @@ export function VoiceAssistantMobile({
               exit={{ y: "100%" }}
               transition={{ type: "spring", stiffness: 340, damping: 34 }}
             >
-              <div className="flex items-center justify-center pt-2.5 pb-1">
+              <div className="relative flex items-center justify-center pt-2.5 pb-1">
                 <div className="w-9 h-1 rounded-full bg-white/20" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSheetOpen(false);
+                    setLanguagePickerOpen(false);
+                  }}
+                  aria-label="Close settings"
+                  className="absolute right-3 top-1.5 w-8 h-8 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
               </div>
 
               {languagePickerOpen ? (
@@ -362,13 +378,21 @@ export function VoiceAssistantMobile({
               ) : (
                 <div className="px-5 pb-4">
                   <div className="flex flex-col items-center mb-4">
-                    <div className="w-16 h-16 rounded-full overflow-hidden mb-2">
-                      <Suspense
-                        fallback={<div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center"><Sparkles className="w-5 h-5 text-primary" /></div>}
-                      >
-                        <AIOrb state="idle" size={64} mobile />
-                      </Suspense>
-                    </div>
+                    {/* Static gradient, not a second live three.js orb — the
+                        main stage already keeps one WebGL context open
+                        continuously; a second concurrent canvas just for
+                        this small settings avatar was a real contributor to
+                        the "WebGL context lost" errors on devices/browsers
+                        with a low concurrent-context limit. */}
+                    <div
+                      className="w-16 h-16 rounded-full mb-2"
+                      style={{
+                        background:
+                          "radial-gradient(circle at 35% 30%, #FFC98B 0%, #DD6B3D 65%, #B7591F 100%)",
+                        boxShadow: "0 0 24px -6px rgba(221,107,61,0.6)",
+                      }}
+                      aria-hidden="true"
+                    />
                     <h2 className="text-lg font-semibold">Dayjoy Assist</h2>
                     <p className="text-xs text-white/50">Warm and helpful</p>
                   </div>
