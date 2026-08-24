@@ -1059,9 +1059,19 @@ def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
 
 def _format_wellness_context(data: Dict[str, Any]) -> str:
     """Deterministic context string for the structured wellness_context
-    tool result — every field is a verbatim wellness_goals row value (see
-    tools/wellness.py); the LLM only phrases these into a status update or
-    a "goal created" confirmation, never invents progress."""
+    tool result — every field is a verbatim wellness_goals/wellness_
+    preferences row value (see tools/wellness.py); the LLM only phrases
+    these into a status update or a "goal created" confirmation, never
+    invents progress or a preference the user never actually stated."""
+    pref_block = ""
+    preferences = data.get("preferences") or []
+    if preferences:
+        pref_lines = "\n".join(f"- {p.get('key')}: {p.get('value')}" for p in preferences)
+        pref_block = (
+            f"\n\n---\n\n[Remembered preferences for this user — already confirmed, do not ask "
+            f"again, just take them into account]\n{pref_lines}"
+        )
+
     if data.get("status") == "goal_created":
         goal = data.get("goal") or {}
         return (
@@ -1070,7 +1080,8 @@ def _format_wellness_context(data: Dict[str, Any]) -> str:
             "This is a brand-new goal with no progress logged yet. Confirm it was "
             "created, and mention the user can track it (and log activities toward "
             "it) from the Wellness Journey page."
-        )
+        ) + pref_block
+
     goals = data.get("goals") or []
     blocks = []
     for g in goals:
@@ -1086,7 +1097,7 @@ def _format_wellness_context(data: Dict[str, Any]) -> str:
         if g.get("target_date"):
             lines.append(f"Target date: {g['target_date']}")
         blocks.append("\n".join(lines))
-    return "\n\n---\n\n".join(blocks)
+    return "\n\n---\n\n".join(blocks) + pref_block
 
 
 async def _route_from_kb_result(

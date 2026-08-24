@@ -67,6 +67,18 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
     if not user_id:
         return {"status": "unauthenticated"}
 
+    # Smart Journey Memory (Phase 18) — durable, previously-confirmed
+    # preferences ("prefers mornings", "dislikes long routines"). Read-only
+    # here: this tool never writes a preference itself (no reliable signal
+    # in a single message that something should be "remembered" long-term)
+    # — that happens explicitly via POST /customer/wellness/preferences,
+    # e.g. from a future Coach confirmation step. Included in both return
+    # branches so the caller (main.py's _format_wellness_context) can fold
+    # it into what the LLM is told, without a second round-trip.
+    preferences = await backend_main.supabase_select(
+        token, "wellness_preferences", columns="key,value", filters={"user_id": user_id}, limit=10,
+    )
+
     goals = await backend_main.supabase_select(
         token,
         "wellness_goals",
@@ -75,7 +87,7 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
         limit=10,
     )
     if goals:
-        return {"status": "has_active_goals", "goals": goals}
+        return {"status": "has_active_goals", "goals": goals, "preferences": preferences}
 
     # No active goal — create one from this message. Same defaults
     # customerCreateWellnessGoal (src/lib/api.ts) uses when the Wellness
@@ -90,4 +102,4 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
     )
     if not created:
         return {"status": "error"}
-    return {"status": "goal_created", "goal": created, "goal_type": goal_type}
+    return {"status": "goal_created", "goal": created, "goal_type": goal_type, "preferences": preferences}

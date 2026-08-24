@@ -2475,6 +2475,48 @@ export async function customerCheckWellnessReminders(): Promise<{
   }
 }
 
+/** Daily Check-in (spec Phase 4) — one row per user per day, `signals` is a
+ * small bag of 1-5 ratings (sleep/energy/stress/mood), never all of them at
+ * once (the check-in only asks what's relevant that day). */
+export type WellnessCheckin = {
+  id?: string;
+  checkin_date?: string;
+  signals: Record<string, number>;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export async function customerGetTodayCheckin(): Promise<WellnessCheckin> {
+  return custGet("/customer/wellness/checkins/today");
+}
+
+export async function customerUpsertCheckin(signals: Record<string, number>): Promise<WellnessCheckin> {
+  return custJson("POST", "/customer/wellness/checkins", { signals });
+}
+
+/** Smart Journey Memory (spec Phase 18) — durable, user-confirmed
+ * preferences the AI Coach reads (backend/orchestrator/tools/wellness.py)
+ * so it doesn't ask the same thing twice. */
+export type WellnessPreference = {
+  id?: string;
+  key: string;
+  value: string;
+  source?: "user" | "ai_inference";
+  updated_at?: string;
+};
+
+export async function customerListWellnessPreferences(): Promise<WellnessPreference[]> {
+  return custGet("/customer/wellness/preferences");
+}
+
+export async function customerUpsertWellnessPreference(key: string, value: string): Promise<WellnessPreference> {
+  return custJson("POST", "/customer/wellness/preferences", { key, value, source: "user" });
+}
+
+export async function customerDeleteWellnessPreference(key: string): Promise<{ status: string }> {
+  return custDelete(`/customer/wellness/preferences/${encodeURIComponent(key)}`);
+}
+
 /** Feedback. */
 export async function customerListFeedback(): Promise<CustomerFeedback[]> {
   return custGet("/customer/feedback");

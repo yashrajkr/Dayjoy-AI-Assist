@@ -23,7 +23,7 @@ All endpoints require authentication. Data scoped to auth.uid() via RLS.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -206,6 +206,20 @@ class ReminderCreate(BaseModel):
     days_of_week: Optional[List[int]] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+
+
+class WellnessCheckinCreate(BaseModel):
+    # Merged into today's row rather than replacing it — the check-in is
+    # adaptive (asks 1-3 questions, not all of them), so a second check-in
+    # later the same day (e.g. answering a question skipped this morning)
+    # must add to today's signals, not overwrite the ones already answered.
+    signals: Dict[str, int] = Field(default_factory=dict)
+
+
+class WellnessPreferenceUpsert(BaseModel):
+    key: str = Field(..., min_length=1, max_length=80)
+    value: str = Field(..., min_length=1, max_length=500)
+    source: str = Field(default="user", description="'user' or 'ai_inference'")
 
 
 class FeedbackCreate(BaseModel):
@@ -663,6 +677,93 @@ async def check_due_wellness_reminders(request: Request) -> Dict[str, Any]:
         await _update("wellness_reminders", {"id": r["id"], "user_id": user_id}, {"last_triggered_at": _utc_now_iso()}, token=token)
 
     return {"delivered": delivered, "count": len(delivered)}
+
+
+# ---------------------------------------------------------------------------
+# Module 11b — Wellness Daily Check-in (Phase 4) + Recovery Mode signal
+# source (Phase 17 — Recovery Mode itself is derived client-side from
+# today's signals; this is just where they're persisted) + Smart Journey
+# Memory / Preferences (Phase 18).
+# ---------------------------------------------------------------------------
+@router.get("/wellness/checkins/today")
+async def get_today_checkin(request: Request) -> Dict[str, Any]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    today = date.today().isoformat()
+    rows = await _select(
+        "wellness_checkins", "*", filters={"user_id": user_id, "checkin_date": today}, limit=1, token=token
+    )
+    return rows[0] if rows else {"checkin_date": today, "signals": {}}
+
+
+@router.get("/wellness/checkins")
+async def list_checkins(request: Request, limit: int = 30) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select(
+        "wellness_checkins", "*", filters={"user_id": user_id}, limit=limit, order="checkin_date.desc", token=token
+    )
+
+
+@router.post("/wellness/checkins")
+async def upsert_today_checkin(req: WellnessCheckinCreate, request: Request) -> Dict[str, Any]:
+    """Merges `req.signals` into today's row rather than replacing it — the
+    check-in only asks 1-3 questions at a time (adaptive, per Phase 4), so
+    a later check-in the same day must add to what's already answered, not
+    overwrite it."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    today = date.today().isoformat()
+    existing = await _select(
+        "wellness_checkins", "*", filters={"user_id": user_id, "checkin_date": today}, limit=1, token=token
+    )
+    if existing:
+        merged_signals = {**(existing[0].get("signals") or {}), **req.signals}
+        rows = await _update(
+            "wellness_checkins", {"id": existing[0]["id"], "user_id": user_id},
+            {"signals": merged_signals, "updated_at": _utc_now_iso()}, token=token,
+        )
+        return rows[0] if rows else {"status": "error"}
+    payload = {"user_id": user_id, "checkin_date": today, "signals": req.signals}
+    return await _insert("wellness_checkins", payload, token=token) or {"status": "error"}
+
+
+@router.get("/wellness/preferences")
+async def list_wellness_preferences(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select(
+        "wellness_preferences", "*", filters={"user_id": user_id}, limit=100, order="updated_at.desc", token=token
+    )
+
+
+@router.post("/wellness/preferences")
+async def upsert_wellness_preference(req: WellnessPreferenceUpsert, request: Request) -> Dict[str, Any]:
+    """Upsert-by-key — a preference is identified by its key
+    (unique per user, per the v31 migration), not a row id the client has
+    to track, so remembering "coaching_style" a second time updates the
+    same row instead of accumulating duplicates."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    existing = await _select(
+        "wellness_preferences", "*", filters={"user_id": user_id, "key": req.key}, limit=1, token=token
+    )
+    if existing:
+        rows = await _update(
+            "wellness_preferences", {"id": existing[0]["id"], "user_id": user_id},
+            {"value": req.value, "source": req.source, "updated_at": _utc_now_iso()}, token=token,
+        )
+        return rows[0] if rows else {"status": "error"}
+    payload = {"user_id": user_id, "key": req.key, "value": req.value, "source": req.source}
+    return await _insert("wellness_preferences", payload, token=token) or {"status": "error"}
+
+
+@router.delete("/wellness/preferences/{key}")
+async def delete_wellness_preference(key: str, request: Request) -> Dict[str, str]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    ok = await _delete("wellness_preferences", {"user_id": user_id, "key": key}, token=token)
+    return {"status": "deleted" if ok else "error"}
 
 
 # ---------------------------------------------------------------------------

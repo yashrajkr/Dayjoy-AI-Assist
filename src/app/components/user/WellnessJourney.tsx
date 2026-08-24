@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search, BellRing } from "lucide-react";
+import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search, BellRing, Sunrise, HeartPulse } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -13,7 +13,9 @@ import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
   customerListWellnessActivities, customerLogWellnessActivity,
   customerListReminders, customerCreateReminder, customerDeleteReminder,
-  type WellnessGoal, type WellnessActivity, type Reminder,
+  customerGetTodayCheckin, customerUpsertCheckin,
+  customerListWellnessPreferences, customerUpsertWellnessPreference, customerDeleteWellnessPreference,
+  type WellnessGoal, type WellnessActivity, type Reminder, type WellnessCheckin, type WellnessPreference,
 } from "../../../lib/api";
 
 const GOAL_TYPES = [
@@ -176,6 +178,56 @@ const LOW_MOTIVATION_OPTIONS: { value: string; label: string; action: string }[]
   { value: "rest", label: "I need rest", action: "Rest today. Log it — a recovery day still counts." },
 ];
 
+/**
+ * Daily Check-in (spec Phase 4) — deliberately NOT "ask everything every
+ * day." Each signal has a `relevantFor` goal-type list; a question is only
+ * offered if it's relevant to the user's current priority goal (or has no
+ * list, meaning it's a generally-useful default) AND hasn't already been
+ * answered today. Capped at 3 questions per check-in (below, in the
+ * component) so this stays a 30-90 second interaction, not a form.
+ */
+const CHECKIN_SIGNALS: { key: string; label: string; relevantFor?: string[] }[] = [
+  { key: "energy", label: "How's your energy today?" },
+  { key: "sleep", label: "How was your sleep?", relevantFor: ["sleep", "energy", "fitness"] },
+  { key: "stress", label: "How stressed do you feel?", relevantFor: ["stress", "general"] },
+  { key: "mood", label: "How's your mood?", relevantFor: ["general", "stress", "skin"] },
+];
+const CHECKIN_SCALE = [1, 2, 3, 4, 5];
+
+/**
+ * Recovery Mode (spec Phase 17) — auto-detected from today's check-in
+ * signals (never diagnosed, never inferred from anything else). Any one
+ * low signal is enough to soften today's coaching — this is deliberately
+ * a low bar, since the cost of a gentler day when it wasn't strictly
+ * needed is near zero, but the cost of pushing a genuinely depleted user
+ * is a lost day (or the whole journey).
+ */
+export function deriveRecoveryMode(checkin: WellnessCheckin | null): { active: boolean; reason: string | null } {
+  const signals = checkin?.signals ?? {};
+  if ((signals.sleep ?? 5) <= 2) return { active: true, reason: "you logged low sleep quality today" };
+  if ((signals.stress ?? 1) >= 4) return { active: true, reason: "you logged high stress today" };
+  if ((signals.energy ?? 5) <= 2) return { active: true, reason: "you logged low energy today" };
+  return { active: false, reason: null };
+}
+
+/**
+ * Smart Journey Memory (Phase 18) — a fixed, small vocabulary of
+ * preference keys rather than free-form key entry, so the AI Coach reading
+ * these back (backend/orchestrator/tools/wellness.py) always sees a
+ * predictable set of facts instead of arbitrary user-typed keys it has to
+ * guess the meaning of.
+ */
+const WELLNESS_PREF_KEYS: { value: string; label: string }[] = [
+  { value: "preferred_time", label: "Preferred time of day" },
+  { value: "coaching_style", label: "Coaching style" },
+  { value: "dislikes", label: "Dislikes" },
+  { value: "equipment", label: "Available equipment" },
+  { value: "dietary", label: "Dietary preference" },
+];
+const WELLNESS_PREF_LABELS: Record<string, string> = Object.fromEntries(
+  WELLNESS_PREF_KEYS.map((k) => [k.value, k.label]),
+);
+
 export function WellnessJourney() {
   const [tab, setTab] = useState<Tab>("goals");
   const [goals, setGoals] = useState<WellnessGoal[]>([]);
@@ -227,6 +279,55 @@ export function WellnessJourney() {
     }
   };
 
+  // Daily Check-in (Phase 4) — adaptive: only the questions relevant to
+  // today's priority goal and not already answered today are offered (see
+  // CHECKIN_SIGNALS), capped at 3. Answers merge into today's row
+  // server-side (backend/customer_api.py upsert_today_checkin), so
+  // answering more later the same day never loses earlier answers.
+  const [checkinModal, setCheckinModal] = useState(false);
+  const [checkinAnswers, setCheckinAnswers] = useState<Record<string, number>>({});
+  const [savingCheckin, setSavingCheckin] = useState(false);
+  const saveCheckin = async () => {
+    if (Object.keys(checkinAnswers).length === 0) { setCheckinModal(false); return; }
+    setSavingCheckin(true);
+    try {
+      const updated = await customerUpsertCheckin(checkinAnswers);
+      setTodayCheckin(updated);
+      setCheckinModal(false);
+      setCheckinAnswers({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingCheckin(false);
+    }
+  };
+
+  // Smart Journey Memory (Phase 18) — a small fixed set of preference keys
+  // (not free-form key entry) so the AI Coach reading these back
+  // (backend/orchestrator/tools/wellness.py) always sees a predictable
+  // vocabulary rather than arbitrary user-typed keys.
+  const [newPrefKey, setNewPrefKey] = useState("");
+  const [newPrefValue, setNewPrefValue] = useState("");
+  const [savingPref, setSavingPref] = useState(false);
+  const savePreference = async () => {
+    if (!newPrefKey || !newPrefValue.trim()) return;
+    setSavingPref(true);
+    try {
+      await customerUpsertWellnessPreference(newPrefKey, newPrefValue.trim());
+      setNewPrefKey("");
+      setNewPrefValue("");
+      setPreferences(await customerListWellnessPreferences());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingPref(false);
+    }
+  };
+  const forgetPreference = async (key: string) => {
+    await customerDeleteWellnessPreference(key);
+    setPreferences((prev) => prev.filter((p) => p.key !== key));
+  };
+
   // Goal modal — target_value/unit start from the "general" preset instead
   // of blank, so the very first render already shows a sensible example
   // rather than an empty box with no clue what to type.
@@ -256,16 +357,21 @@ export function WellnessJourney() {
   const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
 
+  const [todayCheckin, setTodayCheckin] = useState<WellnessCheckin | null>(null);
+  const [preferences, setPreferences] = useState<WellnessPreference[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [g, a, r] = await Promise.all([
+      const [g, a, r, c, p] = await Promise.all([
         customerListWellnessGoals(),
         customerListWellnessActivities(30),
         customerListReminders(true),
+        customerGetTodayCheckin(),
+        customerListWellnessPreferences(),
       ]);
-      setGoals(g); setActivities(a); setReminders(r);
+      setGoals(g); setActivities(a); setReminders(r); setTodayCheckin(c); setPreferences(p);
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setLoading(false); }
   }, []);
 
@@ -443,6 +549,17 @@ export function WellnessJourney() {
 
   const journeyState = deriveJourneyState(goals, activities);
   const stateCopy = JOURNEY_STATE_COPY[journeyState];
+  const recoveryMode = deriveRecoveryMode(todayCheckin);
+
+  // Which check-in questions to offer right now: relevant to the priority
+  // goal's type (or generally relevant) AND not already answered today —
+  // capped at 3 so this stays a quick check-in, never a form.
+  const answeredToday = new Set(Object.keys(todayCheckin?.signals ?? {}));
+  const checkinQuestions = CHECKIN_SIGNALS.filter((q) => {
+    if (answeredToday.has(q.key)) return false;
+    if (!q.relevantFor) return true;
+    return !priorityGoal || q.relevantFor.includes(priorityGoal.goal_type ?? "general");
+  }).slice(0, 3);
 
   const tabs: { value: Tab; label: string; icon: typeof Target; count?: number }[] = [
     { value: "goals", label: "Goals", icon: Target, count: goals.filter((g) => !g.is_completed).length },
@@ -477,6 +594,47 @@ export function WellnessJourney() {
         </Card>
       ) : null}
 
+      {/* Recovery Mode (Phase 17) — auto-detected from today's check-in
+          signals only (never diagnosed from anything else). Shown ahead of
+          the normal Overview card so a depleted day is acknowledged before
+          any "stay consistent" coaching copy, not alongside it. */}
+      {!loading && recoveryMode.active ? (
+        <Card className="p-4 mb-4 shadow-none border-warning/30 bg-warning/5">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-warning/15 text-warning flex items-center justify-center shrink-0">
+              <HeartPulse className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Recovery mode</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Today's plan is scaled back because {recoveryMode.reason} — that's fine, a lighter day still counts.
+              </p>
+              {activeGoals.length > 0 ? (
+                <button type="button" onClick={() => setLowMotivationModal(true)} className="text-xs font-medium text-warning hover:underline mt-2">
+                  Get today's smallest action
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* Daily Check-in (Phase 4) — only shown while there's something left
+          to ask today; disappears once all relevant questions are
+          answered instead of staying as permanent clutter. */}
+      {!loading && checkinQuestions.length > 0 ? (
+        <Card className="p-3 mb-4 shadow-none border-border flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+            <Sunrise className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Quick check-in</p>
+            <p className="text-xs text-muted-foreground">{checkinQuestions.length} question{checkinQuestions.length === 1 ? "" : "s"} — takes under a minute.</p>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => setCheckinModal(true)} className="shrink-0">Check in</Button>
+        </Card>
+      ) : null}
+
       {/* Overview — a data-grounded summary + one surfaced next action,
           instead of three equally-weighted stat tiles with nothing telling
           the user what to actually do next. Only renders once there's
@@ -505,7 +663,7 @@ export function WellnessJourney() {
                   Today's priority: <span className="text-foreground font-medium">{priorityGoal.title}</span>
                 </p>
               ) : null}
-              {activeGoals.length > 0 ? (
+              {activeGoals.length > 0 && !recoveryMode.active ? (
                 <button
                   type="button"
                   onClick={() => setLowMotivationModal(true)}
@@ -635,6 +793,47 @@ export function WellnessJourney() {
             </div>
           )}
         </>
+      ) : null}
+
+      {/* Smart Journey Memory (Phase 18) — durable preferences the AI Coach
+          reads back (backend/orchestrator/tools/wellness.py) so it doesn't
+          ask the same thing twice. Deliberately a small fixed key
+          vocabulary, not free-form keys, and shown regardless of which tab
+          is active since it's about the whole journey, not one goal. */}
+      {!loading ? (
+        <Card className="p-4 mt-2 shadow-none">
+          <h3 className="text-sm font-semibold mb-1">Wellness memory</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            What the AI coach remembers about your preferences — used when it suggests goals or plans, never asked twice.
+          </p>
+          {preferences.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {preferences.map((p) => (
+                <span key={p.key} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-accent text-accent-foreground text-xs">
+                  {WELLNESS_PREF_LABELS[p.key] ?? p.key}: {p.value}
+                  <button type="button" onClick={() => void forgetPreference(p.key)} aria-label={`Forget ${p.key}`} className="hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mb-3">Nothing remembered yet.</p>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select value={newPrefKey} onChange={(e) => setNewPrefKey(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-sm">
+              <option value="">Remember…</option>
+              {WELLNESS_PREF_KEYS.filter((k) => !preferences.some((p) => p.key === k.value)).map((k) => (
+                <option key={k.value} value={k.value}>{k.label}</option>
+              ))}
+            </select>
+            <input type="text" value={newPrefValue} onChange={(e) => setNewPrefValue(e.target.value)}
+              placeholder="e.g. Mornings" className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm" />
+            <Button type="button" variant="secondary" disabled={!newPrefKey || !newPrefValue.trim() || savingPref} onClick={() => void savePreference()}>
+              {savingPref ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add
+            </Button>
+          </div>
+        </Card>
       ) : null}
       </div>
       </div>
@@ -893,6 +1092,47 @@ export function WellnessJourney() {
               <p className="text-sm">{LOW_MOTIVATION_OPTIONS.find((o) => o.value === lowMotivationPick)?.action}</p>
             </div>
           ) : null}
+        </div>
+      </Modal>
+
+      {/* Daily Check-in (Phase 4) — 1-3 adaptive questions (see
+          checkinQuestions above), each a 1-5 tap, no typing. Answers merge
+          into today's row so partial check-ins (answer 1 now, rest later)
+          never lose progress. */}
+      <Modal
+        open={checkinModal}
+        onClose={() => { setCheckinModal(false); setCheckinAnswers({}); }}
+        title="Quick check-in"
+        description="Just today's — takes under a minute."
+        size="sm"
+        footer={<>
+          <Button type="button" variant="secondary" onClick={() => { setCheckinModal(false); setCheckinAnswers({}); }}>Skip</Button>
+          <Button type="button" disabled={Object.keys(checkinAnswers).length === 0 || savingCheckin} onClick={() => void saveCheckin()}>
+            {savingCheckin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Done
+          </Button>
+        </>}
+      >
+        <div className="space-y-4">
+          {checkinQuestions.map((q) => (
+            <div key={q.key}>
+              <label className="block text-sm font-medium mb-1.5">{q.label}</label>
+              <div className="flex gap-1.5">
+                {CHECKIN_SCALE.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setCheckinAnswers({ ...checkinAnswers, [q.key]: n })}
+                    className={`flex-1 h-9 rounded-lg border text-sm font-medium ${checkinAnswers[q.key] === n ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                <span>Low</span><span>High</span>
+              </div>
+            </div>
+          ))}
         </div>
       </Modal>
     </div>

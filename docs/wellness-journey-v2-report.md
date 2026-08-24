@@ -251,3 +251,46 @@ browser.
 plan, check-in flow, Recovery Mode, milestones, wellness score, weekly/
 monthly reviews. Not attempted this round; the round was spent on the
 reported bug + the button-alignment fix, per your priority.
+
+---
+
+# Round 5 (2026-08-24, compact) — Daily Check-in, Recovery Mode, Smart Journey Memory
+
+Three more spec items built for real this round, closing Phases 4, 17, 18:
+
+- **Daily Check-in** (Phase 4): new `wellness_checkins` table (migration
+  v31, applied to production), `GET/POST /customer/wellness/checkins*`.
+  Adaptive — only 1-3 questions per day, chosen by relevance to today's
+  priority goal, never re-asking something already answered that day
+  (merge-on-write, not overwrite). Verified live: 3 questions rendered
+  correctly (energy/sleep/stress), 1-5 tap scale, no typing required.
+- **Recovery Mode** (Phase 17): `deriveRecoveryMode()` — auto-detects from
+  TODAY's check-in signals only (low sleep, high stress, or low energy),
+  never inferred from anything else. Shown as its own banner ahead of the
+  normal Overview card, softer copy, routes straight into the existing
+  "I don't feel like it" flow. All 5 scenarios (each trigger, the
+  fine/no-recovery case, and no-checkin-yet) verified correct live.
+- **Smart Journey Memory** (Phase 18): new `wellness_preferences` table
+  (same migration), fixed 5-key vocabulary (preferred time, coaching
+  style, dislikes, equipment, dietary) rather than free-form keys, with
+  Remember/Forget UI. **Actually wired into the AI**: `tools/wellness.py`
+  now reads these back and `main.py`'s `_format_wellness_context` folds
+  them into the LLM's context with an explicit "already confirmed, don't
+  ask again" instruction — not just stored and displayed, genuinely read
+  by the WELLNESS chat intent.
+
+No backend/schema changes needed elsewhere; both new tables follow the
+same `user_id = auth.uid()` RLS pattern as every other wellness table.
+
+**Still not done**: Wellness Profile (the broader lifestyle/dietary
+profile beyond these preference keys), AI Daily Plan, milestones, wellness
+score, weekly/monthly AI reviews, AI reflection, personalization levels.
+
+Verification: `npm run typecheck`/`lint` clean (same pre-existing issues
+plus one more of the same "exported const from a component file" warning
+class, not a functional issue). Backend fully syntax-checked. Both new
+tables confirmed live in production via direct query. Check-in modal and
+Recovery Mode derivation verified live in the browser (3-question render,
+all 5 recovery scenarios). Preferences UI rendered and wired but not
+exercised against a live backend in this sandbox (no server running here)
+— same environment limitation noted in every prior round.
