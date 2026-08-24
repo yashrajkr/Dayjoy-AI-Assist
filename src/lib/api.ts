@@ -1440,6 +1440,31 @@ export async function adminFeedbackSummary(): Promise<AdminFeedbackSummary> {
   return adminGet(`/admin/analytics/feedback-summary`);
 }
 
+/** Continuous Improvement System (Next-Gen spec, Phase 14) —
+ * backend/admin_api.py's admin_improvement_candidates. Read-only
+ * reporting: classifies negative-feedback answers into a failure
+ * category for a human to review, never edits anything itself. */
+export type ImprovementCandidate = {
+  category: string;
+  count: number;
+  examples: Array<{
+    question_or_answer_excerpt: string;
+    reason: string;
+    feedback_comment: string | null;
+    answer_source: string | null;
+    created_at: string | null;
+  }>;
+};
+
+export type ImprovementCandidatesReport = {
+  total_negative_feedback_reviewed: number;
+  candidates: ImprovementCandidate[];
+};
+
+export async function adminImprovementCandidates(): Promise<ImprovementCandidatesReport> {
+  return adminGet(`/admin/analytics/improvement-candidates`);
+}
+
 /** Feature: Observability Dashboard — backend/admin_api.py's
  * admin_observability. */
 export type AdminObservability = {
@@ -1867,6 +1892,60 @@ export async function checkDueReminders(): Promise<{ delivered: Array<{ id: stri
   } catch {
     return { delivered: [], count: 0 };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+// — backend/coach_api.py.
+// ---------------------------------------------------------------------------
+
+export type CoachTaskStatus = "pending" | "done";
+export type CoachGoalStatus = "active" | "completed" | "abandoned";
+
+export type CoachTask = {
+  id: string;
+  goal_id: string;
+  task_text: string;
+  day_label: string;
+  sort_order: number;
+  status: CoachTaskStatus;
+  completed_at?: string | null;
+};
+
+export type CoachGoal = {
+  id: string;
+  goal_text: string;
+  status: CoachGoalStatus;
+  created_at?: string;
+  updated_at?: string;
+  tasks: CoachTask[];
+};
+
+export async function createCoachGoal(goalText: string): Promise<CoachGoal> {
+  return distJson("POST", "/coach/goals", { goal_text: goalText });
+}
+
+export async function listCoachGoals(includeInactive = false): Promise<{ goals: CoachGoal[]; total: number }> {
+  return distGet(`/coach/goals?include_inactive=${includeInactive}`);
+}
+
+export async function getCoachGoal(goalId: string): Promise<CoachGoal> {
+  return distGet(`/coach/goals/${goalId}`);
+}
+
+export async function updateCoachGoal(
+  goalId: string,
+  payload: { goal_text?: string; status?: CoachGoalStatus },
+): Promise<{ updated: boolean }> {
+  return distJson("PATCH", `/coach/goals/${goalId}`, payload);
+}
+
+export async function completeCoachTask(taskId: string): Promise<{ completed: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/complete`);
+}
+
+export async function reopenCoachTask(taskId: string): Promise<{ reopened: boolean }> {
+  return distJson("POST", `/coach/tasks/${taskId}/reopen`);
 }
 
 /** Content — generate. */

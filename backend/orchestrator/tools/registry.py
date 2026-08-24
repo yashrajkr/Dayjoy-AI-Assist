@@ -46,7 +46,7 @@ def get_registry() -> ToolRegistry:
 
 
 def _register_default_tools(registry: ToolRegistry) -> None:
-    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, recommend, wellness, web
+    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, product_graph, recommend, wellness, web
 
     registry.register(
         ToolSpec(
@@ -109,6 +109,21 @@ def _register_default_tools(registry: ToolRegistry) -> None:
             timeout_seconds=6.0,
             requires_auth=True,
             handler=wellness.run,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="product_graph",
+            description=(
+                "Multi-hop Knowledge Graph traversal over product_relationships "
+                "(up to 2 hops out) plus same-category sibling products — for "
+                "'what else is like this / connects to this' questions RAG's "
+                "single-shot retrieval and product_recommendation's single-hop "
+                "relationship lookup don't cover."
+            ),
+            timeout_seconds=8.0,
+            requires_auth=False,
+            handler=product_graph.run,
         )
     )
     registry.register(

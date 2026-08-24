@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Activity, Gauge, ShieldAlert, ThumbsDown, ThumbsUp, Timer } from "lucide-react";
+import { Activity, Gauge, ShieldAlert, ThumbsDown, ThumbsUp, Timer, Wrench } from "lucide-react";
 import { PageHeader, Card, StatCard, LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { BarChart, DonutChart, type BarChartItem, type DonutSlice } from "../common/Charts";
 import {
   adminObservability,
   adminFeedbackSummary,
+  adminImprovementCandidates,
   type AdminObservability as ObservabilityData,
   type AdminFeedbackSummary,
+  type ImprovementCandidatesReport,
 } from "../../../lib/api";
 
 /**
@@ -25,6 +27,7 @@ export function AdminObservability() {
   const [error, setError] = useState<string | null>(null);
   const [obs, setObs] = useState<ObservabilityData | null>(null);
   const [feedback, setFeedback] = useState<AdminFeedbackSummary | null>(null);
+  const [improvements, setImprovements] = useState<ImprovementCandidatesReport | null>(null);
   const [days, setDays] = useState(7);
 
   useEffect(() => {
@@ -33,10 +36,11 @@ export function AdminObservability() {
       setLoading(true);
       setError(null);
       try {
-        const [o, f] = await Promise.all([adminObservability(days), adminFeedbackSummary()]);
+        const [o, f, i] = await Promise.all([adminObservability(days), adminFeedbackSummary(), adminImprovementCandidates()]);
         if (!cancelled) {
           setObs(o);
           setFeedback(f);
+          setImprovements(i);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load observability data.");
@@ -185,6 +189,45 @@ export function AdminObservability() {
                   </ul>
                 </div>
               ) : null}
+            </div>
+          )}
+        </Card>
+      ) : null}
+
+      {/* Continuous Improvement System (Next-Gen spec, Phase 14) — read-only
+          review queue. Never edits a prompt/document/route itself; a human
+          reads this and decides what, if anything, to change. */}
+      {!loading && improvements ? (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Wrench className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <h3 className="text-sm font-semibold">Improvement candidates</h3>
+          </div>
+          {improvements.candidates.length === 0 ? (
+            <EmptyState
+              title="No negative feedback to review"
+              description="Once a chat answer gets a 👎, it's classified here by likely failure cause for review."
+            />
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {improvements.total_negative_feedback_reviewed} negative-feedback answers classified by likely cause — highest count first.
+              </p>
+              {improvements.candidates.map((c) => (
+                <div key={c.category} className="rounded-lg border border-border px-3 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium capitalize">{c.category.replace(/_/g, " ")}</span>
+                    <span className="text-xs text-muted-foreground">{c.count} case{c.count === 1 ? "" : "s"}</span>
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {c.examples.slice(0, 2).map((ex, i) => (
+                      <li key={i} className="text-xs text-muted-foreground">
+                        {ex.reason} — <span className="italic">&ldquo;{ex.question_or_answer_excerpt}&rdquo;</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           )}
         </Card>

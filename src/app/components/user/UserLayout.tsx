@@ -34,6 +34,7 @@ import {
   Trash2,
   MoreVertical,
   FolderOpen,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -190,11 +191,13 @@ export function UserLayout() {
   const roleLabel = formatRoleLabel(role);
 
   const paletteItems: CommandPaletteItem[] = [
+    { to: "/hub", icon: LayoutGrid, label: "AI Hub", group: "Main" },
     { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
     { to: "/voice", icon: Mic, label: "Voice Assistant", group: "Main" },
     { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
     { to: "/products", icon: Package, label: "Product Discovery", group: "Main" },
     { to: "/knowledge", icon: Search, label: "Knowledge Center", group: "Main" },
+    { to: "/coach", icon: Sparkles, label: "AI Coach", group: "Main" },
     { to: "/saved", icon: FolderOpen, label: "Saved Work", group: "Main" },
     { to: "/favorites", icon: Heart, label: "Favorites", group: "Main" },
     { to: "/wellness", icon: Target, label: "Wellness Journey", group: "Main" },
@@ -336,6 +339,7 @@ export function UserLayout() {
                 scan than it needs to be. Collapsed (icon-only) mode drops
                 the labels entirely, same as before. */}
             <NavGroup label={BRAND.shortName} collapsed={collapsed}>
+              <NavItem to="/hub" icon={LayoutGrid} label="AI Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/voice" icon={Mic} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </NavGroup>
@@ -349,6 +353,7 @@ export function UserLayout() {
                   to declutter the main nav — it's a low-frequency destination
                   compared to Dashboard/Wellness. */}
               <NavItem to="/wellness" icon={Target} label="Wellness Journey" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
+              <NavItem to="/coach" icon={Sparkles} label="AI Coach" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/saved" icon={FolderOpen} label="Saved Work" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               {canDistributor ? (
                 // Sub-sections (Team, Customers, Follow-ups, Content, Analytics,

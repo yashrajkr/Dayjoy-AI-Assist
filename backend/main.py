@@ -623,6 +623,26 @@ from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
 # trigger instead of three separate calls.
 from backend.orchestrator.orchestrator import orchestrate  # noqa: E402
 
+# Specialized Agent System (Next-Generation spec, Phase 2) — a deterministic
+# Supervisor -> Specialist dispatch on top of the same OrchestrationDecision,
+# threaded into custom_guidance below so the answer is actually framed by
+# which specialist handled it (persona/scope guidance), not just labeled for
+# observability. See agents.py's own docstring for the honest scope of what
+# this does and doesn't enforce.
+from backend.orchestrator.agents import dispatch as dispatch_agent  # noqa: E402
+
+
+def _agent_guidance_addendum(message: str, has_attachment: bool = False) -> str:
+    """Best-effort — a dispatch failure must never break the answer, so this
+    degrades to an empty addendum (no persona framing) rather than raising."""
+    try:
+        decision = orchestrate(message)
+        result = dispatch_agent(decision, has_attachment=has_attachment)
+        _llm_logger.debug("agent_dispatch=%s reason=%s", result.agent, result.reason)
+        return result.guidance
+    except Exception:
+        return ""
+
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
 # document chunk), so a match here skips RAG entirely for that turn rather
@@ -1655,7 +1675,8 @@ async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Option
 
 
 def _assemble_compressed_context(
-    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str
+    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str,
+    task_memory_context: Optional[str] = None,
 ) -> str:
     """Context Compression (orchestrator/context_compress.py) — replaces the
     previous plain "\\n\\n".join() of these four blocks with dedup +
@@ -1663,16 +1684,39 @@ def _assemble_compressed_context(
     highest-priority (never dropped except under extreme budget pressure);
     web results are lowest, since they're supplementary even in hybrid mode
     (HYBRID_MODE_ADDENDUM already tells the model Dayjoy context wins on any
-    conflict)."""
+    conflict). `task_memory_context` (Memory 2.0's task-memory layer,
+    orchestrator/memory_context.py) is the user's own active AI Coach
+    goals/next-steps — same priority tier as personalization, since it's
+    similarly "about this user" rather than approved knowledge."""
     blocks = [
         ContextBlock(label="Current date/time", text=time_context, priority=1) if time_context else None,
         ContextBlock(label="Approved Dayjoy knowledge", text=dayjoy_context, priority=1) if dayjoy_context else None,
         ContextBlock(label="Personalization", text=personalization_context, priority=2)
         if personalization_context
         else None,
+        ContextBlock(label="Active goals", text=task_memory_context, priority=2)
+        if task_memory_context
+        else None,
         ContextBlock(label="Web", text=web_context, priority=3) if web_context else None,
     ]
     return compress_context([b for b in blocks if b is not None])
+
+
+async def _maybe_task_memory_context(token: Optional[str], user_id: Optional[str], casual: bool) -> str:
+    """Memory 2.0's task-memory layer (orchestrator/memory_context.py) — the
+    user's own active AI Coach goals/next-steps, so a brand-new
+    conversation ("what should I work on today?") can still draw on a goal
+    set up in a PAST conversation, which conversation_state.py's
+    history-only open_task can't see. Best-effort: any failure here must
+    never block the chat response."""
+    if casual or not user_id:
+        return ""
+    try:
+        from backend.orchestrator.memory_context import task_memory_prompt_block
+
+        return await task_memory_prompt_block(token, user_id)
+    except Exception:
+        return ""
 
 
 async def _maybe_personalization_context(
@@ -2728,8 +2772,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         token, user_id, req.message, history, casual, req.role
     )
     t_after_personalization = time.monotonic()
+    task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
     full_context = _assemble_compressed_context(
-        current_time_context(), personalization_context, route.context, route.web_context
+        current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
     )
     custom_guidance = await load_ai_custom_guidance()
     fmt_directive = format_instruction(req.message)
@@ -2744,6 +2789,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
     if conflict_guidance:
         custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+    agent_guidance = _agent_guidance_addendum(req.message)
+    if agent_guidance:
+        custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
     already_grounded = bool(
         route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
     )
@@ -3217,8 +3265,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             token, user_id, req.message, history, casual, req.role
         )
         t_after_personalization = time.monotonic()
+        task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
         full_context = _assemble_compressed_context(
-            current_time_context(), personalization_context, route.context, route.web_context
+            current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
         )
         custom_guidance = await load_ai_custom_guidance()
         fmt_directive = format_instruction(req.message)
@@ -3233,6 +3282,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         conflict_guidance = _conflict_guidance_from_rag_metadata(route.rag_metadata)
         if conflict_guidance:
             custom_guidance = f"{custom_guidance}\n\n{conflict_guidance}".strip()
+        agent_guidance = _agent_guidance_addendum(req.message)
+        if agent_guidance:
+            custom_guidance = f"{custom_guidance}\n\n{agent_guidance}".strip()
         already_grounded = bool(
             route.rag_metadata and route.rag_metadata.get("source") in ("structured_pricing", "structured_recommendation")
         )
@@ -4597,6 +4649,17 @@ try:
 except Exception as _reminders_router_err:  # pragma: no cover
     import logging
     logging.getLogger("dayjoy.main").warning("Failed to load reminders router: %s", _reminders_router_err)
+
+
+# ---------------------------------------------------------------------------
+# Persistent AI Coach — Goal -> Plan -> Execute (Next-Gen spec, Phases 5, 13)
+# ---------------------------------------------------------------------------
+try:
+    from backend.coach_api import router as coach_router
+    app.include_router(coach_router)
+except Exception as _coach_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load coach router: %s", _coach_router_err)
 
 
 # ---------------------------------------------------------------------------
