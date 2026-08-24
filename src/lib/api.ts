@@ -1308,6 +1308,20 @@ export async function adminKnowledgeGaps(limit = 50): Promise<Array<Record<strin
   return adminGet(`/admin/analytics/knowledge-gaps?limit=${limit}`);
 }
 
+/** Knowledge Freshness Monitoring (Capability 42) —
+ * backend/admin_api.py's admin_knowledge_freshness. */
+export type KnowledgeFreshnessReport = {
+  stale_documents: Array<{ id: string; file_name: string; last_updated: string; days_since_update: number }>;
+  missing_metadata_documents: Array<{ id: string; file_name: string; missing_category: boolean; missing_tags: boolean }>;
+  duplicate_documents: Array<{ file_name: string; count: number; document_ids: string[] }>;
+  total_active_documents: number;
+  stale_after_days: number;
+};
+
+export async function adminKnowledgeFreshness(staleAfterDays = 180): Promise<KnowledgeFreshnessReport> {
+  return adminGet(`/admin/analytics/knowledge-freshness?stale_after_days=${staleAfterDays}`);
+}
+
 /** Feature: Feedback Learning aggregation — backend/admin_api.py's
  * admin_feedback_summary. */
 export type AdminFeedbackSummary = {
