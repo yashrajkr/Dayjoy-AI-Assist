@@ -26,6 +26,8 @@ import {
 import { useAuth } from "../../lib/AuthContext";
 import { AppHeader } from "../common/AppHeader";
 import { useVoice, type VoiceOptions } from "../../lib/useVoice";
+import { useIsMobile } from "../../lib/useIsMobile";
+import { VoiceAssistantMobile } from "./VoiceAssistantMobile";
 import { BRAND } from "../../lib/brand";
 import {
   createConversation,
@@ -72,6 +74,11 @@ const LANGUAGES: Array<{ code: string; label: string; sttCode: string }> = [
   { code: "te", label: "Telugu", sttCode: "te-IN" },
   { code: "gu", label: "Gujarati", sttCode: "gu-IN" },
   { code: "pa", label: "Punjabi", sttCode: "pa-IN" },
+  { code: "kn", label: "Kannada", sttCode: "kn-IN" },
+  { code: "ml", label: "Malayalam", sttCode: "ml-IN" },
+  { code: "or", label: "Odia", sttCode: "or-IN" },
+  { code: "as", label: "Assamese", sttCode: "as-IN" },
+  { code: "ur", label: "Urdu", sttCode: "ur-IN" },
 ];
 
 /** Short, human-readable labels for the AI router's answer_source field. */
@@ -154,6 +161,7 @@ export function VoiceAssistant() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, role } = useAuth();
+  const isMobile = useIsMobile();
 
   const [settings, setSettings] = useState<PersistedSettings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
@@ -204,6 +212,14 @@ export function VoiceAssistant() {
   // browsers often silently deny (no permission prompt shown at all,
   // straight to a "Microphone access was denied" error).
   const hasUserStartedMicRef = useRef(false);
+  // Mirrors the latest assistant turn so handleSpeakerTap (defined before
+  // `turns` is filtered/derived further down) always reads the current
+  // value without needing to be redeclared after every derived variable.
+  const lastAssistantTurnRef = useRef<Turn | null>(null);
+  useEffect(() => {
+    const last = [...turns].reverse().find((t) => t.role === "assistant");
+    lastAssistantTurnRef.current = last ?? null;
+  }, [turns]);
   const currentLanguageLabel =
     LANGUAGES.find((l) => l.code === settings.languageCode)?.label ?? "English (India)";
 
@@ -389,12 +405,37 @@ export function VoiceAssistant() {
   }, [settings.handsFree, voice.sttSupported, voice.speaking, voice.listening, thinking, ended, voice]);
 
   const toggleMic = useCallback(() => {
+    // First real tap of this session — unlock speechSynthesis inside this
+    // click's call stack so the *next* speak() call (fired later from an
+    // async network response, which mobile browsers otherwise treat as
+    // "not a user gesture" and silently drop) actually produces sound.
+    if (!hasUserStartedMicRef.current) {
+      voice.primeSpeech();
+    }
     hasUserStartedMicRef.current = true;
     if (voice.listening) {
       voice.stopListening();
     } else {
       voice.startListening();
     }
+  }, [voice]);
+
+  // Tapping the speaker icon: interrupt if currently speaking, replay the
+  // last answer if there is one, otherwise just toggle mute. Previously
+  // this button only ever toggled mute — with nothing queued to speak yet,
+  // tapping it right after an answer looked exactly like "the speaker
+  // button doesn't speak" (the bug reported), because it was never wired
+  // to actually produce sound, only to allow/block future sound.
+  const handleSpeakerTap = useCallback(() => {
+    if (voice.speaking) {
+      voice.stopSpeaking();
+      return;
+    }
+    if (!voice.muted && lastAssistantTurnRef.current) {
+      voice.speak(lastAssistantTurnRef.current.content);
+      return;
+    }
+    voice.toggleMute();
   }, [voice]);
 
   // The composer's voice-assistant button navigates here with
@@ -561,6 +602,33 @@ export function VoiceAssistant() {
     });
     return actions;
   }, [lastAssistantTurn, endSession, navigate, summary, transcriptPlainText]);
+
+  if (isMobile) {
+    return (
+      <VoiceAssistantMobile
+        phase={phase}
+        orbState={orbState}
+        phaseCopy={phaseCopy[phase]}
+        voice={voice}
+        toggleMic={toggleMic}
+        onSpeakerTap={handleSpeakerTap}
+        endSession={() => void endSession()}
+        startNewSession={startNewSession}
+        ended={ended}
+        onClose={() => navigate("/")}
+        onSwitchToChat={() => navigate("/")}
+        settings={settings}
+        setSettings={setSettings}
+        languages={LANGUAGES}
+        langVoices={langVoices}
+        selectedVoiceLabel={selectedVoiceLabel}
+        currentLanguageLabel={currentLanguageLabel}
+        turns={turns}
+        streamingText={streamingText}
+        thinking={thinking}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
@@ -869,10 +937,10 @@ export function VoiceAssistant() {
           variant="outline"
           size="icon"
           className="h-11 w-11 rounded-full"
-          onClick={voice.toggleMute}
-          aria-label={voice.muted ? "Unmute voice" : "Mute voice"}
+          onClick={handleSpeakerTap}
+          aria-label={voice.speaking ? "Stop speaking" : voice.muted ? "Unmute voice" : "Replay last answer"}
           aria-pressed={voice.muted}
-          title={voice.muted ? "Unmute" : "Mute"}
+          title={voice.speaking ? "Stop speaking" : voice.muted ? "Unmute" : "Replay last answer"}
         >
           {voice.muted ? <VolumeX className="w-5 h-5" aria-hidden="true" /> : <Volume2 className="w-5 h-5" aria-hidden="true" />}
         </Button>
