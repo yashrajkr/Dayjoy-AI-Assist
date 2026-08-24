@@ -34,6 +34,7 @@ import {
   Trash2,
   MoreVertical,
   FolderOpen,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
@@ -190,6 +191,7 @@ export function UserLayout() {
   const roleLabel = formatRoleLabel(role);
 
   const paletteItems: CommandPaletteItem[] = [
+    { to: "/hub", icon: LayoutGrid, label: "AI Hub", group: "Main" },
     { to: "/", icon: Plus, label: "AI Chat", group: "Main" },
     { to: "/voice", icon: Mic, label: "Voice Assistant", group: "Main" },
     { to: "/dashboard", icon: LayoutDashboard, label: "My Dashboard", group: "Main" },
@@ -337,6 +339,7 @@ export function UserLayout() {
                 scan than it needs to be. Collapsed (icon-only) mode drops
                 the labels entirely, same as before. */}
             <NavGroup label={BRAND.shortName} collapsed={collapsed}>
+              <NavItem to="/hub" icon={LayoutGrid} label="AI Hub" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/" icon={Plus} label="AI Chat" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
               <NavItem to="/voice" icon={Mic} label="Voice Assistant" collapsed={collapsed} onClick={() => setDrawerOpen(false)} />
             </NavGroup>
