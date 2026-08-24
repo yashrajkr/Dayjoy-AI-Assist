@@ -624,6 +624,7 @@ from backend.orchestrator.types import INTENT_PRICING, INTENT_RECOMMENDATION  # 
 # Post-generation answer-relevance check — see module docstring for why this
 # is the one genuinely new link in the pipeline rather than a rebuild of it.
 from backend.orchestrator.answer_verify import verify_answer  # noqa: E402
+from backend.orchestrator.contradiction import detect_contradiction  # noqa: E402
 
 # Contextual follow-up suggestions — was fully built and tested
 # (backend/tests/ has no direct test file yet, but the module is pure/
@@ -2584,6 +2585,31 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         else:
             already_retried = False
 
+        # Contradiction Detector (Capability 26) — a SEPARATE check from
+        # the relevance-mismatch retry above (does the answer contradict
+        # ITSELF or the evidence, not "does it address the question").
+        # Same isolation-and-gating as verification_ran: only for
+        # RAG-sourced answers, and only once regardless of what happened
+        # above, to keep this to at most one extra LLM call per request.
+        if verification_ran and answer:
+            contradiction = await detect_contradiction(answer, full_context)
+            if contradiction.checked and contradiction.has_contradiction:
+                corrective_context = (
+                    full_context
+                    + "\n\n[SYSTEM NOTE: your previous answer contained a contradiction "
+                    f"({contradiction.explanation}). Re-answer using ONLY the evidence above, "
+                    "making sure every stated fact is consistent with itself and with the evidence.]"
+                )
+                fix_parts: List[str] = []
+                async for tok in stream_response(
+                    req.message, history, corrective_context, req.language, route.mode, custom_guidance,
+                    ai_mode=ai_mode,
+                ):
+                    fix_parts.append(tok)
+                fixed = "".join(fix_parts).strip()
+                if fixed:
+                    answer = fixed
+
         # Answer Refinement Loop (orchestrator/refinement.py) — a SEPARATE,
         # bounded-to-one check from the relevance-mismatch retry above;
         # `already_retried` ensures a response is never regenerated twice.
@@ -2949,10 +2975,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             route.direct_answer is None and not casual and not already_grounded
             and route.answer_source in ("dayjoy_knowledge", "hybrid")
         )
+        contradiction_detected = False
         if verification_ran:
             yield _sse({"status": "verifying"})
             verdict = await verify_answer(req.message, aggregated, full_context)
             answer_mismatch = bool(verdict.checked and not verdict.addresses_question)
+            # Contradiction Detector (Capability 26) — streamed tokens are
+            # already sent, so (same reasoning as the relevance check
+            # above) this only FLAGS via handoff_required rather than
+            # retrying; only runs if the relevance check itself passed, to
+            # cap this at one extra LLM call per request.
+            if not answer_mismatch:
+                contradiction = await detect_contradiction(aggregated, full_context)
+                contradiction_detected = bool(contradiction.checked and contradiction.has_contradiction)
 
         confidence, verification_status = _compute_confidence(casual, route)
         # Evidence-verification signal (rag/evidence.py, via rag_metadata) —
@@ -2970,6 +3005,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             or not bool(route.context)
             or evidence_insufficient
             or answer_mismatch
+            or contradiction_detected
         )
         category = route.category
         sources = route.sources + route.web_sources
@@ -2977,6 +3013,11 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         if answer_mismatch:
             handoff_msg = (
                 "This answer may not directly address your exact question. Please rephrase, "
+                "or create a support ticket for a verified response."
+            )
+        elif contradiction_detected:
+            handoff_msg = (
+                "This answer may contain a contradiction — please double-check the details, "
                 "or create a support ticket for a verified response."
             )
         elif handoff_required:
