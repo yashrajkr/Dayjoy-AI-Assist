@@ -3,13 +3,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   FolderOpen, Loader2, ClipboardList, FileText, GraduationCap,
-  Briefcase, BookOpen, Package, Send, History, Clock,
+  Briefcase, BookOpen, Package, Send, History, Clock, Bell, Check,
 } from "lucide-react";
 import { AppHeader } from "../common/AppHeader";
 import { EmptyState, ErrorState } from "../common/AdminUI";
 import {
-  listArtifacts, listArtifactVersions, continueArtifact,
-  type Artifact, type ArtifactType,
+  listArtifacts, listArtifactVersions, continueArtifact, createReminder,
+  type Artifact, type ArtifactType, type ReminderRecurrence,
 } from "../../../lib/api";
 
 /**
@@ -91,6 +91,13 @@ function ArtifactDetail({ artifact, onBack, onUpdated }: {
   const [instruction, setInstruction] = useState("");
   const [continuing, setContinuing] = useState(false);
   const [continueError, setContinueError] = useState<string | null>(null);
+  // Scheduled / Proactive Assistance (Capability 33) — "remind me to
+  // follow up on this" against this specific artifact.
+  const [reminderDate, setReminderDate] = useState("");
+  const [reminderRecurrence, setReminderRecurrence] = useState<ReminderRecurrence>("once");
+  const [settingReminder, setSettingReminder] = useState(false);
+  const [reminderSet, setReminderSet] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
 
   const loadVersions = useCallback(async (id: string) => {
     setVersionsLoading(true);
@@ -124,6 +131,27 @@ function ArtifactDetail({ artifact, onBack, onUpdated }: {
       setContinuing(false);
     }
   }, [artifact.id, instruction, loadVersions, onUpdated]);
+
+  const handleSetReminder = useCallback(async () => {
+    if (!reminderDate) return;
+    setSettingReminder(true);
+    setReminderError(null);
+    try {
+      await createReminder({
+        title: `Follow up: ${artifact.title}`,
+        body: `Continue your saved ${TYPE_LABELS[artifact.artifact_type]?.toLowerCase() ?? "work"}.`,
+        due_at: new Date(reminderDate).toISOString(),
+        recurrence: reminderRecurrence,
+        artifact_id: artifact.id,
+      });
+      setReminderSet(true);
+      setReminderDate("");
+    } catch (e) {
+      setReminderError(e instanceof Error ? e.message : "Couldn't set that reminder. Please try again.");
+    } finally {
+      setSettingReminder(false);
+    }
+  }, [artifact.artifact_type, artifact.id, artifact.title, reminderDate, reminderRecurrence]);
 
   return (
     <div className="max-w-3xl mx-auto w-full">
@@ -176,6 +204,50 @@ function ArtifactDetail({ artifact, onBack, onUpdated }: {
           </button>
         </div>
         {continueError ? <p className="text-xs text-destructive mt-2">{continueError}</p> : null}
+      </div>
+
+      {/* Scheduled / Proactive Assistance (Capability 33) */}
+      <div className="rounded-xl border border-border bg-card p-4 mb-4">
+        <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+          <Bell className="w-3.5 h-3.5" aria-hidden="true" /> Remind me about this
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="datetime-local"
+            value={reminderDate}
+            onChange={(e) => setReminderDate(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            disabled={settingReminder}
+          />
+          <select
+            value={reminderRecurrence}
+            onChange={(e) => setReminderRecurrence(e.target.value as ReminderRecurrence)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            disabled={settingReminder}
+          >
+            <option value="once">Once</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <button
+            type="button"
+            onClick={handleSetReminder}
+            disabled={settingReminder || !reminderDate}
+            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {settingReminder ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+            ) : reminderSet ? (
+              <Check className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : null}
+            {reminderSet ? "Reminder set" : "Set reminder"}
+          </button>
+        </div>
+        {reminderError ? <p className="text-xs text-destructive mt-2">{reminderError}</p> : null}
+        <p className="text-[11px] text-muted-foreground mt-2">
+          You'll see a notification when it's due — check the bell icon in the top bar.
+        </p>
       </div>
 
       {/* Answer Change Tracking (Capability 37, partial) — full version

@@ -89,7 +89,32 @@ export function NotificationCenter() {
         read: false,
       }));
 
-      setNotifications([...ticketNotifs, ...auditNotifs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 10));
+      // Scheduled / Proactive Assistance (Capability 33) — reminders
+      // delivered via POST /reminders/check land here (the `notifications`
+      // table already existed for this, just wasn't read by this
+      // component yet).
+      const { data: ownNotifs } = await supabase
+        .from("notifications")
+        .select("id,type,title,body,link,read,created_at")
+        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      const reminderNotifs: Notification[] = (ownNotifs ?? []).map(
+        (n: { id: string; type: string; title: string; body: string | null; read: boolean | null; created_at: string | null }) => ({
+          id: `notif-${n.id}`,
+          type: (["support", "knowledge", "training", "system"].includes(n.type) ? n.type : "system") as Notification["type"],
+          title: n.title,
+          body: n.body ?? "",
+          timestamp: n.created_at ?? new Date().toISOString(),
+          read: !!n.read,
+        }),
+      );
+
+      setNotifications(
+        [...ticketNotifs, ...auditNotifs, ...reminderNotifs]
+          .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+          .slice(0, 15),
+      );
     } catch (e) {
       console.warn("[notifications] load failed", e);
     }

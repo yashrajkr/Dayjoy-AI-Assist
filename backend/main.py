@@ -4317,6 +4317,17 @@ except Exception as _artifacts_router_err:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Scheduled / Proactive Assistance — Reminders (capability 33)
+# ---------------------------------------------------------------------------
+try:
+    from backend.reminders_api import router as reminders_router
+    app.include_router(reminders_router)
+except Exception as _reminders_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load reminders router: %s", _reminders_router_err)
+
+
+# ---------------------------------------------------------------------------
 # Business Intelligence — AI Business Operating System dashboard router
 # ---------------------------------------------------------------------------
 try:

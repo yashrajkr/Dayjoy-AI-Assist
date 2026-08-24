@@ -1712,6 +1712,63 @@ export async function continueArtifact(artifactId: string, instruction: string):
   return distJson("POST", `/artifacts/${artifactId}/continue`, { instruction });
 }
 
+// ---------------------------------------------------------------------------
+// Scheduled reminders (Scheduled / Proactive Assistance, Capability 33) —
+// backend/reminders_api.py. Named ScheduledReminder (not Reminder) to
+// avoid colliding with the pre-existing product-usage Reminder type further
+// below (WellnessJourney's customerListReminders/etc.) — a different,
+// unrelated feature that happens to share the word "reminder."
+// ---------------------------------------------------------------------------
+
+export type ReminderRecurrence = "once" | "daily" | "weekly" | "monthly";
+
+export type ScheduledReminder = {
+  id: string;
+  user_id?: string;
+  title: string;
+  body?: string | null;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+  due_at: string;
+  recurrence: ReminderRecurrence;
+  is_active: boolean;
+  last_delivered_at?: string | null;
+  created_at?: string;
+};
+
+export async function createReminder(payload: {
+  title: string;
+  body?: string;
+  due_at: string;
+  recurrence?: ReminderRecurrence;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+}): Promise<ScheduledReminder> {
+  return distJson("POST", "/reminders", payload);
+}
+
+export async function listReminders(includeInactive = false): Promise<{ reminders: ScheduledReminder[]; total: number }> {
+  return distGet(`/reminders?include_inactive=${includeInactive}`);
+}
+
+export async function cancelReminder(reminderId: string): Promise<{ cancelled: boolean }> {
+  const headers = await ragHeaders();
+  const res = await resilientFetch(`${getApiBaseUrl()}/reminders/${reminderId}`, { method: "DELETE", headers });
+  if (!res.ok) throw new Error(`Cancel reminder failed (${res.status})`);
+  return await res.json();
+}
+
+/** Best-effort: called on app load and periodically while active. Never
+ * surfaces an error to the user — a missed check just means reminders are
+ * delivered on the next successful one. */
+export async function checkDueReminders(): Promise<{ delivered: Array<{ id: string; title: string }>; count: number }> {
+  try {
+    return await distJson("POST", "/reminders/check");
+  } catch {
+    return { delivered: [], count: 0 };
+  }
+}
+
 /** Content — generate. */
 export async function distributorGenerateContent(payload: {
   content_type: string;

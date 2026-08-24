@@ -52,6 +52,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { listConversations, pinConversation, archiveConversation, deleteConversation, type Conversation } from "../../lib/chatStore";
+import { checkDueReminders } from "../../../lib/api";
 
 /**
  * Groups pathnames that belong to the same logical page so `AnimatePresence`
@@ -124,6 +125,20 @@ export function UserLayout() {
       cancelled = true;
     };
   }, [currentUser?.id, location.pathname]);
+
+  // Scheduled / Proactive Assistance (Capability 33) — client-triggered
+  // due-reminder check (see reminders_api.py's module docstring for why
+  // this isn't a server-side cron job): once on load, then every 5
+  // minutes while the app stays open. Best-effort — checkDueReminders()
+  // itself never throws.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    checkDueReminders();
+    const interval = setInterval(() => {
+      checkDueReminders();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
 
   const handlePinChat = async (id: string, pinned: boolean) => {
     setRecentChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned } : c)));
