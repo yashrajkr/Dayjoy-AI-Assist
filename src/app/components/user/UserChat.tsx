@@ -65,6 +65,7 @@ import {
   FileDown,
   Maximize2,
   GitCompare,
+  GitBranch,
   Menu,
   MoreVertical,
   Ghost,
@@ -1994,6 +1995,51 @@ export function UserChat() {
     [activeConv],
   );
 
+  // ---- Conversation Branching (Capability 11) ----
+  // Duplicates the transcript UP TO AND INCLUDING the given message into a
+  // brand-new conversation, then navigates there — the ORIGINAL
+  // conversation is never modified, matching the brief's explicit "do not
+  // destroy the original conversation state." Lets a user try "Improve" /
+  // "Try another approach" / "Explore alternative" from any earlier point
+  // without losing the path they already have.
+  const [branching, setBranching] = useState(false);
+  const handleBranchConversation = useCallback(
+    async (uptoMessage: ChatMessage) => {
+      if (!currentUser || branching) return;
+      setBranching(true);
+      try {
+        const cutIdx = messages.findIndex((m) => m === uptoMessage);
+        const toCopy = cutIdx >= 0 ? messages.slice(0, cutIdx + 1) : messages;
+        const sourceTitle = activeConv?.title || "Conversation";
+        const branched = await createConversation(currentUser.id, `${sourceTitle} (branch)`, language);
+        if (!branched) {
+          setError("Could not create a branched conversation. Please try again.");
+          return;
+        }
+        for (const m of toCopy) {
+          await appendMessage(branched.id, {
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+            safety_status: m.safety_status ?? "safe",
+            handoff_required: m.handoff_required ?? false,
+            confidence: m.confidence ?? null,
+            verification_status: m.verification_status ?? null,
+            handoff_message: m.handoff_message ?? null,
+            rag_metadata: m.rag_metadata ?? null,
+            answer_source: m.answer_source ?? null,
+            ai_mode: m.ai_mode ?? "normal",
+          });
+        }
+        setConversations((prev) => [branched, ...prev]);
+        navigate(`/chat/${branched.id}`);
+      } finally {
+        setBranching(false);
+      }
+    },
+    [activeConv, branching, currentUser, language, messages, navigate],
+  );
+
   // ---- Edit-and-resend a sent user message ----
   const handleStartEdit = useCallback((m: ChatMessage) => {
     setEditingMessageKey(m.id ?? `${m.role}-${m.created_at}`);
@@ -3034,6 +3080,7 @@ export function UserChat() {
                           ? handleRegenerateVariant
                           : undefined
                       }
+                      onBranch={m.role === "assistant" ? () => handleBranchConversation(m) : undefined}
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
@@ -4519,6 +4566,7 @@ function MessageBubble({
   copiedId,
   onRegenerate,
   onRegenerateVariant,
+  onBranch,
   onSpeak,
   speakingId,
   onShare,
@@ -4540,6 +4588,7 @@ function MessageBubble({
   copiedId: string | null;
   onRegenerate?: () => void;
   onRegenerateVariant?: (variant: RegenerateVariant) => void;
+  onBranch?: () => void;
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
@@ -4840,6 +4889,11 @@ function MessageBubble({
                 </DropdownMenu>
               ) : null}
             </>
+          ) : null}
+          {onBranch ? (
+            <ActionButton onClick={onBranch} label="Branch from here — continue in a new conversation">
+              <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
+            </ActionButton>
           ) : null}
           {onSpeak ? (
             <ActionButton
