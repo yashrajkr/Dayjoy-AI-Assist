@@ -2247,6 +2247,10 @@ export type WellnessGoal = {
   target_date?: string | null;
   is_completed?: boolean;
   created_at?: string;
+  /** Set by the backend when is_completed flips true (update_wellness_goal
+   * in backend/customer_api.py) — was never read anywhere on the frontend
+   * until Journey States needed "how recently was this completed." */
+  completed_at?: string | null;
 };
 
 export type WellnessActivity = {

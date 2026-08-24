@@ -75,12 +75,12 @@ server (see this session's transcript for the exact DOM assertions).
 | 12. AI Reflection (post-milestone "what worked?") | **NOT DONE** | None exists (no milestones to trigger it from) |
 | 13. Adaptive follow-up questions | **PARTIAL** | The main chat already has a general contextual follow-up system (`followups.py`, pre-existing) that fires on any answer, including a `WELLNESS`-intent one — but it was not specifically tuned for wellness-goal follow-ups |
 | 14. AI-decides-what-I-need routing (intent/entity/context/tool/source/safety) | **PARTIAL** | The `WELLNESS` intent is real routing through the existing planner/tool-registry (not a bolt-on) — but it's one coarse intent, not the full per-request source/safety-level breakdown you specified |
-| 15. Journey states (NEW/ONBOARDING/ACTIVE/STRUGGLING/...) | **NOT DONE** | No state machine exists |
-| 16. "I don't feel like it" mode | **NOT DONE** | Not built |
+| 15. Journey states (NEW/ONBOARDING/ACTIVE/STRUGGLING/...) | **DONE** (Round 3) | `deriveJourneyState()` — 8 states, verified against synthetic data; see Round 3 addendum below |
+| 16. "I don't feel like it" mode | **DONE** (Round 3) | Real 2-step flow, logs a real activity; see Round 3 addendum below |
 | 17. Recovery Mode | **NOT DONE** | Not built |
 | 18. Smart journey memory (remember/forget/edit preferences) | **NOT DONE** | No wellness-specific preference memory exists (the unrelated general chat memory system, `ai_agent_memory`, exists but isn't wired to wellness) |
 | 19. Personalization Levels 1–6 | **NOT DONE** | Not built as a formal system |
-| 20. Unique DayJoy features (25-item list) | **~2/25** | Only "personalized product recommendations" and (now) real reminders/notifications are real; the other 23 (AI daily plan, check-in, recovery mode, milestones, weekly/monthly review, voice wellness coach, etc.) are not built |
+| 20. Unique DayJoy features (25-item list) | **~4/25** | Real: personalized product recommendations, reminders/notifications, adaptive goal difficulty (via Journey States), "I don't feel like it" mode. The other ~21 (AI daily plan, check-in, recovery mode, milestones, weekly/monthly review, voice wellness coach, etc.) are not built |
 | 21. Weekly AI Review | **NOT DONE** | Not built |
 | 22. Monthly Journey Review | **NOT DONE** | Not built |
 | 23. UI/UX (calm, minimal, "how am I doing / what should I do / why / what's next") | **PARTIAL** | The Overview section answers "how am I doing" and "what's next" in one line; forms are now guided and type-aware; but this is not the full redesigned first-screen experience your spec describes |
@@ -94,12 +94,15 @@ server (see this session's transcript for the exact DOM assertions).
 
 ## Bottom line
 
-Of your 28 phases, **2 are fully done** (the audit reuse, and this report),
-**~7 are partially done** (product intelligence, follow-ups, AI routing,
-UI/UX, safety, database, testing), and **the rest — the majority of the
-spec — are not done**: no Wellness Profile, no adaptive daily plan, no
-check-in flow, no journey states, no recovery/low-motivation modes, no
-milestones/insights/wellness score, no weekly/monthly reviews. Building
+Of your 28 phases, **4 are fully done** (the audit reuse, this report,
+Journey States, and "I don't feel like it" mode — the last two added in
+Round 3, see addendum below), **~7 are partially done** (product
+intelligence, follow-ups, AI routing, UI/UX, safety, database, testing),
+and **the rest — the majority of the spec — are not done**: no Wellness
+Profile, no adaptive daily plan, no
+check-in flow, no Recovery Mode (distinct from the low-motivation mode
+that IS done), no milestones/insights/wellness score, no weekly/monthly
+reviews. Building
 those properly (not as stubs) is the actual multi-week effort your spec
 describes.
 
@@ -148,3 +151,71 @@ the "guide me" answer you asked for, not a claim that they're started.
 All of "what was actually built this session" above is committed and
 pushed to `main`. Nothing on the "NOT DONE" list required a commit because
 nothing was written for it.
+
+---
+
+# Round 3 addendum (2026-08-24) — dropdown bug fix + Journey States + Low-Motivation mode
+
+You asked me to fix the product dropdown and complete more of the left-over
+spec. Here's exactly what changed, and what still hasn't:
+
+## Product picker — real bug found and fixed
+
+`getProducts()` (`src/app/lib/db.ts`) silently falls back to 4 demo
+products on ANY Supabase query error — by design, so the page never shows
+a hard crash. But the Wellness Journey reminder picker's `.then(setProducts)`
+had **no `.catch`**, so an outright rejected fetch left the list stuck at
+its `[]` "loading" sentinel forever — reading as "the dropdown shows
+nothing." Fixed:
+- Proper try/catch with a **Retry** button instead of an infinite spinner.
+- If Supabase is configured but only ≤4 products come back (the exact size
+  of the demo fallback), that's now flagged as a likely failure rather than
+  silently presented as "this is the whole catalog."
+- The list is now sorted **alphabetically** (was insertion/created_at
+  order — nearly unbrowsable for ~185 real products).
+- A live "N of M" count is shown.
+- Fixed a real nested-scroll-trap: the product list sits inside the
+  Modal's own scrollable body; without `stopPropagation` on wheel/touch
+  events, a scroll gesture starting over the list could get captured by
+  the outer modal instead — a classic mobile "the dropdown won't scroll"
+  bug. Could not fully reproduce the original report end-to-end (this dev
+  environment has no live backend, so only 4 demo products are ever
+  available to test against) — the fixes above address every plausible
+  root cause found by code inspection, not a confirmed live repro.
+
+## Newly built (real, working, verified by direct unit-style checks in the browser)
+
+- **Journey States** (spec Phase 15) — `deriveJourneyState()`, a pure
+  function over already-loaded goals/activities (no new AI call, no new
+  table): `new / onboarding / goal_achieved / maintenance / at_risk /
+  struggling / improving / active`. All 8 states verified correct against
+  synthetic data directly in the running app. The Overview card now shows
+  the state as a label + state-specific coaching line, replacing the
+  previous one-size-fits-all message.
+- **"I don't feel like it" mode** (spec Phase 16) — a real 2-step flow:
+  pick a time/energy budget (5 min / 10 min / 20 min / rest) → get the
+  smallest useful action for it → log it as a normal activity (linked to
+  today's priority goal when one exists) via the existing activity-logging
+  path. Gated behind having an active goal; confirmed correctly hidden
+  when there are none.
+
+## Still NOT done (unchanged from the prior report — being explicit again, as asked)
+
+Wellness Profile table, adaptive daily plan, daily check-in flow,
+Recovery Mode (distinct from low-motivation mode — recovery is meant to
+auto-detect poor sleep/high stress/travel and adjust the plan; not built),
+milestones, wellness score, weekly/monthly AI reviews, AI reflection,
+personalization levels, and the remaining "unique DayJoy features" beyond
+what's listed above. Automated tests still cannot run in this environment
+(`pytest`/`pydantic-core` install still broken, unchanged from before).
+
+## Verification this round
+
+`npm run typecheck` — clean (same 8 pre-existing, unrelated errors).
+`npm run lint` — same 1 pre-existing error (`VoiceAssistant.tsx`, unrelated)
+plus one new warning (exporting `deriveJourneyState`/`JourneyState` from a
+component file — same class of warning already present on ~6 other files
+in this codebase, not a functional issue). Backend fully syntax-checked.
+Journey state derivation verified against 8 synthetic scenarios directly
+in the running dev server. Product picker verified live with demo data
+(sorted, count shown, retry path present). Committed and pushed to `main`.

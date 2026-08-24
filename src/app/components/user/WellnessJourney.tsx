@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { getProducts, type Product } from "../../lib/db";
+import { isSupabaseConfigured } from "../../lib/supabaseClient";
 import { getPushSubscriptionState, subscribeToPush, isNotificationSupported } from "../../lib/pushNotifications";
 import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
@@ -105,6 +106,77 @@ const REMINDER_TYPES = [
 
 type Tab = "goals" | "activities" | "reminders";
 
+/**
+ * Journey States (docs/WELLNESS_JOURNEY_ANALYSIS_AND_MASTER_PROMPT.md /
+ * wellness-journey-v2-report.md, Phase 15) — derived entirely from
+ * `wellness_goals`/`wellness_activities` already loaded, never a separate
+ * AI call or a new table. Deliberately simple, explainable arithmetic
+ * (days-since-last-activity, this-week vs. last-week active-day counts) —
+ * consistent with this codebase's "never present a weak signal as a
+ * confident fact" rule (see the same analysis doc, Phase 10).
+ */
+export type JourneyState =
+  | "new"
+  | "onboarding"
+  | "goal_achieved"
+  | "maintenance"
+  | "at_risk"
+  | "struggling"
+  | "improving"
+  | "active";
+
+const JOURNEY_STATE_COPY: Record<JourneyState, { label: string; coaching: string }> = {
+  new: { label: "Getting started", coaching: "Set your first goal to start your journey." },
+  onboarding: { label: "Onboarding", coaching: "Log your first activity whenever you're ready — even a small one." },
+  goal_achieved: { label: "Goal achieved", coaching: "You reached a goal — nice work. Keep it going, or set a new one." },
+  maintenance: { label: "Maintaining", coaching: "No active goal right now — pick your next focus when you're ready." },
+  at_risk: { label: "Falling behind", coaching: "It's been a few days — one small action today is enough to restart." },
+  struggling: { label: "Finding your footing", coaching: "This week's been light. Try something smaller and more realistic today." },
+  improving: { label: "Building momentum", coaching: "You're more consistent than last week — keep the streak going." },
+  active: { label: "On track", coaching: "You're keeping a steady pace. Log today's activity when you can." },
+};
+
+export function deriveJourneyState(goals: WellnessGoal[], activities: WellnessActivity[]): JourneyState {
+  if (goals.length === 0) return "new";
+  if (activities.length === 0) return "onboarding";
+
+  const now = Date.now();
+  const daysAgo = (dateStr?: string | null) => (dateStr ? (now - new Date(dateStr).getTime()) / 86400000 : Infinity);
+
+  const activeGoals = goals.filter((g) => !g.is_completed);
+  const completedGoals = goals.filter((g) => g.is_completed);
+
+  if (completedGoals.some((g) => daysAgo(g.completed_at ?? g.created_at) <= 3)) return "goal_achieved";
+  if (activeGoals.length === 0) return "maintenance";
+
+  const activityDaysAgo = activities.map((a) => daysAgo(a.activity_date));
+  const daysSinceLastActivity = Math.min(...activityDaysAgo);
+  if (daysSinceLastActivity >= 5) return "at_risk";
+
+  const thisWeekDays = new Set(activities.filter((a) => daysAgo(a.activity_date) < 7).map((a) => a.activity_date)).size;
+  const lastWeekDays = new Set(
+    activities.filter((a) => { const d = daysAgo(a.activity_date); return d >= 7 && d < 14; }).map((a) => a.activity_date),
+  ).size;
+
+  if (thisWeekDays <= 1 && daysSinceLastActivity >= 2) return "struggling";
+  if (lastWeekDays > 0 && thisWeekDays > lastWeekDays) return "improving";
+  return "active";
+}
+
+/**
+ * "I don't feel like it" mode (Phase 16) — instead of the full plan, ask
+ * how much energy/time the user actually has right now and generate the
+ * smallest useful action for that budget. Deliberately tiny, generic
+ * actions (never invented product/medical advice) so this works for any
+ * goal type without guessing what the user's actual goal needs.
+ */
+const LOW_MOTIVATION_OPTIONS: { value: string; label: string; action: string }[] = [
+  { value: "5", label: "5 minutes", action: "Take 5 slow breaths and drink a glass of water." },
+  { value: "10", label: "10 minutes", action: "A short walk, or 10 minutes of light stretching." },
+  { value: "20", label: "20 minutes", action: "Today's activity, but scaled to fit in 20 minutes." },
+  { value: "rest", label: "I need rest", action: "Rest today. Log it — a recovery day still counts." },
+];
+
 export function WellnessJourney() {
   const [tab, setTab] = useState<Tab>("goals");
   const [goals, setGoals] = useState<WellnessGoal[]>([]);
@@ -125,6 +197,35 @@ export function WellnessJourney() {
   const enableNotifications = async () => {
     const ok = await subscribeToPush();
     setNotifState({ subscribed: ok, supported: isNotificationSupported() });
+  };
+
+  // "I don't feel like it" mode — a tiny 2-step flow (pick a time/energy
+  // budget → get the smallest useful action for it), logged as a regular
+  // activity (linked to today's priority goal when there is one) so it
+  // shows up in progress like anything else, not a separate system.
+  const [lowMotivationModal, setLowMotivationModal] = useState(false);
+  const [lowMotivationPick, setLowMotivationPick] = useState<string | null>(null);
+  const [loggingLowMotivation, setLoggingLowMotivation] = useState(false);
+  const logLowMotivationAction = async (goalId: string | undefined) => {
+    const option = LOW_MOTIVATION_OPTIONS.find((o) => o.value === lowMotivationPick);
+    if (!option) return;
+    setLoggingLowMotivation(true);
+    try {
+      await customerLogWellnessActivity({
+        activity_type: "custom",
+        title: option.action,
+        duration_minutes: option.value !== "rest" ? Number(option.value) : null,
+        notes: "Logged via \"I don't feel like it\" mode",
+        goal_id: goalId || null,
+      });
+      setLowMotivationModal(false);
+      setLowMotivationPick(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoggingLowMotivation(false);
+    }
   };
 
   // Goal modal — target_value/unit start from the "general" preset instead
@@ -152,6 +253,7 @@ export function WellnessJourney() {
   // Loaded lazily the first time a product-based reminder type is picked —
   // most reminders never need this list, so it isn't fetched up front.
   const [products, setProducts] = useState<Product[] | null>(null);
+  const [productsLoadFailed, setProductsLoadFailed] = useState(false);
   const [productSearch, setProductSearch] = useState("");
 
   const load = useCallback(async () => {
@@ -247,12 +349,34 @@ export function WellnessJourney() {
 
   // Products are fetched lazily the first time a "product"/"medication"
   // reminder type is selected — most reminder types never need this list.
-  const ensureProductsLoaded = () => {
-    if (products === null) {
-      setProducts([]); // mark as "loading" so this only fires once
-      void getProducts().then(setProducts);
+  //
+  // getProducts() silently falls back to a handful of demo products on ANY
+  // query error (see its own implementation in lib/db.ts) — sensible for a
+  // page that must render something, but it meant a real transient failure
+  // here was indistinguishable from "there genuinely are only a few
+  // products," and the .then() with no .catch meant an outright rejection
+  // left `products` stuck at the `[]` "loading" sentinel forever, reading
+  // as "no products ever show up." `force` re-runs the fetch (Retry button).
+  const loadProducts = async (force: boolean) => {
+    if (products !== null && !force) return;
+    setProducts([]); // "loading" sentinel
+    setProductsLoadFailed(false);
+    try {
+      const rows = await getProducts();
+      setProducts(rows);
+      // Supabase is configured but we got a suspiciously small result —
+      // matches getProducts()'s own demo-data fallback size, not a real
+      // empty catalog. Surface it instead of silently showing 4 products
+      // as if that were the whole catalog.
+      if (isSupabaseConfigured() && rows.length > 0 && rows.length <= 4) {
+        setProductsLoadFailed(true);
+      }
+    } catch {
+      setProducts([]);
+      setProductsLoadFailed(true);
     }
   };
+  const ensureProductsLoaded = () => void loadProducts(false);
 
   const selectReminderType = (reminderType: string) => {
     const preset = REMINDER_TYPES.find((t) => t.value === reminderType);
@@ -322,6 +446,9 @@ export function WellnessJourney() {
   // what still needs attention rather than an arbitrary pick.
   const priorityGoal = activeGoals.find((g) => !g.id || !loggedTodayGoalIds.has(g.id));
 
+  const journeyState = deriveJourneyState(goals, activities);
+  const stateCopy = JOURNEY_STATE_COPY[journeyState];
+
   const tabs: { value: Tab; label: string; icon: typeof Target; count?: number }[] = [
     { value: "goals", label: "Goals", icon: Target, count: goals.filter((g) => !g.is_completed).length },
     { value: "activities", label: "Activities", icon: Activity, count: activities.length },
@@ -359,29 +486,39 @@ export function WellnessJourney() {
           instead of three equally-weighted stat tiles with nothing telling
           the user what to actually do next. Only renders once there's
           something to summarize (empty-state below already covers the
-          "no goals yet" case). */}
-      {!loading && activeGoals.length > 0 ? (
+          "no goals yet" case). Journey-state-aware (Phase 15): the
+          coaching line changes based on real recent behavior, not a static
+          message every time. */}
+      {!loading && goals.length > 0 ? (
         <Card className="p-4 mb-4 shadow-none border-primary/20 bg-primary/5">
           <div className="flex items-start gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
               <TrendingUp className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">
-                {activeDaysThisWeek > 0
-                  ? `${activeDaysThisWeek} active day${activeDaysThisWeek === 1 ? "" : "s"} this week`
-                  : "No activity logged yet this week"}
-              </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-medium">
+                  {activeDaysThisWeek > 0
+                    ? `${activeDaysThisWeek} active day${activeDaysThisWeek === 1 ? "" : "s"} this week`
+                    : "No activity logged yet this week"}
+                </p>
+                <Badge variant="secondary" className="text-[10px]">{stateCopy.label}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{stateCopy.coaching}</p>
               {priorityGoal ? (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Today's priority: <span className="text-foreground font-medium">{priorityGoal.title}</span> — log an
-                  activity or adjust its progress in the Goals tab.
+                <p className="text-xs text-muted-foreground mt-1">
+                  Today's priority: <span className="text-foreground font-medium">{priorityGoal.title}</span>
                 </p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  You're on track — every active goal has activity logged today.
-                </p>
-              )}
+              ) : null}
+              {activeGoals.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setLowMotivationModal(true)}
+                  className="text-xs font-medium text-primary hover:underline mt-2"
+                >
+                  Not feeling it today?
+                </button>
+              ) : null}
             </div>
           </div>
         </Card>
@@ -634,13 +771,24 @@ export function WellnessJourney() {
           {(() => {
             const preset = REMINDER_TYPES.find((t) => t.value === remForm.reminder_type) ?? REMINDER_TYPES[0];
             if (!preset.usesProduct) return null;
-            const filtered = (products ?? []).filter((p) =>
+            // Alphabetical, not "newest first" (getProducts()'s default
+            // order) — browsing ~185 products to find one by name only
+            // works if the list is sorted the way you'd expect a directory
+            // to be, not by when it happened to be added.
+            const sorted = [...(products ?? [])].sort((a, b) => a.product_name.localeCompare(b.product_name));
+            const filtered = sorted.filter((p) =>
               !productSearch.trim() || p.product_name.toLowerCase().includes(productSearch.trim().toLowerCase()),
             );
-            const selected = (products ?? []).find((p) => p.id === remForm.product_id);
+            const selected = sorted.find((p) => p.id === remForm.product_id);
+            const isLoading = products !== null && products.length === 0 && !productsLoadFailed;
             return (
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Product</label>
+                <label className="block text-xs text-muted-foreground mb-1 flex items-center justify-between">
+                  <span>Product</span>
+                  {products && products.length > 0 ? (
+                    <span className="text-muted-foreground/70">{filtered.length} of {products.length}</span>
+                  ) : null}
+                </label>
                 {selected ? (
                   <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 text-sm">
                     <span className="truncate">{selected.product_name}</span>
@@ -655,13 +803,29 @@ export function WellnessJourney() {
                       <input type="text" value={productSearch} onChange={(e) => setProductSearch(e.target.value)}
                         placeholder="Search Dayjoy products…" className="w-full pl-8 pr-3 py-2 rounded-lg border border-border bg-card text-sm" />
                     </div>
-                    {products === null ? null : products.length === 0 ? (
+                    {productsLoadFailed ? (
+                      <div className="mt-1.5 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-destructive/30 bg-destructive/5">
+                        <p className="text-[11px] text-destructive">Couldn't load the full product list.</p>
+                        <button type="button" onClick={() => void loadProducts(true)} className="text-[11px] font-medium text-destructive underline shrink-0">
+                          Retry
+                        </button>
+                      </div>
+                    ) : isLoading ? (
                       <p className="text-[11px] text-muted-foreground mt-1">Loading products…</p>
                     ) : (
                       // No cap — this IS the "browse all products" dropdown,
                       // not a top-N preview; the scroll container is what
                       // keeps it usable, not truncating the list.
-                      <div className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                      // onWheel/onTouchMove stopPropagation: this list sits
+                      // inside the Modal's own scrollable body, and without
+                      // this a scroll gesture that starts over the list
+                      // (very likely with ~180 items) got captured by the
+                      // outer modal instead of scrolling the list itself.
+                      <div
+                        className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border overscroll-contain"
+                        onWheel={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                      >
                         {filtered.map((p) => (
                           <button key={p.id} type="button" onClick={() => selectReminderProduct(p)}
                             className="w-full text-left px-3 py-2 text-xs hover:bg-accent/50 transition-colors truncate">
@@ -685,6 +849,46 @@ export function WellnessJourney() {
             <div><label className="block text-xs text-muted-foreground mb-1">Time</label><input type="time" value={remForm.time_of_day} onChange={(e) => setRemForm({ ...remForm, time_of_day: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm" /></div>
             <div><label className="block text-xs text-muted-foreground mb-1">Frequency</label><select value={remForm.frequency} onChange={(e) => setRemForm({ ...remForm, frequency: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
           </div>
+        </div>
+      </Modal>
+
+      {/* "I don't feel like it" mode (Phase 16) — pick a realistic time/
+          energy budget, get the smallest useful action for it, log it as
+          a normal activity (linked to today's priority goal if there is
+          one) so it counts toward real progress instead of the user just
+          abandoning the day entirely. */}
+      <Modal
+        open={lowMotivationModal}
+        onClose={() => { setLowMotivationModal(false); setLowMotivationPick(null); }}
+        title="Not feeling it today?"
+        description="That's fine — let's find something small enough to still count."
+        size="sm"
+        footer={<>
+          <Button type="button" variant="secondary" onClick={() => { setLowMotivationModal(false); setLowMotivationPick(null); }}>Cancel</Button>
+          <Button type="button" disabled={!lowMotivationPick || loggingLowMotivation} onClick={() => void logLowMotivationAction(priorityGoal?.id)}>
+            {loggingLowMotivation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Log it
+          </Button>
+        </>}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {LOW_MOTIVATION_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setLowMotivationPick(o.value)}
+                className={`p-3 rounded-lg border text-sm font-medium text-left ${lowMotivationPick === o.value ? "border-primary bg-primary/5 text-primary" : "border-border"}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {lowMotivationPick ? (
+            <div className="rounded-lg border border-border bg-accent/20 p-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Today's action</p>
+              <p className="text-sm">{LOW_MOTIVATION_OPTIONS.find((o) => o.value === lowMotivationPick)?.action}</p>
+            </div>
+          ) : null}
         </div>
       </Modal>
     </div>
