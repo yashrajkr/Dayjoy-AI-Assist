@@ -630,12 +630,46 @@ function AnswerTLDR({ text }: { text: string }) {
 const PROGRESSIVE_DISCLOSURE_THRESHOLD = 900;
 const PROGRESSIVE_DISCLOSURE_PREVIEW = 420;
 
-function DetailMarkdown({ text }: { text: string }) {
+/** Inline Follow-up (Capability 35) — a small, hover-revealed action row
+ * attached to ONE answer section rather than the whole message, reusing
+ * the existing Transform Controls machinery scoped to just that
+ * section's text. Only rendered for sections with enough content to be
+ * worth a targeted action (a one-line section doesn't need this). */
+function InlineFollowUp({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
+  if (!onTransform || text.trim().length < 80) return null;
+  return (
+    <div className="not-prose flex items-center gap-2 mt-1 mb-2 opacity-0 group-hover/section:opacity-100 transition-opacity">
+      <button
+        type="button"
+        onClick={() => onTransform("detail", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Explain
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("example", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Give example
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("actionable", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Make actionable
+      </button>
+    </div>
+  );
+}
+
+function DetailMarkdown({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > PROGRESSIVE_DISCLOSURE_THRESHOLD;
   if (!isLong || expanded) {
     return (
-      <>
+      <div className="group/section">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
           {text}
         </ReactMarkdown>
@@ -649,7 +683,8 @@ function DetailMarkdown({ text }: { text: string }) {
             Show less
           </button>
         ) : null}
-      </>
+        <InlineFollowUp text={text} onTransform={onTransform} />
+      </div>
     );
   }
   // Cut on a paragraph/sentence boundary near the preview length so the
@@ -658,7 +693,7 @@ function DetailMarkdown({ text }: { text: string }) {
   const previewEnd = cutAt > 0 && cutAt < PROGRESSIVE_DISCLOSURE_PREVIEW + 200 ? cutAt : PROGRESSIVE_DISCLOSURE_PREVIEW;
   const preview = text.slice(0, previewEnd);
   return (
-    <>
+    <div className="group/section">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
         {preview}
       </ReactMarkdown>
@@ -670,20 +705,20 @@ function DetailMarkdown({ text }: { text: string }) {
         <ChevronUp className="w-3.5 h-3.5 rotate-180" aria-hidden="true" />
         Show more
       </button>
-    </>
+    </div>
   );
 }
 
 /** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
  * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
-function AnswerContent({ content }: { content: string }) {
+function AnswerContent({ content, onTransform }: { content: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const blocks = useMemo(() => parseAnswerBlocks(content), [content]);
   return (
     <>
       {blocks.map((block, i) => {
         if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
         if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
-        return <DetailMarkdown key={i} text={block.text} />;
+        return <DetailMarkdown key={i} text={block.text} onTransform={onTransform} />;
       })}
     </>
   );
@@ -4829,7 +4864,7 @@ function MessageBubble({
               ))}
             </div>
           ) : null}
-          <AnswerContent content={message.content} />
+          <AnswerContent content={message.content} onTransform={onTransform} />
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
