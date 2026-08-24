@@ -38,6 +38,7 @@ import {
   chatWithBackend,
   generateConversationTitle,
   type ChatSource,
+  type ChatProductCard,
 } from "../../../lib/api";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -57,6 +58,7 @@ type Turn = {
   verified?: boolean;
   sources?: ChatSource[] | string[];
   answerSource?: string | null;
+  productCards?: ChatProductCard[] | null;
 };
 
 type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "error" | "offline";
@@ -300,6 +302,7 @@ export function VoiceAssistant() {
           verified: res.verification_status === "verified",
           sources: res.sources,
           answerSource: res.answer_source,
+          productCards: res.products,
         };
         setTurns((prev) => [...prev, assistantTurn]);
         setStreamingText("");
@@ -745,6 +748,52 @@ export function VoiceAssistant() {
                   ) : null}
                 </div>
                 <p className="text-sm leading-relaxed">{t.content}</p>
+                {/* Multimodal + Voice Convergence (Next-Gen spec, Phase 12) —
+                    structured product data (verified DB rows only, same
+                    source as UserChat's ProductCard — never AI-generated
+                    text) was captured but never shown here before. Compact
+                    variant rather than reusing UserChat's ProductCard
+                    directly since that's a private, unexported function in
+                    a large unrelated file. */}
+                {t.role === "assistant" && t.productCards && t.productCards.length > 0 ? (
+                  <div className="space-y-1.5 mt-1.5">
+                    {t.productCards.slice(0, 3).map((p, i) => (
+                      <div
+                        key={p.product_id ?? i}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-accent/30 px-2.5 py-1.5 text-xs"
+                      >
+                        <span className="font-medium truncate">{p.product_name ?? "Dayjoy product"}</span>
+                        {p.price ? (
+                          <span className="text-muted-foreground shrink-0">
+                            {p.price.currency ?? "INR"} {p.price.dp ?? p.price.mrp}
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {/* Multimodal + Voice Convergence (Next-Gen spec, Phase 12) —
+                    citations captured on every voice turn (see `sources` in
+                    Turn's type above) were never rendered here before, even
+                    though the exact same evidence is shown for a text-chat
+                    answer. A spoken answer is only as trustworthy as its
+                    text counterpart if the same evidence is visible. */}
+                {t.role === "assistant" && Array.isArray(t.sources) && t.sources.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {t.sources.slice(0, 4).map((s, i) => {
+                      const label = typeof s === "string" ? s : s.title || s.table;
+                      return (
+                        <span
+                          key={typeof s === "string" ? `${t.id}-${i}` : s.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-accent/40 text-[10px] text-muted-foreground"
+                        >
+                          <FileTextIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             ))}
             {streamingText ? (
