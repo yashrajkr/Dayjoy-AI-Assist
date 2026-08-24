@@ -146,6 +146,7 @@ import logoSrc from "../../../assets/dayjoy-logo.png";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
+import { Switch } from "../ui/switch";
 
 // Lazy-load the 3D orb — heavy chunk (three.js + R3F)
 const AIOrb = lazy(() =>
@@ -1238,7 +1239,10 @@ export function UserChat() {
   const [knowledgeScope, setKnowledgeScope] = useState<KnowledgeScope>("all");
   // Context Scope Control (Capability 15) — whether this conversation may
   // fall back to a live web search. Session-scoped, same as knowledgeScope.
-  const [allowWebSearch, setAllowWebSearch] = useState(true);
+  // Off by default, matching ChatGPT/Gemini — the user opts in to web
+  // search per session via the "+" plugins menu rather than it running
+  // silently on every message.
+  const [allowWebSearch, setAllowWebSearch] = useState(false);
   // Smart Text Selection (Capability 34) — a floating toolbar appears when
   // the user selects text WITHIN an assistant answer (scoped via the
   // ".ai-prose" class on that bubble's content wrapper, so selecting a
@@ -1558,6 +1562,11 @@ export function UserChat() {
         assistantId = assistantMsg?.id ?? null;
         const displayedAssistantMsg: ChatMessage = {
           ...((assistantMsg as ChatMessage | null) ?? {
+            // Local-only fallback id (Supabase write failed or this is a
+            // temporary conversation) — without a stable id, per-message
+            // actions like feedback/copy/speak that key off message.id
+            // silently no-op, so this must always be set.
+            id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             conversation_id: convId ?? undefined,
             role: "assistant",
             content: aggregated,
@@ -1636,6 +1645,7 @@ export function UserChat() {
             setMessages((prev) => [
               ...prev,
               (m as ChatMessage | null) ?? {
+                id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                 conversation_id: convId ?? undefined,
                 role: "assistant",
                 content: stoppedContent,
@@ -1901,6 +1911,9 @@ export function UserChat() {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, feedback: nextFeedback } : m)),
       );
+      // Local-only fallback ids (message never made it to Supabase) aren't a
+      // real row to update — the UI toggle above is all that can happen.
+      if (messageId.startsWith("local-")) return;
       await setMessageFeedback(messageId, nextFeedback);
     },
     [messages],
@@ -1932,9 +1945,18 @@ export function UserChat() {
     [speakingId, voice],
   );
 
+  // Clear speakingId only on a real speaking→idle transition (TTS finished
+  // naturally). Keying this off the bare `!voice.speaking` value instead
+  // raced with the async SpeechSynthesis start: setSpeakingId(id) landed in
+  // the same render as the still-stale voice.speaking === false from before
+  // the utterance's onstart fired, so this effect immediately cleared it
+  // back to null — the icon reverted to "Read aloud" while audio kept
+  // playing, and the next tap restarted playback instead of stopping it.
+  const wasSpeakingRef = useRef(false);
   useEffect(() => {
-    if (!voice.speaking && speakingId) setSpeakingId(null);
-  }, [voice.speaking, speakingId]);
+    if (wasSpeakingRef.current && !voice.speaking) setSpeakingId(null);
+    wasSpeakingRef.current = voice.speaking;
+  }, [voice.speaking]);
 
   // ---- Share a single assistant reply (native share sheet, falling back to clipboard) ----
   const handleShareMessage = useCallback(async (text: string, id: string) => {
@@ -3279,25 +3301,8 @@ export function UserChat() {
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex gap-3 group"
+                className="flex group"
               >
-                {/* Branded avatar with thinking-state glow */}
-                <div className="relative shrink-0">
-                  <motion.div
-                    className="absolute inset-0 rounded-xl"
-                    aria-hidden="true"
-                    style={{
-                      background:
-                        "radial-gradient(circle, rgba(var(--gold-accent-rgb), 0.6) 0%, transparent 70%)",
-                      filter: "blur(8px)",
-                    }}
-                    animate={{ opacity: [0.4, 0.8, 0.4], scale: [0.95, 1.05, 0.95] }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                  <div className="relative w-9 h-9 rounded-xl overflow-hidden ring-1 ring-gold-accent/40">
-                    <DayjoyLogo variant="mark" size={36} className="block" />
-                  </div>
-                </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs mb-1 flex items-center gap-2">
                     <span className="font-semibold text-foreground">{BRAND.shortName}</span>
@@ -3438,6 +3443,36 @@ export function UserChat() {
                         className="absolute bottom-full mb-2 left-0 w-60 rounded-xl border border-border bg-card shadow-xl py-1.5 z-50"
                         role="menu"
                       >
+                        <p className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Plugins
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setAllowWebSearch((v) => !v)}
+                          className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                          role="menuitemcheckbox"
+                          aria-checked={allowWebSearch}
+                        >
+                          <Globe className={`w-4 h-4 mt-0.5 shrink-0 ${allowWebSearch ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Web search</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              Let Dayjoy AI look things up on the web for this chat
+                            </p>
+                          </div>
+                          {/* Purely visual — the enclosing button is the single
+                              source of truth for the toggle, so this doesn't
+                              own its own click/onCheckedChange handler (that
+                              double-fired against the button's onClick and
+                              flipped the value straight back). */}
+                          <Switch
+                            checked={allowWebSearch}
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            className="mt-0.5 shrink-0 pointer-events-none"
+                          />
+                        </button>
+                        <div className="my-1 h-px bg-border" aria-hidden="true" />
                         <button
                           type="button"
                           onClick={() => {
@@ -3578,21 +3613,23 @@ export function UserChat() {
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  {/* Context Scope Control (Capability 15) — web research on/off */}
-                  <button
-                    type="button"
-                    onClick={() => setAllowWebSearch((v) => !v)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
-                      allowWebSearch
-                        ? "text-muted-foreground hover:bg-accent/50"
-                        : "text-warning bg-gold-accent/15"
-                    }`}
-                    title={allowWebSearch ? "Web research is on — click to turn off" : "Web research is off — click to turn on"}
-                    aria-pressed={allowWebSearch}
-                  >
-                    <Globe className="w-3 h-3" aria-hidden="true" />
-                    {allowWebSearch ? "Web on" : "Web off"}
-                  </button>
+                  {/* Context Scope Control (Capability 15) — web research on/off.
+                      Toggled from the "+" plugins menu now (ChatGPT/Gemini-style
+                      opt-in); this pill only appears once the user has actually
+                      turned it on, instead of permanently occupying composer
+                      space in either state. */}
+                  {allowWebSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => setAllowWebSearch(false)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium shrink-0 text-primary bg-primary/10 hover:bg-primary/15 transition-colors"
+                      title="Web search is on for this chat — click to turn off"
+                      aria-pressed="true"
+                    >
+                      <Globe className="w-3 h-3" aria-hidden="true" />
+                      Web search
+                    </button>
+                  ) : null}
                   <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1">
                     <kbd className="px-1 py-0.5 rounded border border-border bg-accent/40 text-[10px] font-mono">Enter</kbd>{" "}
                     send ·{" "}
@@ -4887,22 +4924,8 @@ function MessageBubble({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="flex gap-3 group"
+      className="flex group"
     >
-      {/* Branded avatar — Dayjoy mark with subtle halo */}
-      <div className="relative shrink-0">
-        <div
-          className="absolute inset-0 rounded-xl opacity-30 blur-md group-hover:opacity-50 transition-opacity"
-          aria-hidden="true"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(var(--primary-rgb), 0.6) 0%, transparent 70%)",
-          }}
-        />
-        <div className="relative w-9 h-9 rounded-xl overflow-hidden ring-1 ring-primary/20">
-          <DayjoyLogo variant="mark" size={36} className="block" />
-        </div>
-      </div>
       <div className="flex-1 min-w-0">
         <div className="text-xs mb-1 flex items-center gap-2">
           {(() => {
