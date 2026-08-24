@@ -1395,6 +1395,31 @@ export async function adminFeedbackSummary(): Promise<AdminFeedbackSummary> {
   return adminGet(`/admin/analytics/feedback-summary`);
 }
 
+/** Continuous Improvement System (Next-Gen spec, Phase 14) —
+ * backend/admin_api.py's admin_improvement_candidates. Read-only
+ * reporting: classifies negative-feedback answers into a failure
+ * category for a human to review, never edits anything itself. */
+export type ImprovementCandidate = {
+  category: string;
+  count: number;
+  examples: Array<{
+    question_or_answer_excerpt: string;
+    reason: string;
+    feedback_comment: string | null;
+    answer_source: string | null;
+    created_at: string | null;
+  }>;
+};
+
+export type ImprovementCandidatesReport = {
+  total_negative_feedback_reviewed: number;
+  candidates: ImprovementCandidate[];
+};
+
+export async function adminImprovementCandidates(): Promise<ImprovementCandidatesReport> {
+  return adminGet(`/admin/analytics/improvement-candidates`);
+}
+
 /** Feature: Observability Dashboard — backend/admin_api.py's
  * admin_observability. */
 export type AdminObservability = {

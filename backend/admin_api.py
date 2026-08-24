@@ -1168,6 +1168,67 @@ async def admin_feedback_summary(request: Request, limit: int = 500) -> Dict[str
     }
 
 
+@router.get("/analytics/improvement-candidates")
+async def admin_improvement_candidates(request: Request, limit: int = 500) -> Dict[str, Any]:
+    """Continuous Improvement System (Next-Generation spec, Phase 14) —
+    turns negative feedback (chat_messages.feedback = 'down', the same
+    real signal /analytics/feedback-summary already reads) into a ranked
+    REVIEW QUEUE by classifying WHY each answer likely failed
+    (orchestrator/failure_classifier.py — hallucination, wrong retrieval,
+    wrong citation, tool failure, ambiguity, outdated knowledge, poor
+    structure), from signals feedback-summary doesn't select
+    (verification_status, rag_metadata, sources, handoff_required).
+
+    Explicitly READ-ONLY reporting for a human to act on — per the
+    brief's "DO NOT allow uncontrolled self-modification" rule, this
+    endpoint never edits a prompt, a knowledge document, or routing
+    behavior. A human reviews the candidates and decides what (if
+    anything) changes, the same way /admin/analytics/knowledge-gaps and
+    /admin/analytics/knowledge-freshness already work."""
+    await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    url = (
+        f"{SUPABASE_URL}/rest/v1/chat_messages"
+        f"?feedback=eq.down&select=content,answer_source,verification_status,confidence,"
+        f"sources,rag_metadata,handoff_required,feedback_comment,created_at"
+        f"&order=created_at.desc&limit={limit}"
+    )
+    headers = _svc_headers(token)
+    rows: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code < 400:
+                rows = resp.json()
+    except Exception:
+        pass
+
+    from backend.orchestrator.failure_classifier import ALL_CATEGORIES, classify_failure
+
+    by_category: Dict[str, List[Dict[str, Any]]] = {c: [] for c in ALL_CATEGORIES}
+    for r in rows:
+        result = classify_failure(r)
+        by_category[result.category].append({
+            "question_or_answer_excerpt": (r.get("content") or "")[:200],
+            "reason": result.reason,
+            "feedback_comment": r.get("feedback_comment"),
+            "answer_source": r.get("answer_source"),
+            "created_at": r.get("created_at"),
+        })
+
+    candidates = [
+        {"category": cat, "count": len(examples), "examples": examples[:5]}
+        for cat, examples in by_category.items()
+        if examples
+    ]
+    candidates.sort(key=lambda c: -c["count"])
+
+    return {
+        "total_negative_feedback_reviewed": len(rows),
+        "candidates": candidates,
+    }
+
+
 @router.get("/analytics/observability")
 async def admin_observability(request: Request, days: int = 7, limit: int = 2000) -> Dict[str, Any]:
     """Feature: Observability Dashboard. Aggregates the EXISTING `analytics`
