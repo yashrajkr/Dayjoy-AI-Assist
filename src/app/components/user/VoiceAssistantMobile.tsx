@@ -151,11 +151,21 @@ export function VoiceAssistantMobile({
             to another section without ending their voice session. */}
         <button
           type="button"
-          onClick={onOpenDrawer ?? onClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            (onOpenDrawer ?? onClose)();
+          }}
           aria-label="Open navigation"
-          className="w-10 h-10 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors"
+          // touch-manipulation: disables the ~300ms tap delay some mobile
+          // browsers still apply while they wait to see if a tap is the
+          // start of a double-tap-to-zoom gesture — on a small icon button
+          // that delay (or the browser's own zoom/scroll gesture handling
+          // intercepting the touch first) can read as "the button doesn't
+          // respond." 44px matches Apple/Android's minimum touch-target
+          // guideline (previously 40px, just under it).
+          className="touch-manipulation w-11 h-11 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors relative z-10"
         >
-          <Menu className="w-5 h-5" aria-hidden="true" />
+          <Menu className="w-5 h-5 pointer-events-none" aria-hidden="true" />
         </button>
         <div className="text-center">
           <p className="text-sm font-semibold flex items-center justify-center gap-1.5">
@@ -172,9 +182,9 @@ export function VoiceAssistantMobile({
           type="button"
           onClick={() => setSheetOpen(true)}
           aria-label="Voice settings"
-          className="w-10 h-10 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors"
+          className="touch-manipulation w-11 h-11 rounded-full flex items-center justify-center bg-white/8 active:bg-white/15 transition-colors relative z-10"
         >
-          <Settings2 className="w-5 h-5" aria-hidden="true" />
+          <Settings2 className="w-5 h-5 pointer-events-none" aria-hidden="true" />
         </button>
       </div>
 
@@ -548,7 +558,7 @@ function ControlIcon({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 disabled:active:scale-100 ${
+      className={`touch-manipulation w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 disabled:active:scale-100 ${
         active
           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
           : muted
