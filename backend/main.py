@@ -1587,7 +1587,8 @@ async def _fetch_business_snapshot(token: Optional[str], user_id: str) -> Option
 
 
 def _assemble_compressed_context(
-    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str
+    time_context: str, personalization_context: Optional[str], dayjoy_context: str, web_context: str,
+    task_memory_context: Optional[str] = None,
 ) -> str:
     """Context Compression (orchestrator/context_compress.py) — replaces the
     previous plain "\\n\\n".join() of these four blocks with dedup +
@@ -1595,16 +1596,39 @@ def _assemble_compressed_context(
     highest-priority (never dropped except under extreme budget pressure);
     web results are lowest, since they're supplementary even in hybrid mode
     (HYBRID_MODE_ADDENDUM already tells the model Dayjoy context wins on any
-    conflict)."""
+    conflict). `task_memory_context` (Memory 2.0's task-memory layer,
+    orchestrator/memory_context.py) is the user's own active AI Coach
+    goals/next-steps — same priority tier as personalization, since it's
+    similarly "about this user" rather than approved knowledge."""
     blocks = [
         ContextBlock(label="Current date/time", text=time_context, priority=1) if time_context else None,
         ContextBlock(label="Approved Dayjoy knowledge", text=dayjoy_context, priority=1) if dayjoy_context else None,
         ContextBlock(label="Personalization", text=personalization_context, priority=2)
         if personalization_context
         else None,
+        ContextBlock(label="Active goals", text=task_memory_context, priority=2)
+        if task_memory_context
+        else None,
         ContextBlock(label="Web", text=web_context, priority=3) if web_context else None,
     ]
     return compress_context([b for b in blocks if b is not None])
+
+
+async def _maybe_task_memory_context(token: Optional[str], user_id: Optional[str], casual: bool) -> str:
+    """Memory 2.0's task-memory layer (orchestrator/memory_context.py) — the
+    user's own active AI Coach goals/next-steps, so a brand-new
+    conversation ("what should I work on today?") can still draw on a goal
+    set up in a PAST conversation, which conversation_state.py's
+    history-only open_task can't see. Best-effort: any failure here must
+    never block the chat response."""
+    if casual or not user_id:
+        return ""
+    try:
+        from backend.orchestrator.memory_context import task_memory_prompt_block
+
+        return await task_memory_prompt_block(token, user_id)
+    except Exception:
+        return ""
 
 
 async def _maybe_personalization_context(
@@ -2660,8 +2684,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         token, user_id, req.message, history, casual, req.role
     )
     t_after_personalization = time.monotonic()
+    task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
     full_context = _assemble_compressed_context(
-        current_time_context(), personalization_context, route.context, route.web_context
+        current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
     )
     custom_guidance = await load_ai_custom_guidance()
     fmt_directive = format_instruction(req.message)
@@ -3152,8 +3177,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             token, user_id, req.message, history, casual, req.role
         )
         t_after_personalization = time.monotonic()
+        task_memory_context = await _maybe_task_memory_context(token, user_id, casual)
         full_context = _assemble_compressed_context(
-            current_time_context(), personalization_context, route.context, route.web_context
+            current_time_context(), personalization_context, route.context, route.web_context, task_memory_context
         )
         custom_guidance = await load_ai_custom_guidance()
         fmt_directive = format_instruction(req.message)
