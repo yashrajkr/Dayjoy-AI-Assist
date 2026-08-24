@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from collections import defaultdict
 import time
 
-from backend.search_providers import get_search_providers, web_search_multi
+from backend.search_providers import get_search_providers, get_web_search_status, web_search_multi
 from backend.ai_modes import normalize_ai_mode, top_k_for, addendum_for
 
 load_dotenv()
@@ -612,11 +612,16 @@ from backend.orchestrator.conversation_state import build_conversation_state  # 
 from backend.orchestrator.quality import score_answer  # noqa: E402
 from backend.orchestrator.refinement import build_refinement_instruction, needs_refinement  # noqa: E402
 
-# Answer Quality Router + Multi-Step Reasoning Pipeline (Advanced
-# Intelligence Layer capabilities 1-2).
-from backend.orchestrator.quality_router import route_query  # noqa: E402
-from backend.orchestrator.user_goal import analyze_user_goal  # noqa: E402
+# Multi-Step Reasoning Pipeline (Advanced Intelligence Layer capability 2).
 from backend.orchestrator.reasoning import run_reasoning_pipeline  # noqa: E402
+
+# AI Orchestration Brain (Next-Generation spec, Phase 1) — consolidates
+# build_plan + quality_router.route_query + user_goal.analyze_user_goal
+# into one typed decision (see orchestrator.py's own docstring for why
+# this doesn't replace the fine-tuned heuristics elsewhere in this file),
+# used below as the single source of truth for the reasoning-pipeline
+# trigger instead of three separate calls.
+from backend.orchestrator.orchestrator import orchestrate  # noqa: E402
 
 # Structured-intent short-circuits — checked in `_route_events` before RAG
 # retrieval runs. Each has a single authoritative source (a DB table, not a
@@ -1356,20 +1361,18 @@ async def _route_events(
     # assumptions the rest of this function is built around — see that
     # module's docstring for why that isolation is what makes this safe to
     # wire in as one branch instead of a riskier rewrite of the shared path.
-    quality_decision = route_query(message, plan.intent, plan)
-    # User Goal Analyzer — internal-only structured representation of what
-    # the user actually wants, assembled from signals already computed
-    # above (intent + routing decision), never re-classified with an extra
-    # LLM call. Logged for observability only; never sent to the client or
-    # used to gate behaviour, so a bad guess here can't break an answer.
-    try:
-        goal_profile = analyze_user_goal(message, plan.intent, quality_decision)
-        _llm_logger.debug("user_goal_profile=%s", goal_profile.to_dict())
-    except Exception:
-        pass
-    if quality_decision.use_reasoning:
+    # AI Orchestration Brain — one consolidated decision (intent, strategy,
+    # evidence requirements, response format, internal goal profile) instead
+    # of separately calling route_query + analyze_user_goal. The internal
+    # goal/knowledge-level fields are logged for observability only, never
+    # sent to the client or used to gate behaviour (a bad guess there can't
+    # break an answer) — `requires_reasoning`/`top_k_hint` are the one part
+    # of this decision that actually drives execution below, same as before.
+    decision = orchestrate(message)
+    _llm_logger.debug("orchestration_decision=%s", decision.to_dict())
+    if decision.requires_reasoning:
         yield ("status", "analyzing")
-        route_result = await run_reasoning_pipeline(token, message, top_k=quality_decision.top_k_hint)
+        route_result = await run_reasoning_pipeline(token, message, top_k=decision.top_k_hint)
         yield ("result", route_result)
         return
 
@@ -2103,11 +2106,11 @@ async def stream_vision_response(message: str, image_data_url: str, language: st
     this yields one clear, honest sentence rather than a raw provider error
     or a silently empty response.
     """
-    if not OPENAI_API_KEY:
-        yield (
-            "Image understanding isn't available right now — please describe what's in the "
-            "image and I'll help from there, or contact Dayjoy support to attach it to a ticket."
-        )
+    vision_status = await _check_vision_available()
+    if not vision_status["available"]:
+        reason = vision_status["reason"]
+        detail = _CAPABILITY_REASON_MESSAGES.get(reason, _CAPABILITY_REASON_MESSAGES["provider_error"])
+        yield f"{detail} In the meantime, please describe what's in the image and I'll help from there."
         return
 
     system_prompt = (
@@ -2456,6 +2459,117 @@ async def health() -> Dict[str, Any]:
         "rag_import_error": RAG_IMPORT_ERROR,
         "jwks_url": SUPABASE_JWKS_URL,
         "uptime": time.time(),
+    }
+
+
+_capability_cache: Dict[str, Any] = {"vision": None, "checked_at": 0.0}
+_CAPABILITY_CACHE_TTL_SECONDS = 300.0
+
+
+async def _check_vision_available() -> Dict[str, Any]:
+    """Live, cheaply-cached probe of whether image understanding can
+    actually work right now — not just whether OPENAI_API_KEY is set.
+
+    Deliberately does NOT use OpenAI's /v1/models list: live-verified
+    during this session that endpoint returns 200 even for a key with
+    zero billing credit (it only validates the key, not billing), which
+    made this check silently lie about availability — a real bug caught
+    by testing against the actual live API rather than assuming. Uses a
+    minimal real chat-completions call (max_tokens=1) instead, which
+    OpenAI rejects with 429 insufficient_quota BEFORE billing when credit
+    is exhausted (verified live: the rejected request itself is not
+    charged), so this both costs nothing on the failure path and reflects
+    the condition that actually matters. Cached for
+    _CAPABILITY_CACHE_TTL_SECONDS so that once OpenAI billing is restored,
+    the feature turns back on by itself within a few minutes — no deploy
+    or restart needed — while a burst of chat opens doesn't hammer OpenAI
+    with a probe per request."""
+    now = time.time()
+    cached = _capability_cache["vision"]
+    if cached is not None and (now - _capability_cache["checked_at"]) < _CAPABILITY_CACHE_TTL_SECONDS:
+        return cached
+
+    if not OPENAI_API_KEY:
+        result = {"available": False, "reason": "not_configured"}
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                    json={"model": VISION_MODEL, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                )
+            if resp.status_code == 200:
+                result = {"available": True, "reason": None}
+            elif resp.status_code == 429:
+                result = {"available": False, "reason": "quota_exceeded"}
+            elif resp.status_code == 401:
+                result = {"available": False, "reason": "invalid_key"}
+            else:
+                result = {"available": False, "reason": "provider_error"}
+        except (httpx.TimeoutException, httpx.TransportError):
+            result = {"available": False, "reason": "network_error"}
+
+    _capability_cache["vision"] = result
+    _capability_cache["checked_at"] = now
+    return result
+
+
+_CAPABILITY_REASON_MESSAGES = {
+    "not_configured": "Image understanding isn't set up on this deployment yet.",
+    "quota_exceeded": "Image understanding is temporarily unavailable — the AI provider account has no "
+    "remaining credit. It will start working automatically as soon as that's topped up, no action needed here.",
+    "invalid_key": "Image understanding isn't available right now — the AI provider credentials need to be "
+    "checked by an administrator.",
+    "provider_error": "Image understanding is temporarily unavailable — please try again shortly.",
+    "network_error": "Image understanding is temporarily unavailable — please try again shortly.",
+}
+
+
+_WEB_SEARCH_REASON_MESSAGES = {
+    "not_configured": "Web research isn't set up on this deployment.",
+    "quota_exceeded": "Web research is temporarily unavailable — the search provider's usage limit has been "
+    "reached. It will start working automatically once that's resolved.",
+    "provider_error": "Web research is temporarily unavailable — please try again shortly.",
+}
+
+
+@app.get("/capabilities")
+async def capabilities() -> Dict[str, Any]:
+    """Runtime capability status the frontend polls to decide whether to
+    show/enable capability-gated UI (currently: image understanding, web
+    research). Deliberately live rather than a static flag — see
+    _check_vision_available and search_providers.get_web_search_status."""
+    vision = await _check_vision_available()
+    web_status = get_web_search_status()
+    if web_status["available"] is None:
+        # No real search has run yet since server start — report configured-
+        # ness only, rather than guessing at availability.
+        web_search_capability = {
+            "available": any(p.is_configured() for p in get_search_providers()),
+            "reason": None,
+            "message": None,
+        }
+    else:
+        web_search_capability = {
+            "available": web_status["available"],
+            "reason": web_status["reason"],
+            "message": None if web_status["available"] else _WEB_SEARCH_REASON_MESSAGES.get(
+                web_status["reason"], _WEB_SEARCH_REASON_MESSAGES["provider_error"]
+            ),
+        }
+    from backend.orchestrator.model_router import TASK_CHAT, TASK_VISION, select_model
+
+    chat_model = await select_model(TASK_CHAT)
+    vision_model = await select_model(TASK_VISION)
+    return {
+        "vision": {
+            **vision,
+            "message": None if vision["available"] else _CAPABILITY_REASON_MESSAGES.get(vision["reason"], _CAPABILITY_REASON_MESSAGES["provider_error"]),
+        },
+        "web_search": web_search_capability,
+        "chat": {"available": bool(GROQ_API_KEY or OPENAI_API_KEY)},
+        "models": {"chat": chat_model.to_dict(), "vision": vision_model.to_dict()},
     }
 
 

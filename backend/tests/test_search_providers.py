@@ -230,3 +230,62 @@ async def test_web_search_multi_all_providers_fail(monkeypatch):
     assert results == []
     assert provider_used is None
     assert any_configured is True  # configured, just unreachable
+
+
+# ---------------------------------------------------------------------------
+# get_web_search_status — live capability tracking (auto-recovers once a
+# real search succeeds again, without a separate billable probe call)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_status():
+    sp._last_status.update(provider=None, available=None, reason=None, checked_at=0.0)
+    yield
+    sp._last_status.update(provider=None, available=None, reason=None, checked_at=0.0)
+
+
+@pytest.mark.asyncio
+async def test_status_unknown_before_any_real_search():
+    status = sp.get_web_search_status()
+    assert status["available"] is None
+
+
+@pytest.mark.asyncio
+async def test_status_reports_available_after_success(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "fake-tavily-key")
+    monkeypatch.setattr(
+        sp.httpx, "AsyncClient",
+        _client_with(post=FakeResponse(200, {"results": [{"title": "T", "url": "u", "content": "c"}]})),
+    )
+    await sp.web_search_multi("query")
+    status = sp.get_web_search_status()
+    assert status["available"] is True
+    assert status["provider"] == "tavily"
+
+
+@pytest.mark.asyncio
+async def test_status_reports_quota_exceeded_on_432(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "fake-tavily-key")
+    monkeypatch.setenv("BRAVE_API_KEY", "")
+    monkeypatch.setattr(sp.httpx, "AsyncClient", _client_with(post=FakeResponse(432, {})))
+    await sp.web_search_multi("query")
+    status = sp.get_web_search_status()
+    assert status["available"] is False
+    assert status["reason"] == "quota_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_status_auto_recovers_after_prior_failure(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "fake-tavily-key")
+    monkeypatch.setenv("BRAVE_API_KEY", "")
+    monkeypatch.setattr(sp.httpx, "AsyncClient", _client_with(post=FakeResponse(432, {})))
+    await sp.web_search_multi("query")
+    assert sp.get_web_search_status()["available"] is False
+
+    monkeypatch.setattr(
+        sp.httpx, "AsyncClient",
+        _client_with(post=FakeResponse(200, {"results": [{"title": "T", "url": "u", "content": "c"}]})),
+    )
+    await sp.web_search_multi("query")
+    assert sp.get_web_search_status()["available"] is True

@@ -669,6 +669,29 @@ export async function healthCheck(): Promise<boolean> {
 }
 
 /**
+ * Runtime capability status (currently: image understanding). Backend
+ * probes the AI provider live and caches for a few minutes, so this
+ * reflects reality — e.g. flips to available automatically once OpenAI
+ * billing is restored, no redeploy needed.
+ */
+export interface CapabilityStatus {
+  available: boolean;
+  reason: string | null;
+  message: string | null;
+}
+
+export async function getCapabilities(): Promise<{ vision: CapabilityStatus; web_search: CapabilityStatus; chat: { available: boolean } } | null> {
+  const apiBaseUrl = getApiBaseUrl();
+  try {
+    const res = await fetch(`${apiBaseUrl}/capabilities`, { method: "GET" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Submit thumbs-up/down feedback for a chat response.
  */
 export async function submitChatFeedback(params: {
