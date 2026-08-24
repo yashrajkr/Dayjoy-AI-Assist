@@ -548,3 +548,184 @@ def test_refinement_loop_does_not_fire_without_retrieved_evidence(authed_client,
     )
     assert res.status_code == 200
     assert call_count["n"] == 1  # no refinement retry — no evidence to refine against
+
+
+# ---------------------------------------------------------------------------
+# Contradiction Detector (backend/orchestrator/contradiction.py), Capability 26
+# ---------------------------------------------------------------------------
+
+
+def test_contradiction_detected_triggers_corrective_retry(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "stream_groq",
+        _stub_stream_groq([
+            ["The price is 799, but elsewhere it's 899."],  # first pass: self-contradictory
+            ["The price is 799."],  # corrective retry
+        ]),
+    )
+    # Relevance check always passes — isolates this test to the
+    # contradiction path specifically.
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    contradiction_calls: list = []
+
+    async def _fake_detect_contradiction(answer, context):
+        # Single-shot by design (bounded to one extra LLM call per
+        # request, same reasoning as the relevance-mismatch retry) — the
+        # corrective retry's own output is NOT re-checked for
+        # contradiction, just served as-is.
+        contradiction_calls.append(answer)
+        return ContradictionVerdict(has_contradiction=True, explanation="States price is both 799 and 899.", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _fake_detect_contradiction)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the price?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert "899" not in body["answer"]
+    assert "The price is 799." in body["answer"]
+    assert len(contradiction_calls) == 1
+
+
+def test_chat_stream_contradiction_flags_handoff_without_retry(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([["The price is 799, but also 899."]]))
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _fake_detect_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=True, explanation="Price stated twice, differently.", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _fake_detect_contradiction)
+
+    with authed_client.stream(
+        "POST", "/chat/stream", json={"message": "What is the price?", "role": "customer", "language": "English"}
+    ) as res:
+        body = b"".join(res.iter_bytes()).decode()
+    assert '"handoff_required": true' in body or '"handoff_required":true' in body
+    assert "contradiction" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Citation Verification / Claim-Level Grounding (claim_verify.py), Capabilities 7, 8
+# ---------------------------------------------------------------------------
+
+
+def test_chat_endpoint_includes_claim_verification_for_substantive_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    long_answer = "Dayjoy Turmeric's DP is 799 rupees, and it is one of our most popular wellness products. " * 2
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([[long_answer]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    from backend.orchestrator.claim_verify import ClaimVerdict, ClaimVerificationResult
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        return ClaimVerificationResult(
+            claims=[ClaimVerdict(claim="DP is 799", state="verified")], checked=True,
+        )
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP of Dayjoy Turmeric?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(claim_calls) == 1
+    assert body["claim_verification"]["checked"] is True
+    assert body["claim_verification"]["claims"][0]["claim"] == "DP is 799"
+
+
+def test_chat_endpoint_skips_claim_verification_for_short_answer(authed_client, monkeypatch):
+    monkeypatch.setattr(backend_main, "GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setattr(
+        backend_main,
+        "retrieve_context",
+        _stub_retrieve_context(
+            "[1] Source: pricing | Score: 0.900\nQ: What is the DP? A: The DP is 799.",
+            category="general",
+            rag_metadata={"confidence": 0.9, "verification_status": "verified", "evidence_sufficient": True},
+        ),
+    )
+    monkeypatch.setattr(backend_main, "stream_groq", _stub_stream_groq([["It's 799."]]))
+
+    async def _always_addresses(question, answer, evidence_summary):
+        return AnswerVerdict(addresses_question=True, reason="on topic", checked=True)
+
+    monkeypatch.setattr(backend_main, "verify_answer", _always_addresses)
+
+    from backend.orchestrator.contradiction import ContradictionVerdict
+
+    async def _no_contradiction(answer, context):
+        return ContradictionVerdict(has_contradiction=False, explanation="", checked=True)
+
+    monkeypatch.setattr(backend_main, "detect_contradiction", _no_contradiction)
+
+    claim_calls: list = []
+
+    async def _fake_verify_claims(answer, context):
+        claim_calls.append(answer)
+        raise AssertionError("should not be called for a short answer")
+
+    monkeypatch.setattr(backend_main, "verify_claims", _fake_verify_claims)
+
+    res = authed_client.post(
+        "/chat", json={"message": "What is the DP?", "role": "customer", "language": "English"}
+    )
+    assert res.status_code == 200
+    assert res.json()["claim_verification"] is None
+    assert claim_calls == []

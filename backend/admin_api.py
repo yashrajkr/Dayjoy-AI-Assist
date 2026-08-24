@@ -1119,6 +1119,79 @@ async def admin_knowledge_gaps(request: Request, limit: int = 50) -> List[Dict[s
     return []
 
 
+@router.get("/analytics/knowledge-freshness")
+async def admin_knowledge_freshness(
+    request: Request, stale_after_days: int = 180, limit: int = 200
+) -> Dict[str, Any]:
+    """Knowledge Freshness Monitoring (Capability 42) — flags real,
+    checkable data-quality problems in `knowledge_documents` rather than
+    a generic "documents" placeholder: stale approved documents (past
+    `stale_after_days` since last update), documents missing category/tags
+    metadata, and documents sharing a file_name with another non-archived
+    document (likely duplicate uploads). Read-only — this surfaces
+    problems for a human to act on via the existing document management
+    endpoints, it doesn't archive/edit anything itself."""
+    await _require_staff(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    rows = await _select_view(
+        "knowledge_documents",
+        columns="id,document_id,file_name,category,tags,approval_status,is_archived,updated_at,created_at",
+        limit=limit,
+        token=token,
+    )
+    active = [r for r in rows if not r.get("is_archived")]
+
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=stale_after_days)
+
+    def _parse_dt(value: Optional[str]):
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
+
+    stale: List[Dict[str, Any]] = []
+    missing_metadata: List[Dict[str, Any]] = []
+    for r in active:
+        if r.get("approval_status") == "approved":
+            updated = _parse_dt(r.get("updated_at")) or _parse_dt(r.get("created_at"))
+            if updated and updated < cutoff:
+                stale.append({
+                    "id": r.get("id"), "file_name": r.get("file_name"),
+                    "last_updated": r.get("updated_at") or r.get("created_at"),
+                    "days_since_update": (datetime.now(timezone.utc) - updated).days,
+                })
+        if not r.get("category") or r.get("category") == "other" or not r.get("tags"):
+            missing_metadata.append({
+                "id": r.get("id"), "file_name": r.get("file_name"),
+                "missing_category": not r.get("category") or r.get("category") == "other",
+                "missing_tags": not r.get("tags"),
+            })
+
+    by_name: Dict[str, List[Dict[str, Any]]] = {}
+    for r in active:
+        name = (r.get("file_name") or "").strip().lower()
+        if name:
+            by_name.setdefault(name, []).append(r)
+    duplicates: List[Dict[str, Any]] = [
+        {"file_name": name, "count": len(group), "document_ids": [g.get("id") for g in group]}
+        for name, group in by_name.items()
+        if len(group) > 1
+    ]
+
+    return {
+        "stale_documents": sorted(stale, key=lambda d: -d["days_since_update"]),
+        "missing_metadata_documents": missing_metadata,
+        "duplicate_documents": duplicates,
+        "total_active_documents": len(active),
+        "stale_after_days": stale_after_days,
+    }
+
+
 @router.get("/analytics/feedback-summary")
 async def admin_feedback_summary(request: Request, limit: int = 500) -> Dict[str, Any]:
     """Feature: Feedback Learning — turns the 👍/👎 ratings the chat UI

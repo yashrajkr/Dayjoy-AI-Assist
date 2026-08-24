@@ -35,6 +35,18 @@ export type ChatRequest = {
   /** Context Scope Control (Capability 15) — whether this message may fall
    * back to a live web search. Defaults to true server-side if omitted. */
   allow_web_search?: boolean;
+  /** Advanced File Intelligence / PDF Intelligence / Document Comparison /
+   * Cross-Document Reasoning (Capabilities 3, 21, 22, 5) — up to 3
+   * attached PDF/DOCX/PPTX/XLSX/CSV/TXT/JSON files. When present, the
+   * backend answers from their extracted text instead of the normal RAG
+   * pipeline; 2+ documents supports comparison/cross-document reasoning. */
+  attached_documents?: AttachedDocument[];
+};
+
+export type AttachedDocument = {
+  name: string;
+  mime?: string;
+  data_url: string;
 };
 
 export type KnowledgeScope = "all" | "products" | "training" | "policies" | "faqs";
@@ -101,6 +113,15 @@ export type RAGMetadata = {
   model_used: string;
   /** Retrieved chunks (full text + metadata). */
   chunks: RetrievedChunk[];
+  /** Knowledge Conflict Resolution (Capability 9) — set when 2+ matched
+   * documents in the same category had different update dates; the model
+   * was instructed to prefer the newer one. */
+  knowledge_conflict?: {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  } | null;
 };
 
 export type MatchedDocument = {
@@ -188,6 +209,14 @@ export type ChatResponse = {
    * confidence percentage. One of "Strongly supported" | "Supported" |
    * "Partially supported" | "Needs verification" | "Not verified". */
   evidence_strength?: string | null;
+  /** Citation Verification / Claim-Level Grounding (Capabilities 7, 8) —
+   * per-claim verified/ai_analysis/assumption/unverified breakdown. null
+   * when the answer didn't qualify for claim-level checking or the check
+   * itself couldn't run. */
+  claim_verification?: {
+    checked: boolean;
+    claims: Array<{ claim: string; state: "verified" | "ai_analysis" | "assumption" | "unverified" }>;
+  } | null;
 };
 
 export type ChatProductCard = {
@@ -427,6 +456,31 @@ export async function generateConversationTitle(
 }
 
 /**
+ * Answer Editing, selection-scoped (Capability 12) — rewrites a specific
+ * text snippet per `instruction` and returns JUST the replacement, so the
+ * caller can splice it back into the original message content in place.
+ * Best-effort: the backend itself returns the original text unchanged on
+ * any failure (see /transform-text's docstring), so this never throws for
+ * a provider error — only for a genuine network/auth failure.
+ */
+export async function transformTextSnippet(text: string, instruction: string): Promise<string> {
+  const token = await requireBearerToken();
+  const res = await fetch(`${getApiBaseUrl()}/transform-text`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "X-Client": BRAND.shortName,
+    },
+    body: JSON.stringify({ text, instruction }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Transform text failed (${res.status})`);
+  const data = (await res.json()) as { result: string };
+  return data.result;
+}
+
+/**
  * Feature: User Preference Learning — saves a response-style preference
  * (e.g. `preferred_explanation_level=simple`) to the user's own memory
  * (POST /memory, RLS-scoped to auth.uid()) via the EXISTING remember_fact
@@ -583,6 +637,7 @@ export async function streamChatWithBackend(
       structured: finalMeta.structured,
       clarification_options: finalMeta.clarification_options,
       evidence_strength: finalMeta.evidence_strength,
+      claim_verification: finalMeta.claim_verification,
     };
   } catch (e) {
     // Our own idle timeout aborted the fetch — surface it as a timeout rather
@@ -1332,6 +1387,20 @@ export async function adminKnowledgeGaps(limit = 50): Promise<Array<Record<strin
   return adminGet(`/admin/analytics/knowledge-gaps?limit=${limit}`);
 }
 
+/** Knowledge Freshness Monitoring (Capability 42) —
+ * backend/admin_api.py's admin_knowledge_freshness. */
+export type KnowledgeFreshnessReport = {
+  stale_documents: Array<{ id: string; file_name: string; last_updated: string; days_since_update: number }>;
+  missing_metadata_documents: Array<{ id: string; file_name: string; missing_category: boolean; missing_tags: boolean }>;
+  duplicate_documents: Array<{ file_name: string; count: number; document_ids: string[] }>;
+  total_active_documents: number;
+  stale_after_days: number;
+};
+
+export async function adminKnowledgeFreshness(staleAfterDays = 180): Promise<KnowledgeFreshnessReport> {
+  return adminGet(`/admin/analytics/knowledge-freshness?stale_after_days=${staleAfterDays}`);
+}
+
 /** Feature: Feedback Learning aggregation — backend/admin_api.py's
  * admin_feedback_summary. */
 export type AdminFeedbackSummary = {
@@ -1707,10 +1776,74 @@ export async function editArtifact(
   return distJson("PATCH", `/artifacts/${artifactId}`, payload);
 }
 
+/** Interactive Artifacts (Capability 31) — persists checked checklist item
+ * indices in place (no new version row — see backend's own docstring for
+ * why ticking a checkbox isn't treated as a content revision). */
+export async function updateChecklistState(artifactId: string, checkedItems: number[]): Promise<{ checked_items: number[] }> {
+  return distJson("PATCH", `/artifacts/${artifactId}/checklist-state`, { checked_items: checkedItems });
+}
+
 /** Task Continuation — AI-assisted edit ("make week 2 more aggressive")
  * against an existing artifact, creating a new version. */
 export async function continueArtifact(artifactId: string, instruction: string): Promise<Artifact> {
   return distJson("POST", `/artifacts/${artifactId}/continue`, { instruction });
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled reminders (Scheduled / Proactive Assistance, Capability 33) —
+// backend/reminders_api.py. Named ScheduledReminder (not Reminder) to
+// avoid colliding with the pre-existing product-usage Reminder type further
+// below (WellnessJourney's customerListReminders/etc.) — a different,
+// unrelated feature that happens to share the word "reminder."
+// ---------------------------------------------------------------------------
+
+export type ReminderRecurrence = "once" | "daily" | "weekly" | "monthly";
+
+export type ScheduledReminder = {
+  id: string;
+  user_id?: string;
+  title: string;
+  body?: string | null;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+  due_at: string;
+  recurrence: ReminderRecurrence;
+  is_active: boolean;
+  last_delivered_at?: string | null;
+  created_at?: string;
+};
+
+export async function createReminder(payload: {
+  title: string;
+  body?: string;
+  due_at: string;
+  recurrence?: ReminderRecurrence;
+  conversation_id?: string | null;
+  artifact_id?: string | null;
+}): Promise<ScheduledReminder> {
+  return distJson("POST", "/reminders", payload);
+}
+
+export async function listReminders(includeInactive = false): Promise<{ reminders: ScheduledReminder[]; total: number }> {
+  return distGet(`/reminders?include_inactive=${includeInactive}`);
+}
+
+export async function cancelReminder(reminderId: string): Promise<{ cancelled: boolean }> {
+  const headers = await ragHeaders();
+  const res = await resilientFetch(`${getApiBaseUrl()}/reminders/${reminderId}`, { method: "DELETE", headers });
+  if (!res.ok) throw new Error(`Cancel reminder failed (${res.status})`);
+  return await res.json();
+}
+
+/** Best-effort: called on app load and periodically while active. Never
+ * surfaces an error to the user — a missed check just means reminders are
+ * delivered on the next successful one. */
+export async function checkDueReminders(): Promise<{ delivered: Array<{ id: string; title: string }>; count: number }> {
+  try {
+    return await distJson("POST", "/reminders/check");
+  } catch {
+    return { delivered: [], count: 0 };
+  }
 }
 
 /** Content — generate. */

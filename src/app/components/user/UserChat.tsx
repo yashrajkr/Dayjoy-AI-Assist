@@ -65,6 +65,7 @@ import {
   FileDown,
   Maximize2,
   GitCompare,
+  GitBranch,
   Menu,
   MoreVertical,
   Ghost,
@@ -98,6 +99,7 @@ import {
   deriveTitle,
   hasDefaultTitle,
   sortConversations,
+  updateMessageContent,
   type Conversation,
   type ChatMessage,
 } from "../../lib/chatStore";
@@ -108,6 +110,7 @@ import {
   rememberPreference,
   distributorCreateFollowUp,
   createArtifact,
+  transformTextSnippet,
   KNOWLEDGE_SCOPE_OPTIONS,
   type ArtifactType,
   type ChatSource,
@@ -630,12 +633,46 @@ function AnswerTLDR({ text }: { text: string }) {
 const PROGRESSIVE_DISCLOSURE_THRESHOLD = 900;
 const PROGRESSIVE_DISCLOSURE_PREVIEW = 420;
 
-function DetailMarkdown({ text }: { text: string }) {
+/** Inline Follow-up (Capability 35) — a small, hover-revealed action row
+ * attached to ONE answer section rather than the whole message, reusing
+ * the existing Transform Controls machinery scoped to just that
+ * section's text. Only rendered for sections with enough content to be
+ * worth a targeted action (a one-line section doesn't need this). */
+function InlineFollowUp({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
+  if (!onTransform || text.trim().length < 80) return null;
+  return (
+    <div className="not-prose flex items-center gap-2 mt-1 mb-2 opacity-0 group-hover/section:opacity-100 transition-opacity">
+      <button
+        type="button"
+        onClick={() => onTransform("detail", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Explain
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("example", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Give example
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransform("actionable", text)}
+        className="text-[10px] font-medium text-muted-foreground hover:text-primary px-1.5 py-0.5 rounded hover:bg-accent/50"
+      >
+        Make actionable
+      </button>
+    </div>
+  );
+}
+
+function DetailMarkdown({ text, onTransform }: { text: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > PROGRESSIVE_DISCLOSURE_THRESHOLD;
   if (!isLong || expanded) {
     return (
-      <>
+      <div className="group/section">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
           {text}
         </ReactMarkdown>
@@ -649,7 +686,8 @@ function DetailMarkdown({ text }: { text: string }) {
             Show less
           </button>
         ) : null}
-      </>
+        <InlineFollowUp text={text} onTransform={onTransform} />
+      </div>
     );
   }
   // Cut on a paragraph/sentence boundary near the preview length so the
@@ -658,7 +696,7 @@ function DetailMarkdown({ text }: { text: string }) {
   const previewEnd = cutAt > 0 && cutAt < PROGRESSIVE_DISCLOSURE_PREVIEW + 200 ? cutAt : PROGRESSIVE_DISCLOSURE_PREVIEW;
   const preview = text.slice(0, previewEnd);
   return (
-    <>
+    <div className="group/section">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
         {preview}
       </ReactMarkdown>
@@ -670,20 +708,20 @@ function DetailMarkdown({ text }: { text: string }) {
         <ChevronUp className="w-3.5 h-3.5 rotate-180" aria-hidden="true" />
         Show more
       </button>
-    </>
+    </div>
   );
 }
 
 /** Renders `content` as structured blocks (TL;DR / callouts / markdown) instead
  * of one flat ReactMarkdown call — see `parseAnswerBlocks`. */
-function AnswerContent({ content }: { content: string }) {
+function AnswerContent({ content, onTransform }: { content: string; onTransform?: (kind: TransformKind, text: string) => void }) {
   const blocks = useMemo(() => parseAnswerBlocks(content), [content]);
   return (
     <>
       {blocks.map((block, i) => {
         if (block.type === "tldr") return <AnswerTLDR key={i} text={block.text} />;
         if (block.type === "callout") return <AnswerCallout key={i} variant={block.variant} text={block.text} />;
-        return <DetailMarkdown key={i} text={block.text} />;
+        return <DetailMarkdown key={i} text={block.text} onTransform={onTransform} />;
       })}
     </>
   );
@@ -963,6 +1001,9 @@ const SHOW_VOICE_ORB = false;
 /** Attachments are inlined as data URLs, so keep them small. */
 const MAX_ATTACHMENT_BYTES = 10_000_000;
 const MAX_ATTACHMENTS = 5;
+// Advanced File Intelligence (Capabilities 3/21/22/5) — mirrors
+// backend/main.py's MAX_ATTACHED_DOCUMENTS.
+const MAX_ATTACHED_DOCUMENTS_PER_MESSAGE = 3;
 
 type SuggestedPrompt = { title: string; text: string; icon: typeof Leaf };
 
@@ -1036,6 +1077,26 @@ function getRoleWelcome(role: string | null | undefined): { label: string; cta: 
     default:
       return { label: "AI Assistant", cta: "Trusted Dayjoy knowledge, on tap." };
   }
+}
+
+/** Knowledge Conflict Resolution (Capability 9) — reads the
+ * knowledge_conflict block out of the message's (untyped) rag_metadata,
+ * if present. */
+function messageKnowledgeConflict(message: ChatMessage): {
+  category: string;
+  authoritative_document: string;
+  authoritative_updated_at: string | null;
+  other_documents: string[];
+} | null {
+  const meta = message.rag_metadata as { knowledge_conflict?: unknown } | null | undefined;
+  const conflict = meta?.knowledge_conflict;
+  if (!conflict || typeof conflict !== "object") return null;
+  return conflict as {
+    category: string;
+    authoritative_document: string;
+    authoritative_updated_at: string | null;
+    other_documents: string[];
+  };
 }
 
 /**
@@ -1167,7 +1228,9 @@ export function UserChat() {
   const [qrOpen, setQrOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const [attachments, setAttachments] = useState<Array<{ name: string; dataUrl: string; kind: "image" }>>([]);
+  const [attachments, setAttachments] = useState<
+    Array<{ name: string; dataUrl: string; kind: "image" | "document"; mime: string }>
+  >([]);
   // Knowledge Scope Selector (Capability 16) — narrows retrieval to one
   // category instead of all of DayJoy's knowledge base. Persists only for
   // this browser session (not saved to a preference) since it's a
@@ -1182,7 +1245,8 @@ export function UserChat() {
   // user message or page chrome never triggers it). Reuses the existing
   // TransformKind machinery (handleTransform already accepts arbitrary
   // text, not just the whole message) — just applied to the selection.
-  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number; messageId: string | null } | null>(null);
+  const [editingInPlace, setEditingInPlace] = useState(false);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1386,13 +1450,28 @@ export function UserChat() {
         products?: ChatProductCard[] | null;
         clarification_options?: string[] | null;
         evidence_strength?: string | null;
+        claim_verification?: ChatMessage["claim_verification"];
       } = {};
 
       // Multimodal Understanding (Capabilities 1/2/19/20) — the most
       // recently attached image, if any, rides along with THIS message
       // only (attachments themselves stay in the persistent per-conversation
       // gallery below, unaffected by sending).
-      const imageForThisSend = attachments.length > 0 ? attachments[attachments.length - 1].dataUrl : undefined;
+      const documentAttachments = attachments.filter((a) => a.kind === "document");
+      const imageAttachments = attachments.filter((a) => a.kind === "image");
+      // Advanced File Intelligence (Capabilities 3/21/22/5) — documents
+      // take priority over an image if somehow both are attached (matches
+      // the backend's own precedence in main.py's /chat handler).
+      const documentsForThisSend =
+        documentAttachments.length > 0
+          ? documentAttachments
+              .slice(-MAX_ATTACHED_DOCUMENTS_PER_MESSAGE)
+              .map((a) => ({ name: a.name, mime: a.mime, data_url: a.dataUrl }))
+          : undefined;
+      const imageForThisSend =
+        documentAttachments.length === 0 && imageAttachments.length > 0
+          ? imageAttachments[imageAttachments.length - 1].dataUrl
+          : undefined;
 
       try {
         const res = await streamChatWithBackend(
@@ -1404,6 +1483,7 @@ export function UserChat() {
             is_temporary: isTemporary,
             ai_mode: sentAiMode,
             image_data_url: imageForThisSend,
+            attached_documents: documentsForThisSend,
             knowledge_scope: knowledgeScope === "all" ? undefined : knowledgeScope,
             allow_web_search: allowWebSearch,
           },
@@ -1436,6 +1516,7 @@ export function UserChat() {
           products: res.products,
           clarification_options: res.clarification_options,
           evidence_strength: res.evidence_strength,
+          claim_verification: res.claim_verification,
         };
 
         // Temporary Chat: never write to Supabase — build the same message
@@ -1499,6 +1580,7 @@ export function UserChat() {
           products: meta.products ?? null,
           clarification_options: meta.clarification_options ?? null,
           evidence_strength: meta.evidence_strength ?? null,
+          claim_verification: meta.claim_verification ?? null,
         };
         setMessages((prev) => [...prev, displayedAssistantMsg]);
         setLastAssistantId(assistantId);
@@ -1656,7 +1738,7 @@ export function UserChat() {
   const handleCameraCapture = useCallback((img: CapturedImage) => {
     setAttachments((prev) => [
       ...prev,
-      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const },
+      { name: img.file.name, dataUrl: img.dataUrl, kind: "image" as const, mime: img.file.type || "image/jpeg" },
     ]);
     setCameraOpen(false);
     // Pre-fill the composer with a context prompt
@@ -1694,10 +1776,14 @@ export function UserChat() {
       reader.onload = () => {
         const dataUrl = typeof reader.result === "string" ? reader.result : "";
         if (!dataUrl) return;
+        // Advanced File Intelligence (Capabilities 3/21/22/5) — a
+        // non-image attachment (PDF/Word/Excel/etc.) is sent to the
+        // backend's document-extraction path instead of the vision path.
+        const kind: "image" | "document" = file.type.startsWith("image/") ? "image" : "document";
         setAttachments((prev) =>
           prev.length >= MAX_ATTACHMENTS
             ? prev
-            : [...prev, { name: file.name, dataUrl, kind: "image" as const }],
+            : [...prev, { name: file.name, dataUrl, kind, mime: file.type || "application/octet-stream" }],
         );
       };
       reader.onerror = () => setError(`Could not read ${file.name}.`);
@@ -1895,12 +1981,14 @@ export function UserChat() {
     }
     const anchorEl =
       selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
-    if (!anchorEl?.closest(".ai-prose")) {
+    const bubbleEl = anchorEl?.closest(".ai-prose");
+    if (!bubbleEl) {
       setSelectionToolbar(null);
       return;
     }
+    const messageId = bubbleEl.getAttribute("data-message-id") || null;
     const rect = selection.getRangeAt(0).getBoundingClientRect();
-    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top });
+    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top, messageId });
   }, []);
 
   const handleSelectionTransform = useCallback(
@@ -1912,6 +2000,36 @@ export function UserChat() {
     },
     [selectionToolbar, handleTransform],
   );
+
+  // ---- Answer Editing, selection-scoped (Capability 12) ----
+  // Rewrites JUST the selected snippet and splices the result back into
+  // the SAME message in place, unlike every other transform above (which
+  // sends the transformation as a brand-new chat turn).
+  const handleEditInPlace = useCallback(async () => {
+    if (!selectionToolbar?.messageId) return;
+    const { text: selectedText, messageId } = selectionToolbar;
+    setEditingInPlace(true);
+    try {
+      const replacement = await transformTextSnippet(
+        selectedText,
+        "Improve the wording — keep the same meaning and any facts/numbers exactly.",
+      );
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.content.includes(selectedText)) return m;
+          const newContent = m.content.replace(selectedText, replacement);
+          void updateMessageContent(messageId, newContent);
+          return { ...m, content: newContent };
+        }),
+      );
+    } catch {
+      setError("Couldn't edit that text right now. Please try again.");
+    } finally {
+      setEditingInPlace(false);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    }
+  }, [selectionToolbar]);
 
   // ---- Save an assistant answer as a distributor follow-up task ----
   // Feature: Agentic Workflows, scoped safely — this calls the EXISTING,
@@ -1979,6 +2097,51 @@ export function UserChat() {
       }
     },
     [activeConv],
+  );
+
+  // ---- Conversation Branching (Capability 11) ----
+  // Duplicates the transcript UP TO AND INCLUDING the given message into a
+  // brand-new conversation, then navigates there — the ORIGINAL
+  // conversation is never modified, matching the brief's explicit "do not
+  // destroy the original conversation state." Lets a user try "Improve" /
+  // "Try another approach" / "Explore alternative" from any earlier point
+  // without losing the path they already have.
+  const [branching, setBranching] = useState(false);
+  const handleBranchConversation = useCallback(
+    async (uptoMessage: ChatMessage) => {
+      if (!currentUser || branching) return;
+      setBranching(true);
+      try {
+        const cutIdx = messages.findIndex((m) => m === uptoMessage);
+        const toCopy = cutIdx >= 0 ? messages.slice(0, cutIdx + 1) : messages;
+        const sourceTitle = activeConv?.title || "Conversation";
+        const branched = await createConversation(currentUser.id, `${sourceTitle} (branch)`, language);
+        if (!branched) {
+          setError("Could not create a branched conversation. Please try again.");
+          return;
+        }
+        for (const m of toCopy) {
+          await appendMessage(branched.id, {
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+            safety_status: m.safety_status ?? "safe",
+            handoff_required: m.handoff_required ?? false,
+            confidence: m.confidence ?? null,
+            verification_status: m.verification_status ?? null,
+            handoff_message: m.handoff_message ?? null,
+            rag_metadata: m.rag_metadata ?? null,
+            answer_source: m.answer_source ?? null,
+            ai_mode: m.ai_mode ?? "normal",
+          });
+        }
+        setConversations((prev) => [branched, ...prev]);
+        navigate(`/chat/${branched.id}`);
+      } finally {
+        setBranching(false);
+      }
+    },
+    [activeConv, branching, currentUser, language, messages, navigate],
   );
 
   // ---- Edit-and-resend a sent user message ----
@@ -3052,6 +3215,7 @@ export function UserChat() {
                           ? handleRegenerateVariant
                           : undefined
                       }
+                      onBranch={m.role === "assistant" ? () => handleBranchConversation(m) : undefined}
                       onSpeak={voice.ttsSupported ? handleSpeakMessage : undefined}
                       speakingId={speakingId}
                       onShare={handleShareMessage}
@@ -3237,7 +3401,7 @@ export function UserChat() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,.pdf,.txt,.csv,.doc,.docx"
+                      accept="image/*,.pdf,.txt,.csv,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.md,.json"
                       multiple
                       className="hidden"
                       onChange={(e) => {
@@ -3527,7 +3691,16 @@ export function UserChat() {
                       className="relative w-16 h-16 rounded-xl overflow-hidden border border-border shrink-0 group shadow-sm"
                       style={{ scrollSnapAlign: "start" }}
                     >
-                      <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      {att.kind === "image" ? (
+                        <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 bg-accent/40 px-1" title={att.name}>
+                          <FileText className="w-4 h-4 text-primary" aria-hidden="true" />
+                          <span className="text-[8px] text-muted-foreground truncate w-full text-center leading-tight">
+                            {att.name}
+                          </span>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleRemoveAttachment(idx)}
@@ -3609,6 +3782,21 @@ export function UserChat() {
           >
             Translate
           </button>
+          {/* Answer Editing, selection-scoped (Capability 12) — the ONLY
+              button here that edits the message IN PLACE instead of
+              sending a new chat turn. Only offered when the message has
+              a real, persisted id to update. */}
+          {selectionToolbar.messageId ? (
+            <button
+              type="button"
+              onClick={handleEditInPlace}
+              disabled={editingInPlace}
+              className="px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+              title="Rewrite just this selection, in place"
+            >
+              {editingInPlace ? "Editing…" : "Edit"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -4107,22 +4295,31 @@ export function UserChat() {
                         key={`${att.name}-${idx}`}
                         className="group relative rounded-lg border border-border overflow-hidden bg-accent/20"
                       >
-                        <img
-                          src={att.dataUrl}
-                          alt={att.name}
-                          className="w-full h-24 object-cover"
-                        />
+                        {att.kind === "image" ? (
+                          <img
+                            src={att.dataUrl}
+                            alt={att.name}
+                            className="w-full h-24 object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-24 flex flex-col items-center justify-center gap-1 px-2">
+                            <FileText className="w-6 h-6 text-primary" aria-hidden="true" />
+                            <span className="text-[10px] text-muted-foreground truncate w-full text-center">{att.name}</span>
+                          </div>
+                        )}
                         {/* Overlay actions on hover */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewAttachment(att)}
-                            className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
-                            aria-label={`Preview ${att.name}`}
-                            title="Preview"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
+                          {att.kind === "image" ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewAttachment(att)}
+                              className="p-1.5 rounded-lg bg-white/90 text-foreground hover:bg-white transition-colors"
+                              aria-label={`Preview ${att.name}`}
+                              title="Preview"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => handleDownloadAttachment(att)}
@@ -4528,6 +4725,7 @@ function MessageBubble({
   copiedId,
   onRegenerate,
   onRegenerateVariant,
+  onBranch,
   onSpeak,
   speakingId,
   onShare,
@@ -4550,6 +4748,7 @@ function MessageBubble({
   copiedId: string | null;
   onRegenerate?: () => void;
   onRegenerateVariant?: (variant: RegenerateVariant) => void;
+  onBranch?: () => void;
   onSpeak?: (text: string, id: string) => void;
   speakingId?: string | null;
   onShare?: (text: string, id: string) => void;
@@ -4740,6 +4939,31 @@ function MessageBubble({
               {message.evidence_strength}
             </span>
           ) : null}
+          {message.claim_verification?.checked && message.claim_verification.claims.some((c) => c.state === "unverified") ? (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+              title={`Some specific claims in this answer weren't found in the evidence: ${message.claim_verification.claims
+                .filter((c) => c.state === "unverified")
+                .map((c) => c.claim)
+                .join("; ")}`}
+            >
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length} claim
+              {message.claim_verification.claims.filter((c) => c.state === "unverified").length === 1 ? "" : "s"} unverified
+            </span>
+          ) : null}
+          {(() => {
+            const conflict = messageKnowledgeConflict(message);
+            if (!conflict) return null;
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-warning bg-gold-accent/15"
+                title={`Multiple ${conflict.category} documents matched — using the more recently updated one ("${conflict.authoritative_document}")`}
+              >
+                <HistoryIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                Updated info used
+              </span>
+            );
+          })()}
           {message.ai_mode && message.ai_mode !== "normal" && AI_MODES[message.ai_mode as AiMode] ? (
             (() => {
               const modeConfig = AI_MODES[message.ai_mode as AiMode];
@@ -4768,6 +4992,7 @@ function MessageBubble({
           ) : null}
         </div>
         <div
+          data-message-id={message.id ?? ""}
           className={`ai-prose prose prose-sm max-w-none rounded-2xl rounded-tl-md border px-4 py-3 transition-colors ${
             isBlocked
               ? "border-destructive/30 bg-destructive/5"
@@ -4785,7 +5010,7 @@ function MessageBubble({
               ))}
             </div>
           ) : null}
-          <AnswerContent content={message.content} />
+          <AnswerContent content={message.content} onTransform={onTransform} />
         </div>
 
         {/* Action bar — revealed on hover, with labeled tooltips */}
@@ -4845,6 +5070,11 @@ function MessageBubble({
                 </DropdownMenu>
               ) : null}
             </>
+          ) : null}
+          {onBranch ? (
+            <ActionButton onClick={onBranch} label="Branch from here — continue in a new conversation">
+              <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
+            </ActionButton>
           ) : null}
           {onSpeak ? (
             <ActionButton

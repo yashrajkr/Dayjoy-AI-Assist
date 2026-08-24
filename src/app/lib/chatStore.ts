@@ -59,6 +59,13 @@ export type ChatMessage = {
   // grounding classification. Same transient, client-side-only treatment
   // as follow_ups/products/clarification_options above.
   evidence_strength?: string | null;
+  // Citation Verification / Claim-Level Grounding — per-claim breakdown
+  // from the backend. Same transient, client-side-only treatment as the
+  // fields above.
+  claim_verification?: {
+    checked: boolean;
+    claims: Array<{ claim: string; state: "verified" | "ai_analysis" | "assumption" | "unverified" }>;
+  } | null;
 };
 
 /** In-memory fallback when Supabase is unavailable. */
@@ -256,6 +263,23 @@ export async function appendMessage(
   } catch (e) {
     console.warn("[chat] appendMessage failed", e);
     return null;
+  }
+}
+
+/** Answer Editing, selection-scoped (Capability 12) — persists an
+ * in-place content edit (e.g. a selected snippet rewritten and spliced
+ * back into the message) as an UPDATE, not a new row — distinct from
+ * appendMessage, which always inserts. */
+export async function updateMessageContent(messageId: string, content: string): Promise<void> {
+  if (!supabase) {
+    const m = memoryMessages.find((x) => x.id === messageId);
+    if (m) m.content = content;
+    return;
+  }
+  try {
+    await supabase.from("chat_messages").update({ content }).eq("id", messageId).throwOnError();
+  } catch (e) {
+    console.warn("[chat] updateMessageContent failed", e);
   }
 }
 

@@ -91,6 +91,19 @@ async def _insert(table: str, payload: Dict[str, Any], token: Optional[str] = No
         return None
 
 
+async def _update(table: str, row_id: str, payload: Dict[str, Any], token: Optional[str] = None) -> bool:
+    if not SUPABASE_URL:
+        return False
+    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{row_id}"
+    headers = _svc_headers(token, json_body=True)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.patch(url, headers=headers, json=payload)
+            return resp.status_code < 400
+    except Exception:
+        return False
+
+
 class ArtifactCreate(BaseModel):
     artifact_type: str = Field(..., description=f"One of {ARTIFACT_TYPES}")
     title: str
@@ -219,6 +232,37 @@ async def edit_artifact(artifact_id: str, req: ArtifactCreate, request: Request)
     if row is None:
         raise HTTPException(status_code=502, detail="Failed to save new version")
     return row
+
+
+class ChecklistStateUpdate(BaseModel):
+    checked_items: List[int] = Field(default_factory=list, description="Indices of checked checklist items")
+
+
+@router.patch("/{artifact_id}/checklist-state")
+async def update_checklist_state(artifact_id: str, req: ChecklistStateUpdate, request: Request) -> Dict[str, Any]:
+    """Interactive Artifacts (Capability 31) — persists which checklist
+    items are checked. Deliberately the ONE exception to "never update a
+    row in place" (every other write here inserts a new version): ticking
+    a checkbox is ephemeral UI interaction state, not a content revision
+    the user consciously authored, so it doesn't need its own version
+    entry — checking off 10 items would otherwise create 10 new version
+    rows for what the user experiences as one document."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+
+    existing_rows = await _select("artifacts", filters={"id": artifact_id, "user_id": user_id}, limit=1, token=token)
+    if not existing_rows:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    existing = existing_rows[0]
+    if existing.get("artifact_type") != "checklist":
+        raise HTTPException(status_code=400, detail="Checklist state only applies to checklist artifacts")
+
+    content_structured = dict(existing.get("content_structured") or {})
+    content_structured["checked_items"] = req.checked_items
+    ok = await _update("artifacts", artifact_id, {"content_structured": content_structured}, token=token)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Failed to save checklist state")
+    return {"artifact_id": artifact_id, "checked_items": req.checked_items}
 
 
 @router.post("/{artifact_id}/continue")
