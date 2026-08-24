@@ -71,7 +71,7 @@ _AGENTS: Dict[str, AgentSpec] = {
     AGENT_PRODUCT: AgentSpec(
         name=AGENT_PRODUCT,
         responsibility="Product pricing, ingredients, packaging, comparisons, recommendations.",
-        allowed_tools=["pricing_lookup", "product_recommendation", "dayjoy_kb"],
+        allowed_tools=["pricing_lookup", "product_recommendation", "product_graph", "dayjoy_kb"],
         guidance="Answer only with verified product facts and pricing from the structured data provided; never state a price or health claim that isn't explicitly present in the evidence.",
     ),
     AGENT_TRAINING: AgentSpec(
@@ -95,7 +95,7 @@ _AGENTS: Dict[str, AgentSpec] = {
     AGENT_RESEARCH: AgentSpec(
         name=AGENT_RESEARCH,
         responsibility="Comparisons and questions needing external/current information.",
-        allowed_tools=["dayjoy_kb", "web_search"],
+        allowed_tools=["dayjoy_kb", "web_search", "product_graph"],
         guidance="Clearly attribute which claims come from Dayjoy's own knowledge versus outside sources — never blend them without saying which is which.",
     ),
     AGENT_DOCUMENT: AgentSpec(
