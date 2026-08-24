@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic,
@@ -232,6 +232,11 @@ export function VoiceAssistant() {
   const location = useLocation();
   const { currentUser, role } = useAuth();
   const isMobile = useIsMobile();
+  // UserLayout hands its mobile drawer opener down through Outlet context —
+  // the mobile voice screen is a full-screen overlay with no header of its
+  // own, so its "menu" button needs this to open the real app sidebar
+  // (all sections) instead of the voice page just closing/backing out.
+  const outletCtx = useOutletContext<{ openDrawer: () => void } | undefined>();
 
   const [settings, setSettings] = useState<PersistedSettings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
@@ -669,12 +674,26 @@ export function VoiceAssistant() {
   }, [voice, settings.autoSummarize, turns, role]);
 
   const startNewSession = useCallback(() => {
+    // Full reset — a previous run left `ended` toggling the bottom bar
+    // between "New session"/"End session" correctly, but paused,
+    // pendingConfirm, toolStatus, and lastLatency all carried over from the
+    // old session, so a fresh session could open already "paused" or with a
+    // stale confirmation waiting, which looked like "New session did
+    // nothing."
     conversationIdRef.current = null;
+    abortRef.current?.abort();
+    voice.stopSpeaking();
+    voice.stopListening();
     setTurns([]);
     setSummary(null);
     setEnded(false);
     setStreamingText("");
-  }, []);
+    setToolStatus(null);
+    setPaused(false);
+    setPendingConfirm(null);
+    setLastLatency(null);
+    setSummarizing(false);
+  }, [voice]);
 
   // Executes the pending confirmable action for real (Part 36: Preview →
   // Confirm → Execute) — currently just support-ticket creation, using the
@@ -968,6 +987,7 @@ export function VoiceAssistant() {
         ended={ended}
         onClose={() => navigate("/")}
         onSwitchToChat={() => navigate("/")}
+        onOpenDrawer={outletCtx?.openDrawer}
         settings={settings}
         setSettings={setSettings}
         languages={LANGUAGES}
@@ -979,8 +999,6 @@ export function VoiceAssistant() {
         thinking={thinking}
         toolStatusLabel={toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? null : null}
         aiServiceOnline={aiServiceOnline}
-        quickActions={QUICK_ACTIONS}
-        onQuickAction={(prompt: string) => void handleUserUtterance(prompt)}
         paused={paused}
         onTogglePause={() => {
           if (paused) {
