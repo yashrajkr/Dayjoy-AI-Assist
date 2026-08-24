@@ -241,3 +241,63 @@ def test_continue_nonexistent_artifact_returns_404(authed_client, monkeypatch):
     _mock_httpx(monkeypatch, lambda method, url, body: _FakeResponse(200, []))
     res = authed_client.post("/artifacts/does-not-exist/continue", json={"instruction": "Make it shorter."})
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Interactive Artifacts — checklist state (Capability 31)
+# ---------------------------------------------------------------------------
+
+
+def test_update_checklist_state_persists_in_place_not_new_version(authed_client, monkeypatch):
+    calls = []
+
+    def handler(method, url, body):
+        calls.append((method, url, body))
+        if method == "GET":
+            return _FakeResponse(200, [{
+                "id": "art-1", "user_id": "test-user-id", "artifact_type": "checklist",
+                "content_structured": None,
+            }])
+        return _FakeResponse(200, [{}])
+
+    _mock_httpx(monkeypatch, handler)
+    res = authed_client.patch("/artifacts/art-1/checklist-state", json={"checked_items": [0, 2]})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["checked_items"] == [0, 2]
+
+    patch_calls = [c for c in calls if c[0] == "PATCH"]
+    assert len(patch_calls) == 1  # in-place update, not an INSERT of a new version
+    assert patch_calls[0][2]["content_structured"]["checked_items"] == [0, 2]
+    assert not any(c[0] == "POST" for c in calls)
+
+
+def test_update_checklist_state_rejects_non_checklist_artifact(authed_client, monkeypatch):
+    def handler(method, url, body):
+        return _FakeResponse(200, [{"id": "art-1", "user_id": "test-user-id", "artifact_type": "action_plan"}])
+
+    _mock_httpx(monkeypatch, handler)
+    res = authed_client.patch("/artifacts/art-1/checklist-state", json={"checked_items": [0]})
+    assert res.status_code == 400
+
+
+def test_update_checklist_state_nonexistent_artifact_returns_404(authed_client, monkeypatch):
+    _mock_httpx(monkeypatch, lambda method, url, body: _FakeResponse(200, []))
+    res = authed_client.patch("/artifacts/does-not-exist/checklist-state", json={"checked_items": [0]})
+    assert res.status_code == 404
+
+
+def test_update_checklist_state_requires_authentication():
+    from fastapi import HTTPException
+
+    async def _deny(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    client = TestClient(app)
+    orig = artifacts_api.require_user_id
+    artifacts_api.require_user_id = _deny
+    try:
+        res = client.patch("/artifacts/art-1/checklist-state", json={"checked_items": [0]})
+        assert res.status_code == 401
+    finally:
+        artifacts_api.require_user_id = orig

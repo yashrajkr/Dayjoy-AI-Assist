@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -8,9 +8,93 @@ import {
 import { AppHeader } from "../common/AppHeader";
 import { EmptyState, ErrorState } from "../common/AdminUI";
 import {
-  listArtifacts, listArtifactVersions, continueArtifact, createReminder,
+  listArtifacts, listArtifactVersions, continueArtifact, createReminder, updateChecklistState,
   type Artifact, type ArtifactType, type ReminderRecurrence,
 } from "../../../lib/api";
+
+/** Parses standard GFM checklist syntax ("- [ ] item" / "- [x] item") out
+ * of a checklist artifact's markdown content into individually toggleable
+ * items — plain ReactMarkdown renders these as inert (disabled) checkbox
+ * glyphs, not something the user can actually click. */
+function parseChecklistItems(content: string): string[] {
+  const lines = content.split("\n");
+  const items: string[] = [];
+  for (const line of lines) {
+    const match = line.match(/^\s*-\s*\[[ xX]\]\s*(.+)$/);
+    if (match) items.push(match[1].trim());
+  }
+  return items;
+}
+
+/** Interactive Artifacts (Capability 31) — real toggleable checkboxes for
+ * a checklist artifact, persisted server-side (in place, no new version —
+ * see updateChecklistState's own docstring). Falls back to seeding
+ * checked state from the markdown's own "[x]" markers on first load, then
+ * content_structured.checked_items becomes the source of truth. */
+function InteractiveChecklist({ artifact }: { artifact: Artifact }) {
+  const items = useMemo(() => parseChecklistItems(artifact.content), [artifact.content]);
+  const initialChecked = useMemo(() => {
+    const structured = artifact.content_structured as { checked_items?: number[] } | null | undefined;
+    if (structured?.checked_items) return new Set(structured.checked_items);
+    // Seed from the markdown's own [x] markers the first time.
+    const fromMarkdown = new Set<number>();
+    artifact.content.split("\n").forEach((line, i) => {
+      if (/^\s*-\s*\[[xX]\]/.test(line)) fromMarkdown.add(i);
+    });
+    return fromMarkdown;
+  }, [artifact.content, artifact.content_structured]);
+  const [checked, setChecked] = useState<Set<number>>(initialChecked);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = useCallback(
+    async (idx: number) => {
+      const next = new Set(checked);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      setChecked(next);
+      setSaving(true);
+      try {
+        await updateChecklistState(artifact.id, Array.from(next));
+      } catch {
+        // Best-effort — the optimistic UI state stands even if the save
+        // failed; the next successful toggle will retry persistence.
+      } finally {
+        setSaving(false);
+      }
+    },
+    [artifact.id, checked],
+  );
+
+  if (items.length === 0) return <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>;
+
+  const doneCount = items.filter((_, i) => checked.has(i)).length;
+
+  return (
+    <div className="not-prose">
+      <p className="text-xs text-muted-foreground mb-2">
+        {doneCount} of {items.length} done {saving ? "· saving…" : ""}
+      </p>
+      <ul className="space-y-1.5">
+        {items.map((item, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => toggle(i)}
+              className={`mt-0.5 w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-colors ${
+                checked.has(i) ? "bg-primary border-primary text-primary-foreground" : "border-border"
+              }`}
+              aria-label={checked.has(i) ? `Mark "${item}" as not done` : `Mark "${item}" as done`}
+              aria-pressed={checked.has(i)}
+            >
+              {checked.has(i) ? <Check className="w-3 h-3" aria-hidden="true" /> : null}
+            </button>
+            <span className={`text-sm ${checked.has(i) ? "line-through text-muted-foreground" : ""}`}>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /**
  * Saved Work — Persistent Canvas / Workspace (Capability 30), Interactive
@@ -171,7 +255,11 @@ function ArtifactDetail({ artifact, onBack, onUpdated }: {
           </span>
         </div>
         <div className="prose prose-sm dark:prose-invert max-w-none mt-3">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>
+          {artifact.artifact_type === "checklist" ? (
+            <InteractiveChecklist artifact={artifact} />
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>
+          )}
         </div>
       </div>
 

@@ -1706,6 +1706,13 @@ export async function editArtifact(
   return distJson("PATCH", `/artifacts/${artifactId}`, payload);
 }
 
+/** Interactive Artifacts (Capability 31) — persists checked checklist item
+ * indices in place (no new version row — see backend's own docstring for
+ * why ticking a checkbox isn't treated as a content revision). */
+export async function updateChecklistState(artifactId: string, checkedItems: number[]): Promise<{ checked_items: number[] }> {
+  return distJson("PATCH", `/artifacts/${artifactId}/checklist-state`, { checked_items: checkedItems });
+}
+
 /** Task Continuation — AI-assisted edit ("make week 2 more aggressive")
  * against an existing artifact, creating a new version. */
 export async function continueArtifact(artifactId: string, instruction: string): Promise<Artifact> {
