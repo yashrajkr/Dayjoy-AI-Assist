@@ -7,8 +7,7 @@ import { LineChart, ProgressBar, type LineChartPoint } from "../common/Charts";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { getProducts, type Product } from "../../lib/db";
-import { isSupabaseConfigured } from "../../lib/supabaseClient";
+import { getProductsDiagnostic, type Product } from "../../lib/db";
 import { getPushSubscriptionState, subscribeToPush, isNotificationSupported } from "../../lib/pushNotifications";
 import {
   customerListWellnessGoals, customerCreateWellnessGoal, customerUpdateWellnessGoal, customerDeleteWellnessGoal,
@@ -254,6 +253,7 @@ export function WellnessJourney() {
   // most reminders never need this list, so it isn't fetched up front.
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productsLoadFailed, setProductsLoadFailed] = useState(false);
+  const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
 
   const load = useCallback(async () => {
@@ -350,30 +350,25 @@ export function WellnessJourney() {
   // Products are fetched lazily the first time a "product"/"medication"
   // reminder type is selected — most reminder types never need this list.
   //
-  // getProducts() silently falls back to a handful of demo products on ANY
-  // query error (see its own implementation in lib/db.ts) — sensible for a
-  // page that must render something, but it meant a real transient failure
-  // here was indistinguishable from "there genuinely are only a few
-  // products," and the .then() with no .catch meant an outright rejection
-  // left `products` stuck at the `[]` "loading" sentinel forever, reading
-  // as "no products ever show up." `force` re-runs the fetch (Retry button).
+  // getProducts() (used elsewhere in the app) silently falls back to a
+  // handful of demo products on ANY query error, by design, so every other
+  // page never crashes over it — but that also makes "the real catalog
+  // genuinely has few products" and "the query actually failed"
+  // indistinguishable to any UI built on it. getProductsDiagnostic()
+  // (lib/db.ts) runs the exact same query but reports whether the
+  // fallback fired and the real error message, so this picker can show
+  // an honest "couldn't load — here's why" instead of guessing from the
+  // result size. `force` re-runs the fetch (Retry button).
   const loadProducts = async (force: boolean) => {
     if (products !== null && !force) return;
     setProducts([]); // "loading" sentinel
     setProductsLoadFailed(false);
-    try {
-      const rows = await getProducts();
-      setProducts(rows);
-      // Supabase is configured but we got a suspiciously small result —
-      // matches getProducts()'s own demo-data fallback size, not a real
-      // empty catalog. Surface it instead of silently showing 4 products
-      // as if that were the whole catalog.
-      if (isSupabaseConfigured() && rows.length > 0 && rows.length <= 4) {
-        setProductsLoadFailed(true);
-      }
-    } catch {
-      setProducts([]);
+    setProductsLoadError(null);
+    const { products: rows, usedFallback, error: loadError } = await getProductsDiagnostic();
+    setProducts(rows);
+    if (usedFallback) {
       setProductsLoadFailed(true);
+      setProductsLoadError(loadError);
     }
   };
   const ensureProductsLoaded = () => void loadProducts(false);
@@ -547,7 +542,9 @@ export function WellnessJourney() {
       {/* Goals tab */}
       {tab === "goals" && !loading ? (
         <>
-          <Button type="button" className="mb-3" onClick={() => setGoalModal(true)}><Plus className="w-4 h-4" /> Add Goal</Button>
+          <div className="flex justify-center mb-3">
+            <Button type="button" onClick={() => setGoalModal(true)}><Plus className="w-4 h-4" /> Add Goal</Button>
+          </div>
           {goals.length === 0 ? <Card className="shadow-none"><EmptyState title="No goals yet" description="Set your first wellness goal to start your journey." icon={<Target className="w-5 h-5" />} /></Card> : (
             <div className="space-y-2">
               {goals.map((g) => {
@@ -592,7 +589,9 @@ export function WellnessJourney() {
       {/* Activities tab */}
       {tab === "activities" && !loading ? (
         <>
-          <Button type="button" className="mb-3" onClick={() => setActModal(true)}><Plus className="w-4 h-4" /> Log Activity</Button>
+          <div className="flex justify-center mb-3">
+            <Button type="button" onClick={() => setActModal(true)}><Plus className="w-4 h-4" /> Log Activity</Button>
+          </div>
           {trendData.length > 0 ? (
             <Card className="p-4 mb-3 shadow-none">
               <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-primary" /> Activity Trend</h3>
@@ -618,7 +617,9 @@ export function WellnessJourney() {
       {/* Reminders tab */}
       {tab === "reminders" && !loading ? (
         <>
-          <Button type="button" className="mb-3" onClick={() => { setRemModal(true); ensureProductsLoaded(); }}><Plus className="w-4 h-4" /> Add Reminder</Button>
+          <div className="flex justify-center mb-3">
+            <Button type="button" onClick={() => { setRemModal(true); ensureProductsLoaded(); }}><Plus className="w-4 h-4" /> Add Reminder</Button>
+          </div>
           {reminders.length === 0 ? <Card className="shadow-none"><EmptyState title="No reminders" description="Set reminders for product usage, medications, or activities." icon={<Bell className="w-5 h-5" />} /></Card> : (
             <div className="space-y-2">
               {reminders.map((r) => (
@@ -804,11 +805,14 @@ export function WellnessJourney() {
                         placeholder="Search Dayjoy products…" className="w-full pl-8 pr-3 py-2 rounded-lg border border-border bg-card text-sm" />
                     </div>
                     {productsLoadFailed ? (
-                      <div className="mt-1.5 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-destructive/30 bg-destructive/5">
-                        <p className="text-[11px] text-destructive">Couldn't load the full product list.</p>
-                        <button type="button" onClick={() => void loadProducts(true)} className="text-[11px] font-medium text-destructive underline shrink-0">
-                          Retry
-                        </button>
+                      <div className="mt-1.5 px-3 py-2 rounded-lg border border-destructive/30 bg-destructive/5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] text-destructive font-medium">Couldn't load the full product list — showing a few defaults.</p>
+                          <button type="button" onClick={() => void loadProducts(true)} className="text-[11px] font-medium text-destructive underline shrink-0">
+                            Retry
+                          </button>
+                        </div>
+                        {productsLoadError ? <p className="text-[10px] text-destructive/70 mt-1">{productsLoadError}</p> : null}
                       </div>
                     ) : isLoading ? (
                       <p className="text-[11px] text-muted-foreground mt-1">Loading products…</p>

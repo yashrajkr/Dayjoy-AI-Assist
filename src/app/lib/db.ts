@@ -246,6 +246,50 @@ export async function getProducts(): Promise<Product[]> {
   return withImages.length ? withImages : mapDemoProducts();
 }
 
+/**
+ * Same query as `getProducts()`, but tells the caller WHETHER the demo
+ * fallback actually fired and WHY — `getProducts()` itself swallows the
+ * distinction (by design, so every existing caller can treat it as a
+ * plain product list) which meant a real query failure and "there are
+ * legitimately 4 products" were indistinguishable to any UI built on top
+ * of it. Used by surfaces where knowing "did this actually fail" matters
+ * (the Wellness Journey reminder product picker) rather than guessing
+ * from the result size.
+ */
+export async function getProductsDiagnostic(): Promise<{
+  products: Product[];
+  usedFallback: boolean;
+  error: string | null;
+}> {
+  if (isMissingSupabase()) {
+    return { products: mapDemoProducts(), usedFallback: true, error: "Supabase is not configured in this environment." };
+  }
+  try {
+    const { data, error } = await client()
+      .from("products")
+      .select("*, product_images(image_url, is_primary, display_order)")
+      .eq("approval_status", "approved")
+      .order("created_at", { ascending: false });
+    if (error) {
+      fallbackWarn("getProductsDiagnostic", error);
+      return { products: mapDemoProducts(), usedFallback: true, error: error.message };
+    }
+    const rows = (data ?? []) as (Product & { product_images?: ProductImageRow[] })[];
+    const withImages = rows.map(({ product_images, ...product }) => ({
+      ...product,
+      image_url: pickPrimaryImage(product_images),
+    }));
+    if (withImages.length === 0) {
+      return { products: mapDemoProducts(), usedFallback: true, error: "The approved product catalog returned zero rows." };
+    }
+    return { products: withImages, usedFallback: false, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    fallbackWarn("getProductsDiagnostic", err);
+    return { products: mapDemoProducts(), usedFallback: true, error: message };
+  }
+}
+
 /** Lists the raw `product_images` rows for one product (admin edit view) —
  * unlike `getProducts()`, this returns every image, not just the flattened
  * primary one, so an admin can see and manage the full set. */

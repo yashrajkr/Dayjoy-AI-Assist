@@ -219,3 +219,35 @@ in this codebase, not a functional issue). Backend fully syntax-checked.
 Journey state derivation verified against 8 synthetic scenarios directly
 in the running dev server. Product picker verified live with demo data
 (sorted, count shown, retry path present). Committed and pushed to `main`.
+
+---
+
+# Round 4 (2026-08-24, compact)
+
+Investigated the screenshot via the Vercel + Supabase APIs directly (not
+guessing): confirmed the live `dayjoy-ai-assist.vercel.app` deployment
+already had Round 3's fix, Supabase IS configured in production (URL +
+anon key both present in the deployed JS bundle), and the production
+database genuinely has 185 approved products — so the picker's silent
+fallback to 4 demo products was a real, unexplained query failure in that
+environment, not a config issue and not something the count-based
+heuristic could reliably explain.
+
+**Fixed properly**: replaced the "≤4 results = probably failed" guess with
+`getProductsDiagnostic()` (`lib/db.ts`) — runs the exact same query but
+reports precisely whether the fallback fired and the real underlying error
+message, instead of inferring it from result size. The picker now shows
+that literal error text next to Retry, so the next time this happens the
+actual cause (RLS, network, malformed query) is visible instead of guessed
+at. Verified locally: correctly reports "Supabase is not configured in
+this environment" here (accurate for this dev sandbox); in production it
+will show the real Postgrest/network error instead.
+
+**Also fixed**: Add Goal / Log Activity / Add Reminder buttons are now
+centered (were left-aligned) — verified 0px offset from center in the
+browser.
+
+**Still not done**: unchanged from Round 3 — no Wellness Profile, daily
+plan, check-in flow, Recovery Mode, milestones, wellness score, weekly/
+monthly reviews. Not attempted this round; the round was spent on the
+reported bug + the button-alignment fix, per your priority.
