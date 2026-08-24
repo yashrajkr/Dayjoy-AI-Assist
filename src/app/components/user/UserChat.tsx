@@ -795,7 +795,9 @@ export type TransformKind =
   | "compare"
   | "hinglish"
   | "example"
-  | "translate";
+  | "translate"
+  | "rewrite"
+  | "expand";
 
 /**
  * Advanced Regeneration Controls — variants beyond a plain "try again",
@@ -846,6 +848,8 @@ const TRANSFORM_PROMPTS: Record<TransformKind, (text: string) => string> = {
   hinglish: (t) => `Rewrite this in Hinglish (Hindi in Latin script, mixed with English the way it's commonly spoken):\n\n"""${t}"""`,
   example: (t) => `Give a concrete, realistic example that illustrates this:\n\n"""${t}"""`,
   translate: (t) => `Translate this into Hindi:\n\n"""${t}"""`,
+  rewrite: (t) => `Rewrite this to be clearer and better-worded, keeping the same meaning:\n\n"""${t}"""`,
+  expand: (t) => `Expand on this with more context and supporting detail:\n\n"""${t}"""`,
 };
 
 function buildTransformPrompt(kind: TransformKind, text: string): string {
@@ -1141,6 +1145,13 @@ export function UserChat() {
   // Context Scope Control (Capability 15) — whether this conversation may
   // fall back to a live web search. Session-scoped, same as knowledgeScope.
   const [allowWebSearch, setAllowWebSearch] = useState(true);
+  // Smart Text Selection (Capability 34) — a floating toolbar appears when
+  // the user selects text WITHIN an assistant answer (scoped via the
+  // ".ai-prose" class on that bubble's content wrapper, so selecting a
+  // user message or page chrome never triggers it). Reuses the existing
+  // TransformKind machinery (handleTransform already accepts arbitrary
+  // text, not just the whole message) — just applied to the selection.
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number } | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   // AI Mode System — mode picker panel (search + list) opened from the
@@ -1841,6 +1852,34 @@ export function UserChat() {
       void handleSend(prompt);
     },
     [handleSend],
+  );
+
+  // ---- Smart Text Selection (Capability 34) ----
+  const handleMessagesMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (!selection || selection.rangeCount === 0 || text.length < 3) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const anchorEl =
+      selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
+    if (!anchorEl?.closest(".ai-prose")) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setSelectionToolbar({ text: text.slice(0, 3000), x: rect.left + rect.width / 2, y: rect.top });
+  }, []);
+
+  const handleSelectionTransform = useCallback(
+    (kind: TransformKind) => {
+      if (!selectionToolbar) return;
+      handleTransform(kind, selectionToolbar.text);
+      setSelectionToolbar(null);
+      window.getSelection()?.removeAllRanges();
+    },
+    [selectionToolbar, handleTransform],
   );
 
   // ---- Save an assistant answer as a distributor follow-up task ----
@@ -2684,6 +2723,7 @@ export function UserChat() {
           // narrow phones and surface a stray horizontal scrollbar that
           // scrolled nothing.
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-6"
+          onMouseUp={handleMessagesMouseUp}
           aria-live="polite"
           aria-relevant="additions text"
         >
@@ -3458,6 +3498,51 @@ export function UserChat() {
         onExtracted={handleOcrExtracted}
         title="Extract text from image"
       />
+
+      {/* Smart Text Selection (Capability 34) — floating toolbar over a
+          text selection inside an assistant answer. */}
+      {selectionToolbar ? (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 rounded-xl border border-border bg-card shadow-xl px-1 py-1"
+          style={{ left: selectionToolbar.x, top: Math.max(8, selectionToolbar.y - 44), transform: "translateX(-50%)" }}
+        >
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("detail")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Explain
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("simplify")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Simplify
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("rewrite")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Rewrite
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("expand")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Expand
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectionTransform("translate")}
+            className="px-2 py-1 rounded-lg text-xs font-medium hover:bg-accent/60"
+          >
+            Translate
+          </button>
+        </div>
+      ) : null}
 
       {/* ============================= Sources / Related panel (overlay drawer) ============================= */}
       {/* Default CLOSED. Opens as a right-side overlay so it doesn't squeeze the chat area. */}
