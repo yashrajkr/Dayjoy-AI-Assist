@@ -34,12 +34,17 @@ import {
   Bug,
   Pause,
   Play,
+  Camera as CameraIcon,
+  MonitorUp,
+  ImageOff,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import { AppHeader } from "../common/AppHeader";
 import { useVoice, type VoiceOptions } from "../../lib/useVoice";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { VoiceAssistantMobile } from "./VoiceAssistantMobile";
+import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
+import { captureScreenFrame } from "../../lib/captureScreenFrame";
 import { spokenify, splitSentences, toConciseSpeech } from "../../lib/voiceText";
 import { parseVoiceCommand, isBackchannelOnly, type VoiceCommand } from "../../lib/voiceCommands";
 import { BRAND } from "../../lib/brand";
@@ -77,6 +82,8 @@ type Turn = {
   sources?: ChatSource[] | string[];
   answerSource?: string | null;
   productCards?: ChatProductCard[] | null;
+  /** Set when this question carried a captured photo/screen frame — real vision analysis, see pendingImage. */
+  attachedImageSource?: "camera" | "screen" | null;
 };
 
 type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "paused" | "error" | "offline";
@@ -217,6 +224,14 @@ function formatTime(iso: string): string {
   }
 }
 
+/** Formats a millisecond duration as "Mm Ss" — used for real session duration (Part 44), never a fabricated number. */
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
 /**
  * VoiceAssistant — flagship voice-first interface for Dayjoy AI Assist.
  *
@@ -274,11 +289,37 @@ export function VoiceAssistant() {
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [endedDuration, setEndedDuration] = useState<string | null>(null);
   const [aiServiceOnline, setAiServiceOnline] = useState<boolean | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
   const [lastLatency, setLastLatency] = useState<{ sttToRequest: number; firstToken: number; total: number } | null>(
     null,
   );
+  // Multimodal voice input (Part 20-22): a captured photo or screen frame
+  // waits here until the user's next spoken/typed question, at which point
+  // it rides along as `image_data_url` on the same real /chat/stream
+  // request UserChat's own camera flow already uses — genuine vision
+  // analysis via the existing backend endpoint, not a stub.
+  const [pendingImage, setPendingImage] = useState<{ dataUrl: string; source: "camera" | "screen" } | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [screenCaptureError, setScreenCaptureError] = useState<string | null>(null);
+  const [capturingScreen, setCapturingScreen] = useState(false);
+
+  // Real session metadata (Part 44) — an id + start time that exist for the
+  // lifetime of this component instance, not fabricated display strings.
+  const sessionIdRef = useRef<string>(
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `voice-${Date.now()}`,
+  );
+  const sessionStartedAtRef = useRef<number>(Date.now());
+  // Ticks once a second, only while the diagnostics panel is actually open,
+  // so the "Duration" line is real elapsed time rather than a value frozen
+  // at whenever the settings modal happened to be opened.
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!settingsOpen || !settings.showDiagnostics) return;
+    const interval = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [settingsOpen, settings.showDiagnostics]);
 
   // Real "is the AI service reachable" check — distinct from "does this
   // browser support speech APIs" (voice.supported). Both are shown
@@ -423,12 +464,19 @@ export function VoiceAssistant() {
 
       const convId = await ensureConversation();
       const now = new Date().toISOString();
+      // A captured photo/screen frame attaches to exactly the next question
+      // and is then consumed — grabbed here (not re-read later) so a second
+      // utterance that arrives before this one finishes can't accidentally
+      // reuse or race over the same image.
+      const imageForThisTurn = pendingImage;
+      if (imageForThisTurn) setPendingImage(null);
       const userTurn: Turn = {
         id: `u-${Date.now()}`,
         role: "user",
         content: trimmed,
         timestamp: now,
         language: currentLanguageLabel,
+        attachedImageSource: imageForThisTurn?.source ?? null,
       };
       setTurns((prev) => [...prev, userTurn]);
       setThinking(true);
@@ -478,6 +526,7 @@ export function VoiceAssistant() {
             role: role ?? "customer",
             language: currentLanguageLabel.split(" ")[0],
             conversation_id: convId ?? undefined,
+            image_data_url: imageForThisTurn?.dataUrl,
           },
           (chunk) => {
             if (isStale()) return;
@@ -581,7 +630,7 @@ export function VoiceAssistant() {
         setToolStatus(null);
       }
     },
-    [ensureConversation, currentLanguageLabel, role, voice, turns.length, settings.maxSpokenSentences],
+    [ensureConversation, currentLanguageLabel, role, voice, turns.length, settings.maxSpokenSentences, pendingImage],
   );
 
   // Hands-free mode: automatically resume listening once the AI stops
@@ -630,6 +679,38 @@ export function VoiceAssistant() {
     voice.toggleMute();
   }, [voice]);
 
+  // Camera capture (Part 22) — real photo, attached to the next question.
+  const handleCameraCapture = useCallback((img: CapturedImage) => {
+    setPendingImage({ dataUrl: img.dataUrl, source: "camera" });
+    setCameraOpen(false);
+  }, []);
+
+  // Screen capture (Part 21) — real single-frame getDisplayMedia grab, see
+  // captureScreenFrame.ts for why this is single-frame rather than a
+  // continuous share.
+  const handleScreenCapture = useCallback(async () => {
+    setScreenCaptureError(null);
+    setCapturingScreen(true);
+    try {
+      const result = await captureScreenFrame();
+      if (result) setPendingImage({ dataUrl: result.dataUrl, source: "screen" });
+    } catch (e) {
+      // NotAllowedError fires when the user cancels the share picker —
+      // that's a normal choice, not a failure worth surfacing as an error.
+      const err = e as DOMException;
+      if (err.name !== "NotAllowedError") {
+        console.warn("[voice-assistant] screen capture failed:", e);
+        setScreenCaptureError(
+          err.message?.includes("supported")
+            ? err.message
+            : "Couldn't capture the screen. Your browser may not support screen sharing.",
+        );
+      }
+    } finally {
+      setCapturingScreen(false);
+    }
+  }, []);
+
   // The composer's voice-assistant button navigates here with
   // `state: { autoStart: true }` — that click IS the user gesture, so it's
   // safe to open the mic immediately rather than waiting for a second tap.
@@ -652,6 +733,7 @@ export function VoiceAssistant() {
     voice.stopSpeaking();
     abortRef.current?.abort();
     setEnded(true);
+    setEndedDuration(formatDuration(Date.now() - sessionStartedAtRef.current));
 
     if (settings.autoSummarize && turns.length > 0) {
       setSummarizing(true);
@@ -687,12 +769,19 @@ export function VoiceAssistant() {
     setTurns([]);
     setSummary(null);
     setEnded(false);
+    setEndedDuration(null);
     setStreamingText("");
     setToolStatus(null);
     setPaused(false);
     setPendingConfirm(null);
     setLastLatency(null);
     setSummarizing(false);
+    setPendingImage(null);
+    // A "new session" really is a new session — real start time and id, not
+    // the old session's clock still running underneath.
+    sessionStartedAtRef.current = Date.now();
+    sessionIdRef.current =
+      typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `voice-${Date.now()}`;
   }, [voice]);
 
   // Executes the pending confirmable action for real (Part 36: Preview →
@@ -975,42 +1064,56 @@ export function VoiceAssistant() {
 
   if (isMobile) {
     return (
-      <VoiceAssistantMobile
-        phase={phase}
-        orbState={orbState}
-        phaseCopy={phaseCopy[phase]}
-        voice={voice}
-        toggleMic={toggleMic}
-        onSpeakerTap={handleSpeakerTap}
-        endSession={() => void endSession()}
-        startNewSession={startNewSession}
-        ended={ended}
-        onClose={() => navigate("/")}
-        onSwitchToChat={() => navigate("/")}
-        onOpenDrawer={outletCtx?.openDrawer}
-        settings={settings}
-        setSettings={setSettings}
-        languages={LANGUAGES}
-        langVoices={langVoices}
-        selectedVoiceLabel={selectedVoiceLabel}
-        currentLanguageLabel={currentLanguageLabel}
-        turns={turns}
-        streamingText={streamingText}
-        thinking={thinking}
-        toolStatusLabel={toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? null : null}
-        aiServiceOnline={aiServiceOnline}
-        paused={paused}
-        onTogglePause={() => {
-          if (paused) {
-            setPaused(false);
-            voice.startListening();
-          } else {
-            voice.stopSpeaking();
-            voice.stopListening();
-            setPaused(true);
-          }
-        }}
-      />
+      <>
+        <VoiceAssistantMobile
+          phase={phase}
+          orbState={orbState}
+          phaseCopy={phaseCopy[phase]}
+          voice={voice}
+          toggleMic={toggleMic}
+          onSpeakerTap={handleSpeakerTap}
+          endSession={() => void endSession()}
+          startNewSession={startNewSession}
+          ended={ended}
+          onClose={() => navigate("/")}
+          onSwitchToChat={() => navigate("/")}
+          onOpenDrawer={outletCtx?.openDrawer}
+          settings={settings}
+          setSettings={setSettings}
+          languages={LANGUAGES}
+          langVoices={langVoices}
+          selectedVoiceLabel={selectedVoiceLabel}
+          currentLanguageLabel={currentLanguageLabel}
+          turns={turns}
+          streamingText={streamingText}
+          thinking={thinking}
+          toolStatusLabel={toolStatus ? TOOL_STATUS_LABELS[toolStatus] ?? null : null}
+          aiServiceOnline={aiServiceOnline}
+          paused={paused}
+          onTogglePause={() => {
+            if (paused) {
+              setPaused(false);
+              voice.startListening();
+            } else {
+              voice.stopSpeaking();
+              voice.stopListening();
+              setPaused(true);
+            }
+          }}
+          pendingImage={pendingImage}
+          onClearPendingImage={() => setPendingImage(null)}
+          onOpenCamera={() => setCameraOpen(true)}
+          onScreenCapture={() => void handleScreenCapture()}
+          capturingScreen={capturingScreen}
+        />
+        <CameraCapture
+          open={cameraOpen}
+          onClose={() => setCameraOpen(false)}
+          onCapture={handleCameraCapture}
+          title="Show DayJoy AI a photo"
+          facingMode="environment"
+        />
+      </>
     );
   }
 
@@ -1151,6 +1254,30 @@ export function VoiceAssistant() {
             </div>
           ) : null}
 
+          {/* Pending image — a captured photo/screen frame waiting to ride
+              along with the next question. Real thumbnail of what was
+              actually captured, not a placeholder. */}
+          {pendingImage ? (
+            <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-xl border border-border bg-accent/30">
+              <img
+                src={pendingImage.dataUrl}
+                alt={pendingImage.source === "camera" ? "Captured photo" : "Captured screen"}
+                className="w-10 h-10 rounded-lg object-cover border border-border"
+              />
+              <span className="text-xs text-muted-foreground">
+                {pendingImage.source === "camera" ? "Photo" : "Screen"} attached — ask your question and I'll look at it.
+              </span>
+              <button
+                type="button"
+                onClick={() => setPendingImage(null)}
+                aria-label="Remove attached image"
+                className="p-1 rounded-md hover:bg-accent/60"
+              >
+                <ImageOff className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+
           {/* Inline controls row */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-8">
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} title="Language">
@@ -1160,6 +1287,20 @@ export function VoiceAssistant() {
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} title="Voice settings">
               <Volume2 className="w-4 h-4" aria-hidden="true" />
               Voice: {selectedVoiceLabel.split(" ")[0]}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCameraOpen(true)} title="Show me a photo">
+              <CameraIcon className="w-4 h-4" aria-hidden="true" />
+              Camera
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleScreenCapture()}
+              disabled={capturingScreen}
+              title="Share your screen"
+            >
+              <MonitorUp className="w-4 h-4" aria-hidden="true" />
+              {capturingScreen ? "Capturing…" : "Screen"}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => navigate("/")}>
               <MessageSquare className="w-4 h-4" aria-hidden="true" />
@@ -1297,6 +1438,13 @@ export function VoiceAssistant() {
             ) : null}
             <div ref={transcriptEndRef} />
           </div>
+
+          {ended && endedDuration ? (
+            <div className="shrink-0 border-t border-border px-4 py-2 text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>Session duration: {endedDuration}</span>
+              <span>{turns.length} turn{turns.length === 1 ? "" : "s"}</span>
+            </div>
+          ) : null}
 
           {summary ? (
             <div className="shrink-0 border-t border-border px-4 py-3 bg-accent/30">
@@ -1651,6 +1799,10 @@ export function VoiceAssistant() {
 
           {settings.showDiagnostics ? (
             <div className="rounded-lg border border-border bg-accent/20 px-3 py-2.5 font-mono text-[11px] text-muted-foreground space-y-1">
+              <p>Session: {sessionIdRef.current}</p>
+              <p>Started: {new Date(sessionStartedAtRef.current).toLocaleTimeString()}</p>
+              <p>Duration: {formatDuration(nowTick - sessionStartedAtRef.current)}</p>
+              <p>Turns: {turns.length}</p>
               <p>AI service: {aiServiceOnline === null ? "checking…" : aiServiceOnline ? "online" : "offline"}</p>
               {lastLatency ? (
                 <>
@@ -1716,6 +1868,31 @@ export function VoiceAssistant() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {screenCaptureError ? (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            role="alert"
+            className="fixed top-16 left-1/2 -translate-x-1/2 max-w-[calc(100vw-2rem)] bg-destructive text-destructive-foreground text-xs px-3 py-2 rounded-lg shadow-overlay flex items-center gap-2 z-50"
+          >
+            <span className="min-w-0">{screenCaptureError}</span>
+            <button type="button" onClick={() => setScreenCaptureError(null)} aria-label="Dismiss" className="shrink-0">
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <CameraCapture
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={handleCameraCapture}
+        title="Show DayJoy AI a photo"
+        facingMode="environment"
+      />
     </div>
   );
 }
