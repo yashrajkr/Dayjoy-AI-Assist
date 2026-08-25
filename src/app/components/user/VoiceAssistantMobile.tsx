@@ -17,6 +17,9 @@ import {
   Pause,
   Play,
   WifiOff,
+  Camera as CameraIcon,
+  MonitorUp,
+  ImageOff,
 } from "lucide-react";
 import type { VoiceState } from "../../lib/useVoice";
 import type { AIOrbState } from "../three/AIOrb";
@@ -71,6 +74,11 @@ export function VoiceAssistantMobile({
   aiServiceOnline,
   paused,
   onTogglePause,
+  pendingImage,
+  onClearPendingImage,
+  onOpenCamera,
+  onScreenCapture,
+  capturingScreen,
 }: {
   phase: string;
   orbState: AIOrbState;
@@ -102,6 +110,12 @@ export function VoiceAssistantMobile({
   aiServiceOnline: boolean | null;
   paused: boolean;
   onTogglePause: () => void;
+  /** A captured photo/screen frame waiting to ride along with the next question — real thumbnail, not a placeholder. */
+  pendingImage: { dataUrl: string; source: "camera" | "screen" } | null;
+  onClearPendingImage: () => void;
+  onOpenCamera: () => void;
+  onScreenCapture: () => void;
+  capturingScreen: boolean;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -198,6 +212,22 @@ export function VoiceAssistantMobile({
         <p className="mt-7 text-sm text-white/60 text-center max-w-[280px]" aria-live="polite">
           {toolStatusLabel ?? phaseCopy}
         </p>
+
+        {/* Pending image — real thumbnail of what was actually captured,
+            waiting to ride along with the next question. */}
+        {pendingImage ? (
+          <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-full bg-white/8 border border-white/10">
+            <img
+              src={pendingImage.dataUrl}
+              alt={pendingImage.source === "camera" ? "Captured photo" : "Captured screen"}
+              className="w-8 h-8 rounded-full object-cover"
+            />
+            <span className="text-xs text-white/70">Ask about this {pendingImage.source === "camera" ? "photo" : "screen"}</span>
+            <button type="button" onClick={onClearPendingImage} aria-label="Remove attached image" className="p-1">
+              <ImageOff className="w-3.5 h-3.5 text-white/50" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
 
         {/* Transient caption — plain floating text, no card/box (a
             permanent bordered bubble read as a chat-history element rather
@@ -405,6 +435,32 @@ export function VoiceAssistantMobile({
                     />
                     <h2 className="text-lg font-semibold">Dayjoy Assist</h2>
                     <p className="text-xs text-white/50">Warm and helpful</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSheetOpen(false);
+                        onOpenCamera();
+                      }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/6 border border-white/8 active:bg-white/10 transition-colors"
+                    >
+                      <CameraIcon className="w-4 h-4" aria-hidden="true" />
+                      <span className="text-xs font-medium">Show a photo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSheetOpen(false);
+                        onScreenCapture();
+                      }}
+                      disabled={capturingScreen}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/6 border border-white/8 active:bg-white/10 transition-colors disabled:opacity-50"
+                    >
+                      <MonitorUp className="w-4 h-4" aria-hidden="true" />
+                      <span className="text-xs font-medium">{capturingScreen ? "Capturing…" : "Share screen"}</span>
+                    </button>
                   </div>
 
                   <SettingsRow
