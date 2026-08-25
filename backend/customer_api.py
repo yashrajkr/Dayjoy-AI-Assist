@@ -222,6 +222,18 @@ class WellnessPreferenceUpsert(BaseModel):
     source: str = Field(default="user", description="'user' or 'ai_inference'")
 
 
+_MILESTONE_TYPES = ("first_checkin", "streak_3", "streak_7", "goal_completed", "personal_best")
+
+
+class WellnessMilestoneCreate(BaseModel):
+    milestone_type: str
+    goal_id: Optional[str] = None
+
+
+class WellnessReflectionUpdate(BaseModel):
+    reflection: str = Field(..., min_length=1, max_length=2000)
+
+
 class FeedbackCreate(BaseModel):
     feedback_type: str = "ai_response"
     rating: Optional[int] = Field(None, ge=1, le=5)
@@ -764,6 +776,55 @@ async def delete_wellness_preference(key: str, request: Request) -> Dict[str, st
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
     ok = await _delete("wellness_preferences", {"user_id": user_id, "key": key}, token=token)
     return {"status": "deleted" if ok else "error"}
+
+
+# ---------------------------------------------------------------------------
+# Module 11c — Journey Milestones (Phase 11) + AI Reflection (Phase 12)
+# ---------------------------------------------------------------------------
+@router.get("/wellness/milestones")
+async def list_wellness_milestones(request: Request) -> List[Dict[str, Any]]:
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    return await _select(
+        "wellness_milestones", "*", filters={"user_id": user_id}, limit=100, order="achieved_at.desc", token=token
+    )
+
+
+@router.post("/wellness/milestones")
+async def create_wellness_milestone(req: WellnessMilestoneCreate, request: Request) -> Dict[str, Any]:
+    """Idempotent by design (check-then-insert, not upsert): the frontend's
+    milestone detection re-evaluates conditions on every load and calls
+    this freely whenever a condition looks newly met — returning the
+    existing row on a repeat call (rather than a 409) means the caller
+    never has to pre-check first."""
+    if req.milestone_type not in _MILESTONE_TYPES:
+        raise HTTPException(status_code=400, detail=f"milestone_type must be one of {_MILESTONE_TYPES}")
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    filters: Dict[str, Any] = {"user_id": user_id, "milestone_type": req.milestone_type}
+    if req.goal_id:
+        filters["goal_id"] = req.goal_id
+    existing = await _select("wellness_milestones", "*", filters=filters, limit=1, token=token)
+    if existing:
+        return existing[0]
+    payload = {"user_id": user_id, "milestone_type": req.milestone_type, "goal_id": req.goal_id}
+    return await _insert("wellness_milestones", payload, token=token) or {"status": "error"}
+
+
+@router.patch("/wellness/milestones/{milestone_id}")
+async def add_milestone_reflection(milestone_id: str, req: WellnessReflectionUpdate, request: Request) -> Dict[str, Any]:
+    """AI Reflection (Phase 12) — the reflection is stored verbatim as the
+    user's own words, never rewritten or summarized by the model. A future
+    pass could offer to save a useful answer as a wellness_preference, but
+    that requires a judgment call this endpoint deliberately doesn't make
+    on the user's behalf."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    rows = await _update(
+        "wellness_milestones", {"id": milestone_id, "user_id": user_id},
+        {"reflection": req.reflection}, token=token,
+    )
+    return rows[0] if rows else {"status": "error"}
 
 
 # ---------------------------------------------------------------------------

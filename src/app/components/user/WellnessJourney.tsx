@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search, BellRing, Sunrise, HeartPulse } from "lucide-react";
+import { Target, Plus, Trash2, Check, Loader2, Save, X, Bell, Activity, TrendingUp, Minus, Search, BellRing, Sunrise, HeartPulse, Award, CalendarDays, Gauge } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { LoadingState, ErrorState, EmptyState } from "../common/AdminUI";
 import { AppHeader } from "../common/AppHeader";
@@ -15,7 +15,9 @@ import {
   customerListReminders, customerCreateReminder, customerDeleteReminder,
   customerGetTodayCheckin, customerUpsertCheckin,
   customerListWellnessPreferences, customerUpsertWellnessPreference, customerDeleteWellnessPreference,
+  customerListWellnessMilestones, customerCreateWellnessMilestone, customerAddMilestoneReflection,
   type WellnessGoal, type WellnessActivity, type Reminder, type WellnessCheckin, type WellnessPreference,
+  type WellnessMilestone, type WellnessMilestoneType,
 } from "../../../lib/api";
 
 const GOAL_TYPES = [
@@ -211,6 +213,110 @@ export function deriveRecoveryMode(checkin: WellnessCheckin | null): { active: b
 }
 
 /**
+ * Current activity streak (spec Phases 8/11) — consecutive days ending
+ * today (or yesterday, if today has no activity logged yet, so a streak
+ * doesn't reset to 0 the moment you wake up before logging anything) with
+ * at least one activity. Pure arithmetic over already-loaded activities,
+ * same "no fabricated numbers" rule as everything else in this file.
+ */
+export function computeCurrentStreak(activities: WellnessActivity[]): number {
+  const days = new Set(activities.map((a) => a.activity_date).filter(Boolean));
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const cursor = new Date();
+  if (!days.has(todayStr)) cursor.setDate(cursor.getDate() - 1); // start from yesterday if today's empty
+  let streak = 0;
+  for (;;) {
+    const key = cursor.toISOString().slice(0, 10);
+    if (!days.has(key)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+const MILESTONE_COPY: Record<WellnessMilestoneType, { label: string; icon: string }> = {
+  first_checkin: { label: "First check-in", icon: "🌱" },
+  streak_3: { label: "3-day streak", icon: "🔥" },
+  streak_7: { label: "7-day streak", icon: "⭐" },
+  goal_completed: { label: "Goal completed", icon: "🏁" },
+  personal_best: { label: "Personal best", icon: "🏆" },
+};
+
+/**
+ * Today's Plan (spec Phase 5) — deliberately a deterministic derivation
+ * over real data (priority goal, due reminders, open check-in questions),
+ * NOT a separate LLM call — the existing WELLNESS chat intent already
+ * covers free-form AI planning conversation; this is the at-a-glance
+ * version for the page itself. Capped at 3 priorities so it stays
+ * achievable, per the spec's own "don't overwhelm with 15 tasks" rule.
+ */
+function deriveTodaysPlan(
+  priorityGoal: WellnessGoal | undefined,
+  checkinQuestionsCount: number,
+  dueRemindersToday: Reminder[],
+  recoveryActive: boolean,
+): { focus: string; why: string; priorities: string[] } {
+  const priorities: string[] = [];
+  if (checkinQuestionsCount > 0) priorities.push("Do today's quick check-in");
+  if (dueRemindersToday.length > 0) priorities.push(`Complete: ${dueRemindersToday[0].title}`);
+  if (priorityGoal) {
+    priorities.push(
+      recoveryActive
+        ? `A small step toward "${priorityGoal.title}" — whatever fits today`
+        : `Log progress toward "${priorityGoal.title}"`,
+    );
+  } else if (priorities.length === 0) {
+    priorities.push("Set a wellness goal to get a personalized plan");
+  }
+  return {
+    focus: priorityGoal ? priorityGoal.title : "Getting started",
+    why: recoveryActive
+      ? "Today's plan is scaled back based on your check-in."
+      : priorityGoal
+        ? "Based on your current goal and recent activity."
+        : "No active goal yet — start with one to unlock a real daily plan.",
+    priorities: priorities.slice(0, 3),
+  };
+}
+
+/**
+ * Period Summary (spec Phases 21 "Weekly AI Review" and 22 "Monthly Journey
+ * Review" — same shape, different window, so implemented once) — built as
+ * an arithmetic summary over already-loaded data, not an LLM-generated
+ * one, consistent with this file's "never present a weak/fabricated signal
+ * as fact" rule. Every line traces to a real count, nothing inferred.
+ */
+function derivePeriodSummary(activities: WellnessActivity[], milestonesInWindow: WellnessMilestone[], windowDays: number) {
+  const now = Date.now();
+  const daysAgo = (d?: string | null) => (d ? (now - new Date(d).getTime()) / 86400000 : Infinity);
+  const windowActivities = activities.filter((a) => daysAgo(a.activity_date) < windowDays);
+  const activeDays = new Set(windowActivities.map((a) => a.activity_date)).size;
+
+  const byWeekday: Record<string, number> = {};
+  for (const a of windowActivities) {
+    if (!a.activity_date) continue;
+    const wd = new Date(a.activity_date).toLocaleDateString("en-US", { weekday: "long" });
+    byWeekday[wd] = (byWeekday[wd] ?? 0) + 1;
+  }
+  const mostConsistentDay = Object.entries(byWeekday).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const periodLabel = windowDays <= 7 ? "this week" : "this period";
+
+  return {
+    activeDays,
+    windowDays,
+    totalLogged: windowActivities.length,
+    milestonesCount: milestonesInWindow.length,
+    mostConsistentDay,
+    wins: [
+      ...(activeDays > 0 ? [`${activeDays} active day${activeDays === 1 ? "" : "s"} ${periodLabel}`] : []),
+      ...(milestonesInWindow.length > 0 ? [`${milestonesInWindow.length} milestone${milestonesInWindow.length === 1 ? "" : "s"} reached`] : []),
+      ...(mostConsistentDay ? [`Most consistent on ${mostConsistentDay}s`] : []),
+    ],
+    challenges: activeDays < Math.ceil(windowDays * 0.4) ? [`Fewer than ${Math.ceil(windowDays * 0.4)} active days out of ${windowDays} — consistency is the biggest opportunity`] : [],
+  };
+}
+
+/**
  * Smart Journey Memory (Phase 18) — a fixed, small vocabulary of
  * preference keys rather than free-form key entry, so the AI Coach reading
  * these back (backend/orchestrator/tools/wellness.py) always sees a
@@ -359,23 +465,74 @@ export function WellnessJourney() {
 
   const [todayCheckin, setTodayCheckin] = useState<WellnessCheckin | null>(null);
   const [preferences, setPreferences] = useState<WellnessPreference[]>([]);
+  const [milestones, setMilestones] = useState<WellnessMilestone[]>([]);
+  const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false);
+  // Same modal, two windows — spec Phases 21 (weekly) and 22 (monthly) share
+  // an identical shape (derivePeriodSummary), so one toggle covers both
+  // instead of a second modal.
+  const [reviewWindowDays, setReviewWindowDays] = useState<7 | 30>(7);
+  // Set right after a milestone is newly recorded this session, so the AI
+  // Reflection prompt (Phase 12) only ever appears once, right when it
+  // happened — not retroactively on every future page load.
+  const [reflectionMilestone, setReflectionMilestone] = useState<WellnessMilestone | null>(null);
+  const [reflectionText, setReflectionText] = useState("");
+  const [savingReflection, setSavingReflection] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [g, a, r, c, p] = await Promise.all([
+      const [g, a, r, c, p, m] = await Promise.all([
         customerListWellnessGoals(),
         customerListWellnessActivities(30),
         customerListReminders(true),
         customerGetTodayCheckin(),
         customerListWellnessPreferences(),
+        customerListWellnessMilestones(),
       ]);
-      setGoals(g); setActivities(a); setReminders(r); setTodayCheckin(c); setPreferences(p);
+      setGoals(g); setActivities(a); setReminders(r); setTodayCheckin(c); setPreferences(p); setMilestones(m);
+
+      // Milestone detection (Phase 11) — re-evaluated on every load;
+      // creation is idempotent server-side, so this never double-awards.
+      // Only prompts AI Reflection for something detected as genuinely NEW
+      // this call (not already in the milestones list we just loaded).
+      const existingTypes = new Set(m.map((x) => `${x.milestone_type}:${x.goal_id ?? ""}`));
+      const toCreate: { type: WellnessMilestoneType; goalId?: string }[] = [];
+      if (c.signals && Object.keys(c.signals).length > 0 && !existingTypes.has("first_checkin:")) {
+        toCreate.push({ type: "first_checkin" });
+      }
+      const streak = computeCurrentStreak(a);
+      if (streak >= 7 && !existingTypes.has("streak_7:")) toCreate.push({ type: "streak_7" });
+      else if (streak >= 3 && !existingTypes.has("streak_3:")) toCreate.push({ type: "streak_3" });
+      for (const goal of g) {
+        if (goal.is_completed && goal.id && !existingTypes.has(`goal_completed:${goal.id}`)) {
+          toCreate.push({ type: "goal_completed", goalId: goal.id });
+        }
+      }
+      if (toCreate.length > 0) {
+        const created = await Promise.all(toCreate.map((t) => customerCreateWellnessMilestone(t.type, t.goalId)));
+        setMilestones((prev) => [...created, ...prev]);
+        setReflectionMilestone(created[created.length - 1]);
+      }
     } catch (e) { setError(e instanceof Error ? e.message : "Failed"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const saveReflection = async () => {
+    if (!reflectionMilestone?.id || !reflectionText.trim()) { setReflectionMilestone(null); return; }
+    setSavingReflection(true);
+    try {
+      await customerAddMilestoneReflection(reflectionMilestone.id, reflectionText.trim());
+      setMilestones((prev) => prev.map((m) => (m.id === reflectionMilestone.id ? { ...m, reflection: reflectionText.trim() } : m)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingReflection(false);
+      setReflectionMilestone(null);
+      setReflectionText("");
+    }
+  };
 
   // Applies a goal type's preset target/unit whenever the user picks a
   // different type — keeps the fields relevant instead of carrying over a
@@ -561,6 +718,50 @@ export function WellnessJourney() {
     return !priorityGoal || q.relevantFor.includes(priorityGoal.goal_type ?? "general");
   }).slice(0, 3);
 
+  // Wellness Momentum (Phase 8) — transparent by construction: the two
+  // numbers shown ARE the formula, not an opaque score derived from them.
+  const activeDaysLastWeek = new Set(
+    activities
+      .filter((a) => {
+        if (!a.activity_date) return false;
+        const days = (Date.now() - new Date(a.activity_date).getTime()) / 86400000;
+        return days >= 7 && days < 14;
+      })
+      .map((a) => a.activity_date),
+  ).size;
+  const currentStreak = computeCurrentStreak(activities);
+
+  const dueRemindersToday = reminders; // reminders list is already "active"; no per-reminder due-time comparison needed here (that's the server-side notification check) — this just surfaces what's on today's plate.
+  const todaysPlan = deriveTodaysPlan(priorityGoal, checkinQuestions.length, dueRemindersToday, recoveryMode.active);
+
+  const milestonesInReviewWindow = milestones.filter((m) => {
+    if (!m.achieved_at) return false;
+    return (Date.now() - new Date(m.achieved_at).getTime()) / 86400000 < reviewWindowDays;
+  });
+  const periodSummary = derivePeriodSummary(activities, milestonesInReviewWindow, reviewWindowDays);
+
+  // Personalization Levels (spec Phase 19) — the system must never claim a
+  // level it hasn't earned with real data, so this is a strict, ordered
+  // check (not a weighted score) over things that actually exist: a
+  // profile-ish signal (a remembered preference), a goal, ~a week of
+  // behavioral data, then adaptive state actually kicking in.
+  const personalizationLevel = (() => {
+    if (journeyState !== "new" && journeyState !== "onboarding" && (journeyState === "improving" || journeyState === "struggling" || journeyState === "at_risk")) return 5;
+    if (activeDaysThisWeek + activeDaysLastWeek >= 5) return 4;
+    if (activities.length >= 3) return 3;
+    if (goals.length > 0) return 2;
+    if (preferences.length > 0) return 1;
+    return 0;
+  })();
+  const PERSONALIZATION_LEVEL_LABELS = [
+    "No personalization yet",
+    "Profile personalization",
+    "Goal personalization",
+    "Behavior personalization",
+    "Conversation personalization",
+    "Adaptive personalization",
+  ];
+
   const tabs: { value: Tab; label: string; icon: typeof Target; count?: number }[] = [
     { value: "goals", label: "Goals", icon: Target, count: goals.filter((g) => !g.is_completed).length },
     { value: "activities", label: "Activities", icon: Activity, count: activities.length },
@@ -675,6 +876,72 @@ export function WellnessJourney() {
             </div>
           </div>
         </Card>
+      ) : null}
+
+      {/* Today's Plan (Phase 5) — deterministic, not a separate AI call
+          (see deriveTodaysPlan's own comment). Answers "what should I do
+          today, and why" directly, per the spec's Phase 23 UI requirement. */}
+      {!loading && goals.length > 0 ? (
+        <Card className="p-4 mb-4 shadow-none">
+          <h3 className="text-sm font-semibold mb-0.5">Today's focus: {todaysPlan.focus}</h3>
+          <p className="text-xs text-muted-foreground mb-2">{todaysPlan.why}</p>
+          <ul className="space-y-1">
+            {todaysPlan.priorities.map((p, i) => (
+              <li key={i} className="text-sm flex items-start gap-1.5">
+                <span className="text-primary font-medium shrink-0">{i + 1}.</span> {p}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {/* Wellness Momentum (Phase 8) — transparent by construction: the
+          label states exactly what's counted, no hidden formula behind a
+          bare number. Never shown standalone without its own explanation,
+          per the spec's explicit "not a medical assessment" requirement. */}
+      {!loading && activities.length > 0 ? (
+        <Card className="p-4 mb-4 shadow-none">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold flex items-center gap-1.5"><Gauge className="w-4 h-4 text-primary" /> Wellness momentum</h3>
+            <button type="button" onClick={() => setWeeklyReviewOpen(true)} className="text-xs font-medium text-primary hover:underline flex items-center gap-1">
+              <CalendarDays className="w-3.5 h-3.5" /> This week
+            </button>
+          </div>
+          <p className="text-2xl font-semibold">
+            {activeDaysThisWeek}/7 <span className="text-sm font-normal text-muted-foreground">active days this week</span>
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {activeDaysThisWeek === activeDaysLastWeek
+              ? `Same as last week (${activeDaysLastWeek}/7).`
+              : activeDaysThisWeek > activeDaysLastWeek
+                ? `Up from ${activeDaysLastWeek}/7 last week.`
+                : `Down from ${activeDaysLastWeek}/7 last week.`}
+            {currentStreak > 0 ? ` Current streak: ${currentStreak} day${currentStreak === 1 ? "" : "s"}.` : ""}
+          </p>
+          <p className="text-[10px] text-muted-foreground/70 mt-1">
+            Wellness guidance, not a medical assessment — counts distinct days with a logged activity.
+          </p>
+        </Card>
+      ) : null}
+
+      {/* Journey Milestones (Phase 11) — a subtle strip of badges, not a
+          gamified progress bar. Tapping one that has no reflection yet
+          opens the AI Reflection prompt for it. */}
+      {!loading && milestones.length > 0 ? (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-4">
+          <Award className="w-4 h-4 text-primary shrink-0" />
+          {milestones.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => { if (!m.reflection) { setReflectionMilestone(m); setReflectionText(""); } }}
+              title={m.reflection ? m.reflection : "Tap to add a reflection"}
+              className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent text-accent-foreground text-xs whitespace-nowrap"
+            >
+              {MILESTONE_COPY[m.milestone_type]?.icon} {MILESTONE_COPY[m.milestone_type]?.label}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {/* Stats */}
@@ -1134,6 +1401,71 @@ export function WellnessJourney() {
             </div>
           ))}
         </div>
+      </Modal>
+
+      {/* Period Summary (spec Phase 21 "Weekly AI Review" + Phase 22
+          "Monthly Journey Review" — same shape, toggled window) —
+          arithmetic over already-loaded activities/milestones, not an LLM
+          call; every line traces to a real count, per this file's "never
+          present a weak signal as fact" rule applied consistently. */}
+      <Modal open={weeklyReviewOpen} onClose={() => setWeeklyReviewOpen(false)} title="Your journey" size="sm"
+        footer={<Button type="button" variant="secondary" onClick={() => setWeeklyReviewOpen(false)}>Close</Button>}>
+        <div className="space-y-4">
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => setReviewWindowDays(7)}
+              className={`px-3 py-1 rounded-full text-xs font-medium ${reviewWindowDays === 7 ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground"}`}>Week</button>
+            <button type="button" onClick={() => setReviewWindowDays(30)}
+              className={`px-3 py-1 rounded-full text-xs font-medium ${reviewWindowDays === 30 ? "bg-primary text-primary-foreground" : "bg-accent text-accent-foreground"}`}>Month</button>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Wins</p>
+            {periodSummary.wins.length > 0 ? (
+              <ul className="space-y-1">
+                {periodSummary.wins.map((w, i) => <li key={i} className="text-sm flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" /> {w}</li>)}
+              </ul>
+            ) : <p className="text-sm text-muted-foreground">Nothing logged yet in this period.</p>}
+          </div>
+          {periodSummary.challenges.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Opportunity</p>
+              <ul className="space-y-1">
+                {periodSummary.challenges.map((c, i) => <li key={i} className="text-sm text-muted-foreground">{c}</li>)}
+              </ul>
+            </div>
+          ) : null}
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Personalization level</p>
+            <p className="text-sm">{personalizationLevel}/5 — {PERSONALIZATION_LEVEL_LABELS[personalizationLevel]}</p>
+          </div>
+          <p className="text-[10px] text-muted-foreground/70">
+            {periodSummary.totalLogged} activit{periodSummary.totalLogged === 1 ? "y" : "ies"} logged in the last {periodSummary.windowDays} days.
+          </p>
+        </div>
+      </Modal>
+
+      {/* AI Reflection (spec Phase 12) — shown once, right after a
+          milestone is newly detected. Skippable; a milestone is real
+          whether or not this is answered. */}
+      <Modal
+        open={!!reflectionMilestone}
+        onClose={() => { setReflectionMilestone(null); setReflectionText(""); }}
+        title={reflectionMilestone ? `${MILESTONE_COPY[reflectionMilestone.milestone_type]?.icon} ${MILESTONE_COPY[reflectionMilestone.milestone_type]?.label}` : "Milestone"}
+        description="What worked? What was difficult? (Optional)"
+        size="sm"
+        footer={<>
+          <Button type="button" variant="secondary" onClick={() => { setReflectionMilestone(null); setReflectionText(""); }}>Skip</Button>
+          <Button type="button" disabled={!reflectionText.trim() || savingReflection} onClick={() => void saveReflection()}>
+            {savingReflection ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
+          </Button>
+        </>}
+      >
+        <textarea
+          value={reflectionText}
+          onChange={(e) => setReflectionText(e.target.value)}
+          rows={3}
+          placeholder="e.g. Morning workouts worked better than evenings for me"
+          className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+        />
       </Modal>
     </div>
   );

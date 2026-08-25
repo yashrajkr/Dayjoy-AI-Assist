@@ -2517,6 +2517,34 @@ export async function customerDeleteWellnessPreference(key: string): Promise<{ s
   return custDelete(`/customer/wellness/preferences/${encodeURIComponent(key)}`);
 }
 
+/** Journey Milestones (spec Phase 11) + AI Reflection (spec Phase 12). */
+export type WellnessMilestoneType = "first_checkin" | "streak_3" | "streak_7" | "goal_completed" | "personal_best";
+export type WellnessMilestone = {
+  id: string;
+  milestone_type: WellnessMilestoneType;
+  goal_id?: string | null;
+  reflection?: string | null;
+  achieved_at?: string;
+};
+
+export async function customerListWellnessMilestones(): Promise<WellnessMilestone[]> {
+  return custGet("/customer/wellness/milestones");
+}
+
+/** Idempotent — safe to call whenever a milestone condition looks newly
+ * met without pre-checking; the backend returns the existing row on a
+ * repeat call instead of erroring. */
+export async function customerCreateWellnessMilestone(
+  milestone_type: WellnessMilestoneType,
+  goal_id?: string,
+): Promise<WellnessMilestone> {
+  return custJson("POST", "/customer/wellness/milestones", { milestone_type, goal_id: goal_id ?? null });
+}
+
+export async function customerAddMilestoneReflection(milestoneId: string, reflection: string): Promise<WellnessMilestone> {
+  return custJson("PATCH", `/customer/wellness/milestones/${milestoneId}`, { reflection });
+}
+
 /** Feedback. */
 export async function customerListFeedback(): Promise<CustomerFeedback[]> {
   return custGet("/customer/feedback");

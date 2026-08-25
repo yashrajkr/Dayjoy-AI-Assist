@@ -294,3 +294,72 @@ Recovery Mode derivation verified live in the browser (3-question render,
 all 5 recovery scenarios). Preferences UI rendered and wired but not
 exercised against a live backend in this sandbox (no server running here)
 — same environment limitation noted in every prior round.
+
+---
+
+# Round 6 (2026-08-25) — Milestones, Today's Plan, Wellness Momentum, Period Review, Personalization Levels
+
+Closes 5 more spec phases with real, verified code:
+
+- **Journey Milestones** (Phase 11): new `wellness_milestones` table
+  (migration v32, live in production). Idempotent detection on every load
+  (first check-in, 3/7-day streaks, each goal completion) — server-side
+  check-then-insert means the frontend never has to pre-check, and a
+  repeat detection just returns the existing row. Shown as a subtle badge
+  strip, not a gamified progress bar.
+- **AI Reflection** (Phase 12): fires once, right when a milestone is
+  newly detected this session — "what worked / what was difficult,"
+  optional, stored verbatim on the milestone row.
+- **Today's Plan** (Phase 5): `deriveTodaysPlan()` — deterministic, not a
+  second LLM call (the existing WELLNESS chat intent already covers
+  free-form AI planning conversation). Focus + why + up to 3 priorities,
+  built from the real priority goal, open check-in questions, and Recovery
+  Mode state.
+- **Wellness Momentum** (Phase 8): the "score" is literally the two
+  numbers shown (active days this week vs. last week, current streak) —
+  no hidden formula, explicitly labeled "wellness guidance, not a medical
+  assessment," per the spec's own requirement. `computeCurrentStreak()`
+  verified against 5 scenarios (no activity, today-only, 3-day streak, a
+  gap, and "yesterday but not today yet").
+- **Period Review** (Phases 21 "Weekly AI Review" + 22 "Monthly Journey
+  Review"): one modal, Week/Month toggle, `derivePeriodSummary()` handles
+  both windows — arithmetic wins/challenges, not LLM-generated text.
+- **Personalization Levels** (Phase 19): a strict, ordered 0-5 check over
+  data that actually exists (a remembered preference, a goal, ~a week of
+  activity, adaptive journey state) — never claims a level it hasn't
+  earned. Shown inline in the Period Review modal.
+
+**Deliberately not built as a separate system**: Phase 2's full
+USER-PROVIDED/OBSERVED/AI-INFERENCE/VERIFIED-KNOWLEDGE 4-way provenance
+model. The `wellness_preferences` table (Round 5) already gives a working
+2-way split via its `source` column (`user` vs `ai_inference`) covering
+the same practical need — a separate formal profile schema on top would
+be abstraction beyond what's actually used, against this repo's own
+"no premature abstraction" convention.
+
+## What's still genuinely not done
+
+- Phase 6's deep "why am I not progressing" pattern-detection reasoning
+  (Journey States give a state label + generic coaching copy, not a
+  root-cause explanation).
+- Phase 7's full ranked multi-signal product candidate system (still a
+  single best-effort lookup, per Round 3-4).
+- Most of Phase 20's remaining unique-feature list (voice wellness coach,
+  family/household support, and others not itemized elsewhere in this
+  report).
+- Automated tests — this environment still cannot run `pytest` (confirmed
+  broken since Round 1); everything above was verified via direct browser
+  execution of the real functions against synthetic data, and manual code
+  review, not an automated suite.
+
+## Verification this round
+
+`npm run typecheck`/`lint` clean (same pre-existing issues, plus the
+expected "exported const from a component file" warning class already
+present on this file — not functional). Backend fully syntax-checked.
+`wellness_milestones` confirmed live in production via direct query.
+`computeCurrentStreak()` verified against 5 scenarios in the browser.
+Empty-state UI (no goals/activities/milestones yet) confirmed rendering
+correctly with no console errors — this sandbox still has no live backend
+to exercise the full milestone-detection/reflection/period-review flow
+end-to-end against real data.
