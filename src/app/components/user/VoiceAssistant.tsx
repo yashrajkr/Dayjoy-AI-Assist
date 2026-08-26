@@ -625,9 +625,10 @@ export function VoiceAssistant() {
         // A stale request's finally must not clear `thinking` out from
         // under the newer request that superseded it (which already set
         // thinking=true for itself).
-        if (isStale()) return;
-        setThinking(false);
-        setToolStatus(null);
+        if (!isStale()) {
+          setThinking(false);
+          setToolStatus(null);
+        }
       }
     },
     [ensureConversation, currentLanguageLabel, role, voice, turns.length, settings.maxSpokenSentences, pendingImage],
