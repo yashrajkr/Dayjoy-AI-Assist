@@ -52,6 +52,34 @@ def generate_followups(
     return suggestions[:max_suggestions]
 
 
+def generate_wellness_progress_followups(
+    progress_result: Dict[str, Any],
+    max_suggestions: int = 4,
+) -> List[str]:
+    """Follow-ups tailored to a wellness_progress reasoning result
+    (backend/orchestrator/tools/wellness_progress.py) — mirrors
+    generate_recommendation_followups' pattern of only offering what the
+    actual result contains, e.g. never "build me a 7-day plan" when there's
+    no active goal to build one for."""
+    status = progress_result.get("status")
+    if status in ("no_goal", None):
+        return []
+
+    suggestions: List[str] = []
+    if status == "insufficient_data":
+        suggestions.append("Log today's activity")
+        suggestions.append("Start a daily check-in")
+        return suggestions[:max_suggestions]
+
+    suggestions.append("Review my recent progress")
+    if progress_result.get("hypotheses"):
+        suggestions.append("What should I change first?")
+    suggestions.append("Build me a 7-day plan")
+    if progress_result.get("missing_information"):
+        suggestions.append("What information would help you understand this better?")
+    return suggestions[:max_suggestions]
+
+
 def generate_recommendation_followups(
     recommendation_result: Dict[str, Any],
     message: str,

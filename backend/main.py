@@ -675,7 +675,23 @@ from backend.orchestrator.claim_verify import should_verify_claims, verify_claim
 # (see generateFollowUps in UserChat.tsx). Wiring the real one in here lets
 # the frontend prefer backend-computed suggestions, which react to more
 # signals (route.answer_source, category) than the frontend has access to.
-from backend.orchestrator.followups import generate_followups  # noqa: E402
+from backend.orchestrator.followups import (  # noqa: E402
+    generate_followups, generate_recommendation_followups, generate_wellness_progress_followups,
+)
+
+
+def _followups_for_route(route: "RouteResult", category: str, message: str) -> List[str]:
+    """Dispatches to the result-aware follow-up generator when the route
+    carries structured data to tailor to (recommendation/wellness_progress),
+    falling back to the generic category/source-based generator otherwise.
+    generate_recommendation_followups already existed but was never wired
+    to a call site — a real gap this closes alongside adding the new
+    wellness_progress branch."""
+    if category == "recommendation" and route.product_cards:
+        return generate_recommendation_followups({"status": "ok", "products": route.product_cards}, message)
+    if category == "wellness_progress" and route.progress_data:
+        return generate_wellness_progress_followups(route.progress_data)
+    return generate_followups(route.answer_source, category, message)
 
 # Structured Response JSON — parsed from the answer's own markdown (see
 # module docstring for why this is safer than asking the LLM for raw JSON).
@@ -1006,6 +1022,11 @@ class RouteResult:
     # a bare label — clicking one sends it verbatim as the user's next
     # turn. Empty for every route that isn't a clarification.
     clarification_options: List[str] = field(default_factory=list)
+    # Raw wellness_progress tool result, kept ONLY so generate_
+    # wellness_progress_followups() can tailor suggestions to what the
+    # analysis actually contains (matches product_cards' role for
+    # generate_recommendation_followups). None for every other route.
+    progress_data: Optional[Dict[str, Any]] = None
 
 
 def _format_pricing_context(data: Dict[str, Any]) -> str:
@@ -1477,6 +1498,7 @@ async def _route_events(
                         },
                         mode="dayjoy", answer_source="dayjoy_knowledge",
                         web_search_provider=None, used_web_search=False,
+                        progress_data=progress_data,
                     ),
                 )
                 return
@@ -3118,7 +3140,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             "Please create a support ticket for a verified response."
         )
 
-    follow_ups = generate_followups(route.answer_source, category, req.message)
+    follow_ups = _followups_for_route(route, category, req.message)
 
     structured_answer = structure_answer(answer)
     grounding_state = classify_grounding_state(
@@ -3554,7 +3576,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             stage_ms=stage_ms, answer=aggregated, verification_status=verification_status,
         )
 
-        follow_ups = generate_followups(route.answer_source, category, req.message)
+        follow_ups = _followups_for_route(route, category, req.message)
 
         structured_answer = structure_answer(aggregated)
         grounding_state = classify_grounding_state(
