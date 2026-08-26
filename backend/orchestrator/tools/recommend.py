@@ -71,6 +71,7 @@ class MatchedCondition:
     condition: str
     product_id: str
     score: int
+    confidence: str = "medium"  # condition_recommendations.confidence — "low"|"medium"|"high"
 
 
 @dataclass
@@ -80,6 +81,56 @@ class RecommendationResult:
     matched_conditions: List[str] = field(default_factory=list)
     clarifying_question: Optional[str] = None
     reason: Optional[str] = None
+    # Transparency for the safety filter below — a candidate that matched
+    # the condition chart but was excluded for a documented safety conflict
+    # is never silently dropped; the caller can mention this rather than
+    # implying fewer options existed than actually did.
+    excluded_for_safety: List[Dict[str, str]] = field(default_factory=list)
+
+
+# Safety filtering — a REAL hard filter (unlike _rank's contraindication
+# tie-break below), but deliberately narrow: it only excludes a candidate
+# when (a) the user's own message contains an explicit, unambiguous safety
+# signal (pregnancy/breastfeeding, or a stated allergy), AND (b) that
+# specific candidate has its OWN documented contraindication/who_can_use
+# text that actually conflicts. It never excludes on the ABSENCE of
+# documentation (data is too sparse for that to mean "unsafe") — same
+# caution the module docstring already applies to the ranking tie-break,
+# just promoted to a hard filter for the narrow set of cases where the
+# signal is explicit enough to act on.
+_PREGNANCY_SIGNAL_RE = re.compile(r"\b(pregnant|pregnancy|breastfeeding|breast[- ]feeding|nursing)\b", re.IGNORECASE)
+_ALLERGY_SIGNAL_RE = re.compile(r"\ballerg(?:y|ic)\s*(?:to)?\s+([a-zA-Z][a-zA-Z ]{2,40})", re.IGNORECASE)
+_BUDGET_SIGNAL_RE = re.compile(r"\b(cheap(?:est|er)?|affordable|budget|low[- ]cost|inexpensive)\b", re.IGNORECASE)
+
+
+def _detect_safety_signals(message: str) -> Dict[str, Any]:
+    tags: Set[str] = set()
+    if _PREGNANCY_SIGNAL_RE.search(message):
+        tags.add("pregnancy_or_breastfeeding")
+    allergens: Set[str] = set()
+    for m in _ALLERGY_SIGNAL_RE.finditer(message):
+        allergen = re.split(r"[,.]| and ", m.group(1).strip(), maxsplit=1)[0].strip()
+        if allergen:
+            allergens.add(allergen.lower())
+    return {"tags": tags, "allergens": allergens}
+
+
+def _safety_conflict_reason(candidate: Dict[str, Any], signals: Dict[str, Any]) -> Optional[str]:
+    text = " ".join(
+        filter(None, [candidate.get("contraindications"), candidate.get("who_can_use"), candidate.get("safety_note")])
+    ).lower()
+    if not text:
+        return None  # absence of documentation is never treated as a conflict
+    if "pregnancy_or_breastfeeding" in signals["tags"] and re.search(
+        r"\b(pregnan\w*|breastfeed\w*|nursing)\b", text
+    ):
+        return "documented contraindication for pregnancy/breastfeeding"
+    text_tokens = _tokenize(text)
+    for allergen in signals["allergens"]:
+        allergen_tokens = _tokenize(allergen)
+        if allergen_tokens and allergen_tokens.issubset(text_tokens):
+            return f"documented contraindication matching your stated allergy to {allergen}"
+    return None
 
 
 async def _match_conditions(token: Optional[str], message: str) -> List[MatchedCondition]:
@@ -103,7 +154,10 @@ async def _match_conditions(token: Optional[str], message: str) -> List[MatchedC
         score = len(tokens & condition_tokens)
         if score >= _MIN_CONDITION_MATCH_SCORE:
             scored.append(
-                MatchedCondition(condition=condition_text, product_id=row["product_id"], score=score)
+                MatchedCondition(
+                    condition=condition_text, product_id=row["product_id"], score=score,
+                    confidence=str(row.get("confidence") or "medium").lower(),
+                )
             )
 
     scored.sort(key=lambda m: m.score, reverse=True)
@@ -168,6 +222,7 @@ def _bundle_product(
     relationships: Dict[str, List[str]],
     matched_condition: str,
     source_document: Optional[str],
+    condition_confidence: str = "medium",
 ) -> Dict[str, Any]:
     """Assemble the response bundle for one recommended product. Every field
     is either a verbatim DB value or explicitly null/omitted — never a
@@ -180,6 +235,7 @@ def _bundle_product(
         "product_name": product_row.get("product_name"),
         "category": product_row.get("category"),
         "matched_condition": matched_condition,
+        "condition_confidence": condition_confidence,
         "benefits": product_row.get("benefits"),
         "problem_tags": product_row.get("problem_tags"),
         "usage": product_row.get("usage"),
@@ -239,6 +295,9 @@ def _classify_strength(candidate: Dict[str, Any]) -> str:
 # bullet states a fact this module already computed, nothing inferred.
 def _build_reasoning_summary(candidate: Dict[str, Any]) -> List[str]:
     bullets = [f"Matches your query for \"{candidate.get('matched_condition')}\""]
+    confidence = candidate.get("condition_confidence")
+    if confidence:
+        bullets.append(f"Official Dayjoy recommendation chart confidence: {confidence}")
     if str(candidate.get("verification_status") or "").lower() == "approved":
         bullets.append("Verified/approved Dayjoy product")
     if candidate.get("evidence_source"):
@@ -247,10 +306,15 @@ def _build_reasoning_summary(candidate: Dict[str, Any]) -> List[str]:
         bullets.append("Has a documented contraindication — check before use")
     else:
         bullets.append("No documented contraindications on file")
+    if candidate.get("price"):
+        bullets.append(f"Current price: DP {candidate['price'].get('dp')} / MRP {candidate['price'].get('mrp')}")
     return bullets
 
 
-def _rank(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+_CONDITION_CONFIDENCE_RANK = {"high": 2, "medium": 1, "low": 0}
+
+
+def _rank(candidates: List[Dict[str, Any]], prefer_cheaper: bool = False) -> List[Dict[str, Any]]:
     """Ranking per the requirement's priority order, applied as tie-breaks
     since (1) explicit user goal and (3) authoritative recommendation rule
     are already satisfied by construction (every candidate here came from a
@@ -258,18 +322,29 @@ def _rank(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     condition ever maps to more than one product:
       (5) safety constraints — a product with a documented contraindication
           ranks behind one with none documented (not proof of safety, just
-          fewer known red flags) only as the very last tie-break, never as
-          a hard filter (data is too sparse to exclude on absence).
-      (7) confidence/evidence quality — verification_status == "approved"
-          and a real evidence_source both count as stronger evidence than
-          either being absent.
+          fewer known red flags) only as this tie-break, never as a hard
+          filter here (data is too sparse to exclude on absence — a real
+          hard filter for explicit safety signals exists separately, see
+          _safety_conflict_reason/run() below).
+      (7) confidence/evidence quality — verification_status == "approved",
+          a real evidence_source, and the official chart's own
+          confidence rating (condition_recommendations.confidence — fetched
+          previously but never actually used in ranking; a real gap this
+          fixes) all count as stronger evidence than being absent/lower.
+      Budget — only applied when the caller detected an explicit budget
+          signal in the user's own message (_BUDGET_SIGNAL_RE); a missing
+          price never counts against a candidate (sorts as neither cheaper
+          nor more expensive) since that's a data gap, not a signal.
     """
 
     def score(c: Dict[str, Any]) -> tuple:
         verified = 1 if str(c.get("verification_status") or "").lower() == "approved" else 0
         has_evidence = 1 if c.get("evidence_source") else 0
+        chart_confidence = _CONDITION_CONFIDENCE_RANK.get(str(c.get("condition_confidence") or "").lower(), 1)
         has_contraindication = 1 if c.get("contraindications") else 0
-        return (verified, has_evidence, -has_contraindication)
+        price = (c.get("price") or {}).get("dp")
+        cheaper_first = -price if (prefer_cheaper and isinstance(price, (int, float))) else 0
+        return (verified, has_evidence, chart_confidence, -has_contraindication, cheaper_first)
 
     return sorted(candidates, key=score, reverse=True)
 
@@ -332,7 +407,10 @@ async def run(token: Optional[str], message: str, max_results: int = 3) -> Dict[
         price_row = await _fetch_price(token, product_id)
         relationships = await _fetch_relationships(token, product_id)
         candidates.append(
-            _bundle_product(product_row, price_row, relationships, matched.condition, product_row.get("source_document"))
+            _bundle_product(
+                product_row, price_row, relationships, matched.condition,
+                product_row.get("source_document"), condition_confidence=matched.confidence,
+            )
         )
 
     if not candidates:
@@ -341,12 +419,37 @@ async def run(token: Optional[str], message: str, max_results: int = 3) -> Dict[
             reason="matched_conditions_had_no_approved_product",
         ).__dict__
 
-    ranked = _rank(candidates)[:max_results]
+    # Safety filtering — see _safety_conflict_reason docstring. Excluded
+    # candidates are reported, never silently dropped.
+    safety_signals = _detect_safety_signals(message)
+    excluded: List[Dict[str, str]] = []
+    if safety_signals["tags"] or safety_signals["allergens"]:
+        safe_candidates = []
+        for c in candidates:
+            conflict = _safety_conflict_reason(c, safety_signals)
+            if conflict:
+                excluded.append({"product_id": c["product_id"], "product_name": c["product_name"], "reason": conflict})
+            else:
+                safe_candidates.append(c)
+        candidates = safe_candidates
+
+    if not candidates:
+        return RecommendationResult(
+            status="insufficient_evidence",
+            reason="all_matched_products_excluded_for_safety",
+            excluded_for_safety=excluded,
+        ).__dict__
+
+    prefer_cheaper = bool(_BUDGET_SIGNAL_RE.search(message))
+    ranked = _rank(candidates, prefer_cheaper=prefer_cheaper)[:max_results]
     for c in ranked:
         c["recommendation_strength"] = _classify_strength(c)
         c["reasoning_summary"] = _build_reasoning_summary(c)
+        if prefer_cheaper and c.get("price"):
+            c["reasoning_summary"].append("Prioritized a lower price since you mentioned budget")
     return RecommendationResult(
         status="ok",
         products=ranked,
         matched_conditions=sorted({c["matched_condition"] for c in ranked}),
+        excluded_for_safety=excluded,
     ).__dict__

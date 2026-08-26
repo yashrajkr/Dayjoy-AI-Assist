@@ -1027,10 +1027,18 @@ def _format_pricing_context(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
+def _format_recommendation_context(
+    products: List[Dict[str, Any]], excluded_for_safety: Optional[List[Dict[str, str]]] = None
+) -> str:
     """Deterministic context string for a structured product_recommendation
     result — every field is a verbatim DB value (see recommend.py's
-    `_bundle_product` docstring); the LLM only phrases these into prose."""
+    `_bundle_product` docstring); the LLM only phrases these into prose.
+
+    `excluded_for_safety` (recommend.py's real hard safety filter) is
+    surfaced explicitly so the answer can mention "I excluded X because of
+    a stated allergy/pregnancy" rather than silently showing fewer options
+    with no explanation — matches the requirement that every recommendation
+    state its important limitations."""
     blocks: List[str] = []
     for p in products:
         lines = [f"[Official Dayjoy Recommendation — {p.get('product_name')}]"]
@@ -1054,6 +1062,11 @@ def _format_recommendation_context(products: List[Dict[str, Any]]) -> str:
                 f"DP {price.get('dp')}, BV {price.get('bv')}, PV {price.get('pv')}"
             )
         blocks.append("\n".join(lines))
+    if excluded_for_safety:
+        exclusion_lines = "\n".join(f"- {e.get('product_name')}: {e.get('reason')}" for e in excluded_for_safety)
+        blocks.append(
+            f"[Excluded for safety — mention this if the user asked broadly for options]\n{exclusion_lines}"
+        )
     return "\n\n---\n\n".join(blocks)
 
 
@@ -1404,7 +1417,7 @@ async def _route_events(
             )
             return
         if rec.get("status") == "ok" and rec.get("products"):
-            context_parts = [_format_recommendation_context(rec["products"])]
+            context_parts = [_format_recommendation_context(rec["products"], rec.get("excluded_for_safety"))]
             kb_sources = []
             if kb_data and kb_data.get("context"):
                 context_parts.append(f"[Supporting context]\n{kb_data['context'][:1500]}")
