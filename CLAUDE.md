@@ -36,7 +36,26 @@ npm run test                  # vitest run
 
 Backend: `pip install -r backend/requirements.txt`, run via uvicorn (`backend/main.py`
 exposes `app`). SQL migrations live in `database/supabase_schema*.sql`, applied in
-numeric/version order (`scripts/run_migrations.sh`).
+numeric/version order (`scripts/run_migrations.sh` — note its hardcoded list stops at
+v18; anything after that, including all `wellness_*`/`ai_coach_*` migrations, must be
+applied manually, e.g. via the Supabase MCP `apply_migration` tool or the dashboard SQL
+editor, same as those files' own headers say).
+
+**Backend tests**: on a machine with multiple Python versions installed, `python -m
+pytest` can appear "broken" (`No module named pytest`, or a `pydantic-core` build
+failure) purely because the default `python` on PATH resolves to a newer interpreter
+than the one this repo's dependencies were installed against — not because the test
+suite itself is broken. Confirm which interpreter has a working install
+(`py -0` / `py --list` on Windows) and invoke pytest explicitly through it, e.g.:
+
+```bash
+py -3.13 -m pytest backend/tests -q
+```
+
+If no interpreter has a working install yet, `pip install -r backend/requirements.txt`
+under a Python version with a prebuilt `pydantic-core` wheel available (check
+https://pypi.org/project/pydantic-core/#files) — building it from source needs a Rust
+toolchain, which this environment does not have.
 
 ## Authorization model — read this before touching any admin endpoint
 
