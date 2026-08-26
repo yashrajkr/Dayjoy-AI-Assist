@@ -67,16 +67,20 @@ async def run(token: Optional[str], message: str) -> Dict[str, Any]:
     if not user_id:
         return {"status": "unauthenticated"}
 
-    # Smart Journey Memory (Phase 18) — durable, previously-confirmed
-    # preferences ("prefers mornings", "dislikes long routines"). Read-only
-    # here: this tool never writes a preference itself (no reliable signal
-    # in a single message that something should be "remembered" long-term)
-    # — that happens explicitly via POST /customer/wellness/preferences,
-    # e.g. from a future Coach confirmation step. Included in both return
-    # branches so the caller (main.py's _format_wellness_context) can fold
-    # it into what the LLM is told, without a second round-trip.
+    # Wellness Profile / Smart Journey Memory (Phase 18) — durable,
+    # provenance-tagged signals ("prefers mornings", "dislikes long
+    # routines"). Read-only here: this tool never writes a fact itself (no
+    # reliable signal in a single message that something should be
+    # "remembered" as user-confirmed) — that happens explicitly via
+    # POST /customer/wellness/preferences. It MAY write a tentative
+    # inference via wellness_profile.save_inferred_signal, which is a
+    # different, clearly-labeled thing (see that module). `provenance`/
+    # `confidence` are included so the caller (main.py's
+    # _format_wellness_context) can tell facts from hypotheses instead of
+    # treating everything as confirmed.
     preferences = await backend_main.supabase_select(
-        token, "wellness_preferences", columns="key,value", filters={"user_id": user_id}, limit=10,
+        token, "wellness_preferences", columns="key,value,provenance,confidence",
+        filters={"user_id": user_id}, limit=10,
     )
 
     goals = await backend_main.supabase_select(

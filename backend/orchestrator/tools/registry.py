@@ -46,7 +46,9 @@ def get_registry() -> ToolRegistry:
 
 
 def _register_default_tools(registry: ToolRegistry) -> None:
-    from backend.orchestrator.tools import dayjoy_kb, memory, pricing, product_graph, recommend, wellness, web
+    from backend.orchestrator.tools import (
+        dayjoy_kb, memory, pricing, product_graph, recommend, wellness, wellness_progress, web,
+    )
 
     registry.register(
         ToolSpec(
@@ -109,6 +111,21 @@ def _register_default_tools(registry: ToolRegistry) -> None:
             timeout_seconds=6.0,
             requires_auth=True,
             handler=wellness.run,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="wellness_progress",
+            description=(
+                "Analyzes this user's own wellness_goals/wellness_activities/"
+                "wellness_checkins to answer 'why am I not progressing' — "
+                "computes consistency/streak/check-in-trend facts and rule-"
+                "based hypotheses (each labeled with a confidence tier), "
+                "never a medical diagnosis. Requires auth."
+            ),
+            timeout_seconds=6.0,
+            requires_auth=True,
+            handler=wellness_progress.run,
         )
     )
     registry.register(

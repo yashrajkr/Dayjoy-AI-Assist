@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from backend.orchestrator.intent import detect_intent, wants_additional_info
+from backend.orchestrator.intent import detect_intent, wants_additional_info, wants_progress_reasoning
 from backend.orchestrator.tools.registry import get_registry
 from backend.orchestrator.types import (
     INTENT_CASUAL,
@@ -64,10 +64,14 @@ def build_plan(message: str) -> QueryPlan:
         if "dayjoy_kb" in available:
             tools.append("dayjoy_kb")
     elif intent.intent == INTENT_WELLNESS:
-        # Structured wellness_context tool only — this reads/writes the
-        # user's own wellness_goals (auth-required), it isn't a knowledge
-        # lookup, so dayjoy_kb/web_search don't apply here.
-        if "wellness_context" in available:
+        # A "why am I not progressing" style ask is a distinct sub-case —
+        # routed to the reasoning engine (consistency/streak/check-in-trend
+        # analysis) instead of the plain goal-status lookup. Neither reads
+        # dayjoy_kb/web_search: this is the user's own private data, not a
+        # knowledge lookup.
+        if wants_progress_reasoning(intent.raw_message) and "wellness_progress" in available:
+            tools.append("wellness_progress")
+        elif "wellness_context" in available:
             tools.append("wellness_context")
     elif intent.intent != INTENT_CASUAL:
         if "dayjoy_kb" in available:

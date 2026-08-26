@@ -100,7 +100,28 @@ _WELLNESS_CUES_RE = re.compile(
 
 
 def wants_wellness(text: str) -> bool:
-    return bool(_WELLNESS_CUES_RE.search(text))
+    return bool(_WELLNESS_CUES_RE.search(text)) or wants_progress_reasoning(text)
+
+
+# "why am I not progressing/losing weight/seeing results" — a distinct,
+# narrower sub-case of the wellness intent that routes to the
+# wellness_progress reasoning tool (backend/orchestrator/tools/
+# wellness_progress.py) instead of the plain goal-status wellness_context
+# tool. Checked as part of wants_wellness() above so it still classifies as
+# INTENT_WELLNESS overall; main.py's _route_events picks the reasoning tool
+# specifically when this matches.
+_PROGRESS_REASONING_CUES_RE = re.compile(
+    r"\bwhy (am i|aren'?t i|haven'?t i|isn'?t (my|this)|is (my|this)) "
+    r"(not )?(progress\w*|improv\w*|los\w+ weight|gain\w* (weight|muscle)|see\w* (results|progress)|"
+    r"work\w*|stuck|plateau\w*)\b|"
+    r"\b(why (is|has) (my )?progress (stall\w*|stuck|stopped)|not (making|seeing) (any )?progress|"
+    r"stuck (with|on) my (goal|progress)|plateau\w* on my goal)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_progress_reasoning(text: str) -> bool:
+    return bool(_PROGRESS_REASONING_CUES_RE.search(text))
 
 
 def wants_recommendation(text: str) -> bool:

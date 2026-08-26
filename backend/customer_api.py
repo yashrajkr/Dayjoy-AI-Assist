@@ -217,9 +217,17 @@ class WellnessCheckinCreate(BaseModel):
 
 
 class WellnessPreferenceUpsert(BaseModel):
+    """Public, human-facing upsert (Settings UI / chat "remember this").
+    `provenance` is deliberately NOT accepted here — this endpoint always
+    writes provenance='user_provided', confidence=None, server-side,
+    regardless of what a client sends, so a tentative AI-side write can never
+    masquerade as a user-confirmed fact by posting to the public endpoint.
+    AI-side tentative writes go through save_inferred_wellness_signal()
+    (backend/orchestrator/tools/wellness_profile.py) instead, which is not
+    reachable from any public route."""
+
     key: str = Field(..., min_length=1, max_length=80)
     value: str = Field(..., min_length=1, max_length=500)
-    source: str = Field(default="user", description="'user' or 'ai_inference'")
 
 
 _MILESTONE_TYPES = ("first_checkin", "streak_3", "streak_7", "goal_completed", "personal_best")
@@ -754,7 +762,13 @@ async def upsert_wellness_preference(req: WellnessPreferenceUpsert, request: Req
     """Upsert-by-key — a preference is identified by its key
     (unique per user, per the v31 migration), not a row id the client has
     to track, so remembering "coaching_style" a second time updates the
-    same row instead of accumulating duplicates."""
+    same row instead of accumulating duplicates.
+
+    Always writes provenance='user_provided', confidence=None — this is the
+    public, human-facing "I'm telling you this" path (see
+    WellnessPreferenceUpsert docstring). Also the correction/edit path: a
+    user editing an AI-inferred value through Settings promotes it to a
+    confirmed fact, same as the dedicated /confirm endpoint below."""
     user_id = await require_user_id(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
     existing = await _select(
@@ -763,11 +777,40 @@ async def upsert_wellness_preference(req: WellnessPreferenceUpsert, request: Req
     if existing:
         rows = await _update(
             "wellness_preferences", {"id": existing[0]["id"], "user_id": user_id},
-            {"value": req.value, "source": req.source, "updated_at": _utc_now_iso()}, token=token,
+            {
+                "value": req.value, "provenance": "user_provided", "confidence": None,
+                "consent": True, "updated_at": _utc_now_iso(),
+            },
+            token=token,
         )
         return rows[0] if rows else {"status": "error"}
-    payload = {"user_id": user_id, "key": req.key, "value": req.value, "source": req.source}
+    payload = {
+        "user_id": user_id, "key": req.key, "value": req.value,
+        "provenance": "user_provided", "confidence": None, "consent": True,
+    }
     return await _insert("wellness_preferences", payload, token=token) or {"status": "error"}
+
+
+@router.post("/wellness/preferences/{key}/confirm")
+async def confirm_wellness_preference(key: str, request: Request) -> Dict[str, Any]:
+    """User accepts an AI-tentative signal (inferred_conversation /
+    ai_recommendation) as correct — promotes it to a confirmed fact
+    (provenance='user_provided', confidence cleared). This is the only way a
+    tentative signal becomes something the AI is allowed to state as
+    settled; nothing here lets a client set an arbitrary provenance."""
+    user_id = await require_user_id(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip() or None
+    existing = await _select(
+        "wellness_preferences", "*", filters={"user_id": user_id, "key": key}, limit=1, token=token
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="No such wellness preference")
+    rows = await _update(
+        "wellness_preferences", {"id": existing[0]["id"], "user_id": user_id},
+        {"provenance": "user_provided", "confidence": None, "updated_at": _utc_now_iso()},
+        token=token,
+    )
+    return rows[0] if rows else {"status": "error"}
 
 
 @router.delete("/wellness/preferences/{key}")

@@ -15,6 +15,7 @@ import {
   customerListReminders, customerCreateReminder, customerDeleteReminder,
   customerGetTodayCheckin, customerUpsertCheckin,
   customerListWellnessPreferences, customerUpsertWellnessPreference, customerDeleteWellnessPreference,
+  customerConfirmWellnessPreference,
   customerListWellnessMilestones, customerCreateWellnessMilestone, customerAddMilestoneReflection,
   type WellnessGoal, type WellnessActivity, type Reminder, type WellnessCheckin, type WellnessPreference,
   type WellnessMilestone, type WellnessMilestoneType,
@@ -432,6 +433,13 @@ export function WellnessJourney() {
   const forgetPreference = async (key: string) => {
     await customerDeleteWellnessPreference(key);
     setPreferences((prev) => prev.filter((p) => p.key !== key));
+  };
+  // Promotes an AI-tentative signal (inferred_conversation/ai_recommendation)
+  // to a confirmed fact — the only way that ever happens, per the backend's
+  // provenance rules (see backend/customer_api.py's /confirm endpoint).
+  const confirmPreference = async (key: string) => {
+    const confirmed = await customerConfirmWellnessPreference(key);
+    setPreferences((prev) => prev.map((p) => (p.key === key ? confirmed : p)));
   };
 
   // Goal modal — target_value/unit start from the "general" preset instead
@@ -1075,14 +1083,35 @@ export function WellnessJourney() {
           </p>
           {preferences.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 mb-3">
-              {preferences.map((p) => (
-                <span key={p.key} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-accent text-accent-foreground text-xs">
-                  {WELLNESS_PREF_LABELS[p.key] ?? p.key}: {p.value}
-                  <button type="button" onClick={() => void forgetPreference(p.key)} aria-label={`Forget ${p.key}`} className="hover:text-destructive">
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
+              {preferences.map((p) => {
+                const isFact = p.provenance === "user_provided" || p.provenance === "verified_import";
+                return (
+                  <span
+                    key={p.key}
+                    title={
+                      isFact
+                        ? "You confirmed this"
+                        : `AI ${p.provenance === "ai_recommendation" ? "suggestion" : "guess"} — not confirmed${p.confidence != null ? ` (${Math.round(p.confidence * 100)}% confidence)` : ""}`
+                    }
+                    className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs ${
+                      isFact
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-transparent border border-dashed border-muted-foreground/40 text-muted-foreground"
+                    }`}
+                  >
+                    {!isFact && <span className="italic">AI guess:</span>}
+                    {WELLNESS_PREF_LABELS[p.key] ?? p.key}: {p.value}
+                    {!isFact && (
+                      <button type="button" onClick={() => void confirmPreference(p.key)} aria-label={`Confirm ${p.key}`} className="hover:text-primary font-medium">
+                        <Check className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => void forgetPreference(p.key)} aria-label={`Forget ${p.key}`} className="hover:text-destructive">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground mb-3">Nothing remembered yet.</p>

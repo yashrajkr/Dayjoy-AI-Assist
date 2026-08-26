@@ -7,7 +7,11 @@ coverage)."""
 
 from __future__ import annotations
 
-from backend.orchestrator.followups import generate_followups, generate_recommendation_followups
+from backend.orchestrator.followups import (
+    generate_followups,
+    generate_recommendation_followups,
+    generate_wellness_progress_followups,
+)
 
 
 def test_casual_answer_gets_no_followups():
@@ -78,3 +82,79 @@ def test_recommendation_followups_fallback_when_nothing_else_applies():
     result = {"status": "ok", "products": [{"price": None}]}
     followups = generate_recommendation_followups(result, "Suggest something for anxiety")
     assert followups == ["Do you want the official product details?"]
+
+
+# ---------------------------------------------------------------------------
+# generate_wellness_progress_followups
+# ---------------------------------------------------------------------------
+
+
+def test_wellness_progress_followups_empty_when_no_goal():
+    assert generate_wellness_progress_followups({"status": "no_goal"}) == []
+
+
+def test_wellness_progress_followups_insufficient_data_suggests_logging():
+    followups = generate_wellness_progress_followups({"status": "insufficient_data"})
+    assert "Log today's activity" in followups
+    assert "Start a daily check-in" in followups
+    assert "Build me a 7-day plan" not in followups  # premature — no analysis exists yet
+
+
+def test_wellness_progress_followups_ok_matches_the_spec_examples():
+    result = {"status": "ok", "hypotheses": [{"text": "..."}], "missing_information": []}
+    followups = generate_wellness_progress_followups(result)
+    assert "Review my recent progress" in followups
+    assert "What should I change first?" in followups
+    assert "Build me a 7-day plan" in followups
+
+
+def test_wellness_progress_followups_no_change_question_without_hypotheses():
+    result = {"status": "ok", "hypotheses": [], "missing_information": []}
+    followups = generate_wellness_progress_followups(result)
+    assert "What should I change first?" not in followups
+
+
+# ---------------------------------------------------------------------------
+# main.py::_followups_for_route dispatcher — generate_recommendation_
+# followups existed but had no call site before this pass (a real gap);
+# this covers the dispatch logic that now wires it in alongside the new
+# wellness_progress branch, without changing generic-category behavior.
+# ---------------------------------------------------------------------------
+
+
+def test_followups_for_route_dispatches_to_recommendation_when_product_cards_present():
+    import backend.main as backend_main
+
+    route = backend_main.RouteResult(
+        context="", web_context="", sources=[], web_sources=[], category="recommendation",
+        rag_metadata=None, mode="dayjoy", answer_source="dayjoy_knowledge",
+        web_search_provider=None, used_web_search=False,
+        product_cards=[{"price": {"dp": 499}}],
+    )
+    followups = backend_main._followups_for_route(route, "recommendation", "help with anxiety")
+    assert "Do you want the current price and BV/PV?" in followups
+
+
+def test_followups_for_route_dispatches_to_wellness_progress_when_present():
+    import backend.main as backend_main
+
+    route = backend_main.RouteResult(
+        context="", web_context="", sources=[], web_sources=[], category="wellness_progress",
+        rag_metadata=None, mode="dayjoy", answer_source="dayjoy_knowledge",
+        web_search_provider=None, used_web_search=False,
+        progress_data={"status": "ok", "hypotheses": [{"text": "x"}], "missing_information": []},
+    )
+    followups = backend_main._followups_for_route(route, "wellness_progress", "why am I not progressing")
+    assert "Review my recent progress" in followups
+
+
+def test_followups_for_route_falls_back_to_generic_for_other_categories():
+    import backend.main as backend_main
+
+    route = backend_main.RouteResult(
+        context="", web_context="", sources=[], web_sources=[], category="product",
+        rag_metadata=None, mode="dayjoy", answer_source="dayjoy_knowledge",
+        web_search_provider=None, used_web_search=False,
+    )
+    followups = backend_main._followups_for_route(route, "product", "Tell me about Dayjoy Turmeric")
+    assert "What is the DP and MRP of this product?" in followups
