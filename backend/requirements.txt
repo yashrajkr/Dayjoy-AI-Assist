@@ -26,3 +26,9 @@ python-multipart==0.0.20
 # Phase 9 — Production infrastructure
 redis==5.2.1
 ruff==0.8.6
+
+# Realtime Voice — outbound WebSocket client used by backend/voice_api.py
+# to relay audio to/from Deepgram's streaming STT/TTS endpoints. FastAPI's
+# own (inbound) WebSocket support needs no extra dependency; this is only
+# for the backend-as-a-client leg of the relay.
+websockets==14.1

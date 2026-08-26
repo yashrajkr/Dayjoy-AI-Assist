@@ -47,6 +47,7 @@ import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { captureScreenFrame } from "../../lib/captureScreenFrame";
 import { spokenify, splitSentences, toConciseSpeech } from "../../lib/voiceText";
 import { parseVoiceCommand, isBackchannelOnly, type VoiceCommand } from "../../lib/voiceCommands";
+import { RealtimeVoiceClient } from "../../lib/voiceRealtime";
 import { BRAND } from "../../lib/brand";
 import {
   createConversation,
@@ -341,6 +342,27 @@ export function VoiceAssistant() {
     };
   }, []);
 
+  // Realtime voice pipeline availability (Phase 1 of the realtime voice
+  // architecture — see backend/voice_api.py). `null` while checking, then a
+  // real true/false from the backend's own /voice/capabilities — never
+  // assumed available. Wiring the full mic/TTS control flow over to this
+  // transport is deliberately NOT done yet: it needs a real DEEPGRAM_API_KEY
+  // configured on the backend to test end-to-end (this deployment doesn't
+  // have one), so activating it as the primary path before that would ship
+  // an untested code path. This probe only surfaces true status in
+  // diagnostics for now; the existing browser voice pipeline below remains
+  // the one actually driving the mic/TTS experience.
+  const [realtimeAvailable, setRealtimeAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void RealtimeVoiceClient.isAvailable().then((ok) => {
+      if (!cancelled) setRealtimeAvailable(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Bumped on every handleUserUtterance call; a request only applies its
@@ -442,6 +464,15 @@ export function VoiceAssistant() {
     });
     return () => cancelAnimationFrame(raf);
   }, [turns, streamingText]);
+
+  // Conversation continuity, the other direction: hand the SAME
+  // conversation id back to the text UI instead of always landing on a
+  // blank "New Chat" — /chat/:chatId? (see src/app/App.tsx) opens that
+  // exact conversation, whose history the backend already persisted from
+  // this voice session's own turns.
+  const navigateToChatContinuingConversation = useCallback(() => {
+    navigate(conversationIdRef.current ? `/chat/${conversationIdRef.current}` : "/");
+  }, [navigate]);
 
   const ensureConversation = useCallback(async () => {
     if (conversationIdRef.current || !currentUser?.id) return conversationIdRef.current;
@@ -718,11 +749,17 @@ export function VoiceAssistant() {
   // Runs once per navigation (guarded by hasUserStartedMicRef, same as a
   // manual toggleMic tap) and only once STT is confirmed supported.
   useEffect(() => {
-    if (
-      (location.state as { autoStart?: boolean } | null)?.autoStart &&
-      voice.sttSupported &&
-      !hasUserStartedMicRef.current
-    ) {
+    const navState = location.state as { autoStart?: boolean; conversationId?: string | null } | null;
+    // Conversation continuity (switching Text -> Voice must not start a
+    // fresh, context-less conversation): if UserChat handed off an active
+    // conversation id, adopt it instead of ensureConversation() creating a
+    // brand-new "Voice session" row. The backend's own history loader
+    // (load_history in backend/main.py) then pulls the real prior turns for
+    // this id on the very next request, same as it does for text chat.
+    if (navState?.conversationId && !conversationIdRef.current) {
+      conversationIdRef.current = navState.conversationId;
+    }
+    if (navState?.autoStart && voice.sttSupported && !hasUserStartedMicRef.current) {
       toggleMic();
       navigate(location.pathname, { replace: true, state: null });
     }
@@ -864,7 +901,7 @@ export function VoiceAssistant() {
           setSettings((s) => ({ ...s, languageCode: cmd.languageCode, voiceName: null }));
           return true;
         case "switch_to_chat":
-          navigate("/");
+          navigateToChatContinuingConversation();
           return true;
         case "end_conversation":
           void endSession();
@@ -903,7 +940,7 @@ export function VoiceAssistant() {
           return false;
       }
     },
-    [voice, settings.maxSpokenSentences, navigate, endSession, pendingConfirm, executeConfirmedAction, currentLanguageLabel],
+    [voice, settings.maxSpokenSentences, navigateToChatContinuingConversation, endSession, pendingConfirm, executeConfirmedAction, currentLanguageLabel],
   );
 
   // Finalized speech recognition result -> either a local command or a real
@@ -1077,7 +1114,7 @@ export function VoiceAssistant() {
           startNewSession={startNewSession}
           ended={ended}
           onClose={() => navigate("/")}
-          onSwitchToChat={() => navigate("/")}
+          onSwitchToChat={navigateToChatContinuingConversation}
           onOpenDrawer={outletCtx?.openDrawer}
           settings={settings}
           setSettings={setSettings}
@@ -1303,7 +1340,7 @@ export function VoiceAssistant() {
               <MonitorUp className="w-4 h-4" aria-hidden="true" />
               {capturingScreen ? "Capturing…" : "Screen"}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => navigate("/")}>
+            <Button variant="secondary" size="sm" onClick={navigateToChatContinuingConversation}>
               <MessageSquare className="w-4 h-4" aria-hidden="true" />
               Switch to chat
             </Button>
@@ -1805,6 +1842,14 @@ export function VoiceAssistant() {
               <p>Duration: {formatDuration(nowTick - sessionStartedAtRef.current)}</p>
               <p>Turns: {turns.length}</p>
               <p>AI service: {aiServiceOnline === null ? "checking…" : aiServiceOnline ? "online" : "offline"}</p>
+              <p>
+                Realtime voice:{" "}
+                {realtimeAvailable === null
+                  ? "checking…"
+                  : realtimeAvailable
+                    ? "provider configured (not yet wired as primary path)"
+                    : "not configured — using browser voice pipeline"}
+              </p>
               {lastLatency ? (
                 <>
                   <p>STT final → request sent: {lastLatency.sttToRequest}ms</p>
