@@ -1062,15 +1062,42 @@ def _format_wellness_context(data: Dict[str, Any]) -> str:
     tool result — every field is a verbatim wellness_goals/wellness_
     preferences row value (see tools/wellness.py); the LLM only phrases
     these into a status update or a "goal created" confirmation, never
-    invents progress or a preference the user never actually stated."""
+    invents progress or a preference the user never actually stated.
+
+    Preferences are split by provenance (wellness_profile.
+    split_facts_and_hypotheses) — a fact (user_provided/verified_import) is
+    presented as settled and not to be re-asked; a hypothesis
+    (inferred_conversation/ai_recommendation) is explicitly labeled
+    unconfirmed with its confidence, and the instruction is to treat it as
+    tentative, not state it as fact, and optionally offer to confirm it —
+    never silently upgrade a guess to a fact (that was a real bug: this
+    function used to label every preference "already confirmed" regardless
+    of provenance)."""
+    from backend.orchestrator.tools.wellness_profile import split_facts_and_hypotheses
+
     pref_block = ""
     preferences = data.get("preferences") or []
     if preferences:
-        pref_lines = "\n".join(f"- {p.get('key')}: {p.get('value')}" for p in preferences)
-        pref_block = (
-            f"\n\n---\n\n[Remembered preferences for this user — already confirmed, do not ask "
-            f"again, just take them into account]\n{pref_lines}"
-        )
+        facts, hypotheses = split_facts_and_hypotheses(preferences)
+        parts = []
+        if facts:
+            fact_lines = "\n".join(f"- {p.get('key')}: {p.get('value')}" for p in facts)
+            parts.append(
+                f"[Remembered facts for this user — confirmed, do not ask again, just take them "
+                f"into account]\n{fact_lines}"
+            )
+        if hypotheses:
+            hyp_lines = "\n".join(
+                f"- {p.get('key')}: {p.get('value')} (confidence: {p.get('confidence')})"
+                for p in hypotheses
+            )
+            parts.append(
+                f"[UNCONFIRMED signals about this user — these are guesses, NOT confirmed facts. "
+                f"Never state these as settled. You may mention one tentatively and ask if it's "
+                f"correct, but do not assume it]\n{hyp_lines}"
+            )
+        if parts:
+            pref_block = "\n\n---\n\n" + "\n\n".join(parts)
 
     if data.get("status") == "goal_created":
         goal = data.get("goal") or {}
@@ -1098,6 +1125,84 @@ def _format_wellness_context(data: Dict[str, Any]) -> str:
             lines.append(f"Target date: {g['target_date']}")
         blocks.append("\n".join(lines))
     return "\n\n---\n\n".join(blocks) + pref_block
+
+
+def _format_wellness_progress_context(data: Dict[str, Any]) -> str:
+    """Deterministic context string for the wellness_progress reasoning
+    tool result (backend/orchestrator/tools/wellness_progress.py) — every
+    fact/hypothesis/question here is data the tool itself computed, never
+    LLM-invented. The instruction block at the end is the load-bearing part:
+    it's what stops the LLM from treating a hypothesis as a diagnosis or
+    a settled fact, and from framing anything as the user's fault."""
+    status = data.get("status")
+    if status == "no_goal":
+        return (
+            "[No active wellness goal]\n"
+            f"{data.get('clarifying_question')}\n\n"
+            "Ask the user what they'd like to work on — do not guess a goal for them."
+        )
+    if status == "insufficient_data":
+        facts = data.get("facts") or {}
+        return (
+            f"[Not enough data yet to analyze progress on \"{facts.get('goal_title')}\"]\n"
+            f"Activities logged: {facts.get('total_activities_logged', 0)}. "
+            f"Check-ins logged: {facts.get('checkins_in_last_14_days', 0)}.\n\n"
+            f"Ask this clarifying question rather than guessing a cause: "
+            f"{data.get('clarifying_question')}\n\n"
+            "Do not speculate about why progress has stalled — there simply isn't enough logged "
+            "data yet to say anything evidenced. Never diagnose a medical condition. Never suggest "
+            "the user is at fault."
+        )
+
+    facts = data.get("facts") or {}
+    fact_lines = "\n".join(f"- {k}: {v}" for k, v in facts.items() if v is not None)
+    hypotheses = data.get("hypotheses") or []
+    hyp_lines = "\n".join(
+        f"- ({h.get('confidence')} confidence) {h.get('text')} — based on: {', '.join(h.get('based_on') or [])}"
+        for h in hypotheses
+    )
+    missing = data.get("missing_information") or []
+    missing_lines = "\n".join(f"- {m}" for m in missing)
+
+    parts = [
+        f"[Progress analysis for goal: \"{facts.get('goal_title')}\"]",
+        f"FACTS (computed directly from this user's own logged data, state these as facts):\n{fact_lines}",
+    ]
+    if hyp_lines:
+        parts.append(
+            "POSSIBLE CONTRIBUTING FACTORS (hypotheses, each tied to a specific fact above and labeled "
+            "with a confidence tier — present these explicitly as possibilities, never as certainties, "
+            "and never as a medical diagnosis):\n" + hyp_lines
+        )
+    if missing_lines:
+        parts.append(f"MISSING INFORMATION (be upfront these gaps limit the analysis):\n{missing_lines}")
+    if data.get("clarifying_question"):
+        parts.append(f"CLARIFYING QUESTION TO ASK (only if the hypotheses above are weak/low-confidence):\n{data['clarifying_question']}")
+    if data.get("suggested_next_action"):
+        parts.append(f"SMALLEST NEXT ACTION TO SUGGEST:\n{data['suggested_next_action']}")
+
+    profile_facts = data.get("profile_facts") or []
+    profile_hypotheses = data.get("profile_hypotheses") or []
+    if profile_facts:
+        parts.append(
+            "REMEMBERED FACTS ABOUT THIS USER (confirmed, take into account):\n"
+            + "\n".join(f"- {p.get('key')}: {p.get('value')}" for p in profile_facts)
+        )
+    if profile_hypotheses:
+        parts.append(
+            "UNCONFIRMED SIGNALS ABOUT THIS USER (never state as fact):\n"
+            + "\n".join(f"- {p.get('key')}: {p.get('value')} (confidence: {p.get('confidence')})" for p in profile_hypotheses)
+        )
+
+    parts.append(
+        "INSTRUCTIONS: Answer using ONLY the facts and hypotheses above. State facts as facts. "
+        "Present each hypothesis as a possibility with its confidence, never as certain. Never "
+        "diagnose a medical condition or suggest a specific illness. Never blame the user or use "
+        "language implying they failed — frame this as troubleshooting together. If information is "
+        "missing or hypotheses are weak, ask the clarifying question instead of guessing. End with "
+        "the smallest next action if one was given."
+    )
+    return "\n\n---\n\n".join(parts)
 
 
 async def _route_from_kb_result(
@@ -1338,50 +1443,81 @@ async def _route_events(
         # the Wellness Journey page owns via tools/wellness.py, so a chat
         # request like "I want to improve my energy" actually creates (or
         # reports progress on) a real goal instead of just answering once.
-        yield ("status", "checking_wellness_goals")
-        tool_calls = [{"name": name, "kwargs": {"token": token, "message": message}} for name in plan.proposed_tools]
-        results = {r.tool_name: r for r in await run_tools(tool_calls)}
-        wellness_result = results.get("wellness_context")
-        wellness_data = wellness_result.data if wellness_result and wellness_result.ok else None
+        if "wellness_progress" in plan.proposed_tools:
+            yield ("status", "analyzing_progress")
+            tool_calls = [{"name": "wellness_progress", "kwargs": {"token": token, "message": message}}]
+            results = {r.tool_name: r for r in await run_tools(tool_calls)}
+            progress_result = results.get("wellness_progress")
+            progress_data = progress_result.data if progress_result and progress_result.ok else None
+            if progress_data and progress_data.get("status") in ("ok", "no_goal", "insufficient_data"):
+                yield (
+                    "result",
+                    RouteResult(
+                        context=_format_wellness_progress_context(progress_data),
+                        web_context="", sources=[], web_sources=[],
+                        category="wellness_progress",
+                        rag_metadata={
+                            "confidence": 0.85 if progress_data.get("status") == "ok" else 0.5,
+                            "verification_status": "verified",
+                            "evidence_sufficient": progress_data.get("status") == "ok",
+                            "source": "structured_wellness_progress_reasoning",
+                        },
+                        mode="dayjoy", answer_source="dayjoy_knowledge",
+                        web_search_provider=None, used_web_search=False,
+                    ),
+                )
+                return
+            # Unauthenticated or the read failed, and this branch is the
+            # only tool planner.py proposed for this message (progress
+            # reasoning and plain goal-status are mutually exclusive per
+            # planner.py) — fall out of this elif (no yield/return here)
+            # so control reaches the normal general-knowledge path below,
+            # same as the plain wellness_context branch's own fallback.
+        elif "wellness_context" in plan.proposed_tools:
+            yield ("status", "checking_wellness_goals")
+            tool_calls = [{"name": name, "kwargs": {"token": token, "message": message}} for name in plan.proposed_tools]
+            results = {r.tool_name: r for r in await run_tools(tool_calls)}
+            wellness_result = results.get("wellness_context")
+            wellness_data = wellness_result.data if wellness_result and wellness_result.ok else None
 
-        if wellness_data and wellness_data.get("status") in ("has_active_goals", "goal_created"):
-            context = _format_wellness_context(wellness_data)
-            # Product recommendation reuse (analysis Step 8) — opportunistic,
-            # never forced: only attached if the SAME structured chart match
-            # tools/recommend.py already uses for a direct product ask also
-            # matches this goal's own title/type, using its own existing
-            # insufficient_evidence fallback when it doesn't.
-            product_cards: List[Dict[str, Any]] = []
-            goal_text = (
-                wellness_data.get("goal", {}).get("title")
-                if wellness_data["status"] == "goal_created"
-                else (wellness_data.get("goals") or [{}])[0].get("title")
-            )
-            if goal_text:
-                try:
-                    rec = await recommend_tool.run(token, str(goal_text))
-                    if rec.get("status") == "ok" and rec.get("products"):
-                        product_cards = rec["products"][:3]
-                        context += f"\n\n---\n\n{_format_recommendation_context(product_cards)}"
-                except Exception:
-                    pass  # a failed opportunistic recommendation must never block the wellness answer
-            yield (
-                "result",
-                RouteResult(
-                    context=context, web_context="", sources=[], web_sources=[],
-                    category="wellness",
-                    rag_metadata={
-                        "confidence": 0.9, "verification_status": "verified",
-                        "evidence_sufficient": True, "source": "structured_wellness",
-                    },
-                    mode="dayjoy", answer_source="dayjoy_knowledge",
-                    web_search_provider=None, used_web_search=False,
-                    product_cards=product_cards,
-                ),
-            )
-            return
-        # Unauthenticated, or the write failed — fall through to the normal
-        # general-knowledge path below rather than a dead end.
+            if wellness_data and wellness_data.get("status") in ("has_active_goals", "goal_created"):
+                context = _format_wellness_context(wellness_data)
+                # Product recommendation reuse (analysis Step 8) — opportunistic,
+                # never forced: only attached if the SAME structured chart match
+                # tools/recommend.py already uses for a direct product ask also
+                # matches this goal's own title/type, using its own existing
+                # insufficient_evidence fallback when it doesn't.
+                product_cards: List[Dict[str, Any]] = []
+                goal_text = (
+                    wellness_data.get("goal", {}).get("title")
+                    if wellness_data["status"] == "goal_created"
+                    else (wellness_data.get("goals") or [{}])[0].get("title")
+                )
+                if goal_text:
+                    try:
+                        rec = await recommend_tool.run(token, str(goal_text))
+                        if rec.get("status") == "ok" and rec.get("products"):
+                            product_cards = rec["products"][:3]
+                            context += f"\n\n---\n\n{_format_recommendation_context(product_cards)}"
+                    except Exception:
+                        pass  # a failed opportunistic recommendation must never block the wellness answer
+                yield (
+                    "result",
+                    RouteResult(
+                        context=context, web_context="", sources=[], web_sources=[],
+                        category="wellness",
+                        rag_metadata={
+                            "confidence": 0.9, "verification_status": "verified",
+                            "evidence_sufficient": True, "source": "structured_wellness",
+                        },
+                        mode="dayjoy", answer_source="dayjoy_knowledge",
+                        web_search_provider=None, used_web_search=False,
+                        product_cards=product_cards,
+                    ),
+                )
+                return
+            # Unauthenticated, or the write failed — fall through to the normal
+            # general-knowledge path below rather than a dead end.
 
     # Answer Quality Router (orchestrator/quality_router.py) — a narrow,
     # deterministic check for a broad business/strategy question (the only

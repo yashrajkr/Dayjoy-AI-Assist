@@ -2494,14 +2494,26 @@ export async function customerUpsertCheckin(signals: Record<string, number>): Pr
   return custJson("POST", "/customer/wellness/checkins", { signals });
 }
 
-/** Smart Journey Memory (spec Phase 18) — durable, user-confirmed
- * preferences the AI Coach reads (backend/orchestrator/tools/wellness.py)
- * so it doesn't ask the same thing twice. */
+/** Wellness Profile / Smart Journey Memory (spec Phase 2 + 18) — durable,
+ * provenance-tagged signals the AI Coach reads
+ * (backend/orchestrator/tools/wellness.py) so it doesn't ask the same thing
+ * twice. `user_provided`/`verified_import` are facts (confidence is always
+ * null for these); `inferred_conversation`/`ai_recommendation` are
+ * tentative and always carry a confidence — never render these as if the
+ * user confirmed them (see WellnessProfileSection in WellnessJourney.tsx). */
+export type WellnessProvenance =
+  | "user_provided"
+  | "inferred_conversation"
+  | "verified_import"
+  | "ai_recommendation";
+
 export type WellnessPreference = {
   id?: string;
   key: string;
   value: string;
-  source?: "user" | "ai_inference";
+  provenance: WellnessProvenance;
+  confidence: number | null;
+  consent?: boolean;
   updated_at?: string;
 };
 
@@ -2509,8 +2521,17 @@ export async function customerListWellnessPreferences(): Promise<WellnessPrefere
   return custGet("/customer/wellness/preferences");
 }
 
+/** Always writes provenance='user_provided' server-side — this is the
+ * human-facing "I'm telling you this" path (also used to correct/edit an
+ * existing AI-inferred value, which promotes it to a confirmed fact). */
 export async function customerUpsertWellnessPreference(key: string, value: string): Promise<WellnessPreference> {
-  return custJson("POST", "/customer/wellness/preferences", { key, value, source: "user" });
+  return custJson("POST", "/customer/wellness/preferences", { key, value });
+}
+
+/** Accepts an AI-tentative signal as correct, promoting it to a confirmed
+ * fact without changing its value. */
+export async function customerConfirmWellnessPreference(key: string): Promise<WellnessPreference> {
+  return custJson("POST", `/customer/wellness/preferences/${encodeURIComponent(key)}/confirm`, {});
 }
 
 export async function customerDeleteWellnessPreference(key: string): Promise<{ status: string }> {
