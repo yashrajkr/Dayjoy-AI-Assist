@@ -465,6 +465,15 @@ export function VoiceAssistant() {
     return () => cancelAnimationFrame(raf);
   }, [turns, streamingText]);
 
+  // Conversation continuity, the other direction: hand the SAME
+  // conversation id back to the text UI instead of always landing on a
+  // blank "New Chat" — /chat/:chatId? (see src/app/App.tsx) opens that
+  // exact conversation, whose history the backend already persisted from
+  // this voice session's own turns.
+  const navigateToChatContinuingConversation = useCallback(() => {
+    navigate(conversationIdRef.current ? `/chat/${conversationIdRef.current}` : "/");
+  }, [navigate]);
+
   const ensureConversation = useCallback(async () => {
     if (conversationIdRef.current || !currentUser?.id) return conversationIdRef.current;
     const conv = await createConversation(currentUser.id, "Voice session");
@@ -740,11 +749,17 @@ export function VoiceAssistant() {
   // Runs once per navigation (guarded by hasUserStartedMicRef, same as a
   // manual toggleMic tap) and only once STT is confirmed supported.
   useEffect(() => {
-    if (
-      (location.state as { autoStart?: boolean } | null)?.autoStart &&
-      voice.sttSupported &&
-      !hasUserStartedMicRef.current
-    ) {
+    const navState = location.state as { autoStart?: boolean; conversationId?: string | null } | null;
+    // Conversation continuity (switching Text -> Voice must not start a
+    // fresh, context-less conversation): if UserChat handed off an active
+    // conversation id, adopt it instead of ensureConversation() creating a
+    // brand-new "Voice session" row. The backend's own history loader
+    // (load_history in backend/main.py) then pulls the real prior turns for
+    // this id on the very next request, same as it does for text chat.
+    if (navState?.conversationId && !conversationIdRef.current) {
+      conversationIdRef.current = navState.conversationId;
+    }
+    if (navState?.autoStart && voice.sttSupported && !hasUserStartedMicRef.current) {
       toggleMic();
       navigate(location.pathname, { replace: true, state: null });
     }
@@ -886,7 +901,7 @@ export function VoiceAssistant() {
           setSettings((s) => ({ ...s, languageCode: cmd.languageCode, voiceName: null }));
           return true;
         case "switch_to_chat":
-          navigate("/");
+          navigateToChatContinuingConversation();
           return true;
         case "end_conversation":
           void endSession();
@@ -925,7 +940,7 @@ export function VoiceAssistant() {
           return false;
       }
     },
-    [voice, settings.maxSpokenSentences, navigate, endSession, pendingConfirm, executeConfirmedAction, currentLanguageLabel],
+    [voice, settings.maxSpokenSentences, navigateToChatContinuingConversation, endSession, pendingConfirm, executeConfirmedAction, currentLanguageLabel],
   );
 
   // Finalized speech recognition result -> either a local command or a real
@@ -1099,7 +1114,7 @@ export function VoiceAssistant() {
           startNewSession={startNewSession}
           ended={ended}
           onClose={() => navigate("/")}
-          onSwitchToChat={() => navigate("/")}
+          onSwitchToChat={navigateToChatContinuingConversation}
           onOpenDrawer={outletCtx?.openDrawer}
           settings={settings}
           setSettings={setSettings}
@@ -1325,7 +1340,7 @@ export function VoiceAssistant() {
               <MonitorUp className="w-4 h-4" aria-hidden="true" />
               {capturingScreen ? "Capturing…" : "Screen"}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => navigate("/")}>
+            <Button variant="secondary" size="sm" onClick={navigateToChatContinuingConversation}>
               <MessageSquare className="w-4 h-4" aria-hidden="true" />
               Switch to chat
             </Button>

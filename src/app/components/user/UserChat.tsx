@@ -3729,7 +3729,9 @@ export function UserChat() {
                   {isVoiceRepliesEnabled() && voice.sttSupported && !input.trim() ? (
                     <motion.button
                       type="button"
-                      onClick={() => navigate("/voice", { state: { autoStart: true } })}
+                      onClick={() =>
+                        navigate("/voice", { state: { autoStart: true, conversationId: activeConv?.id ?? chatId ?? null } })
+                      }
                       whileTap={{ scale: 0.95 }}
                       whileHover={{ scale: 1.05 }}
                       className="group/send relative inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm hover:shadow-md shrink-0"
