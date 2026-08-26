@@ -224,7 +224,7 @@ async def _run_deepgram_stt(
     url = f"{DEEPGRAM_STT_URL}&model={model}&language={language}"
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
-    async with ws_client.connect(url, extra_headers=headers) as dg:
+    async with ws_client.connect(url, additional_headers=headers) as dg:
 
         async def _pump_audio() -> None:
             while True:
@@ -259,7 +259,7 @@ async def _run_deepgram_tts(text: str, voice: str) -> AsyncIterator[bytes]:
 
     url = f"{DEEPGRAM_TTS_URL_BASE}&model={voice}"
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
-    async with ws_client.connect(url, extra_headers=headers) as dg:
+    async with ws_client.connect(url, additional_headers=headers) as dg:
         await dg.send(json.dumps({"type": "Speak", "text": text}))
         await dg.send(json.dumps({"type": "Flush"}))
         async for message in dg:
