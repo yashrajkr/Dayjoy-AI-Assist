@@ -47,6 +47,11 @@ OPTIONAL_VARS: Dict[str, List[Tuple[str, str]]] = {
         ("ALLOWED_ORIGINS", "Comma-separated CORS origins"),
         ("RATE_LIMIT_MAX", "Max requests per window (default: 30)"),
     ],
+    "Realtime Voice (optional)": [
+        ("DEEPGRAM_API_KEY", "Deepgram API key — enables realtime streaming STT+TTS voice mode (/voice/ws). "
+                              "Without it, voice mode transparently falls back to the browser's built-in "
+                              "speech recognition/synthesis; nothing breaks, but voice stays non-realtime."),
+    ],
     "Infrastructure (optional)": [
         ("REDIS_URL", "Redis connection URL for caching + job queue"),
     ],

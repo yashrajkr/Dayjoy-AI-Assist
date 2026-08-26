@@ -4738,3 +4738,20 @@ try:
 except Exception as _sec_router_err:  # pragma: no cover
     import logging
     logging.getLogger("dayjoy.main").warning("Failed to load security router: %s", _sec_router_err)
+
+
+# ---------------------------------------------------------------------------
+# Realtime Voice — WebSocket relay (see backend/voice_api.py for the
+# architecture decision record: WebSocket transport, Deepgram STT+TTS,
+# reuses this module's own chat_stream() for RAG/tools/LLM — no separate
+# "voice AI brain"). Falls back to a graceful {"type": "unavailable"} when
+# DEEPGRAM_API_KEY is unset, so the frontend's browser-native voice path
+# keeps working with no behavior change when this router is present but
+# unconfigured.
+# ---------------------------------------------------------------------------
+try:
+    from backend.voice_api import router as voice_router
+    app.include_router(voice_router)
+except Exception as _voice_router_err:  # pragma: no cover
+    import logging
+    logging.getLogger("dayjoy.main").warning("Failed to load voice router: %s", _voice_router_err)

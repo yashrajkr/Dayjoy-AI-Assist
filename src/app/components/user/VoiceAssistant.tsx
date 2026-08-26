@@ -47,6 +47,7 @@ import { CameraCapture, type CapturedImage } from "../tools/CameraCapture";
 import { captureScreenFrame } from "../../lib/captureScreenFrame";
 import { spokenify, splitSentences, toConciseSpeech } from "../../lib/voiceText";
 import { parseVoiceCommand, isBackchannelOnly, type VoiceCommand } from "../../lib/voiceCommands";
+import { RealtimeVoiceClient } from "../../lib/voiceRealtime";
 import { BRAND } from "../../lib/brand";
 import {
   createConversation,
@@ -338,6 +339,27 @@ export function VoiceAssistant() {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+    };
+  }, []);
+
+  // Realtime voice pipeline availability (Phase 1 of the realtime voice
+  // architecture — see backend/voice_api.py). `null` while checking, then a
+  // real true/false from the backend's own /voice/capabilities — never
+  // assumed available. Wiring the full mic/TTS control flow over to this
+  // transport is deliberately NOT done yet: it needs a real DEEPGRAM_API_KEY
+  // configured on the backend to test end-to-end (this deployment doesn't
+  // have one), so activating it as the primary path before that would ship
+  // an untested code path. This probe only surfaces true status in
+  // diagnostics for now; the existing browser voice pipeline below remains
+  // the one actually driving the mic/TTS experience.
+  const [realtimeAvailable, setRealtimeAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void RealtimeVoiceClient.isAvailable().then((ok) => {
+      if (!cancelled) setRealtimeAvailable(ok);
+    });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -1805,6 +1827,14 @@ export function VoiceAssistant() {
               <p>Duration: {formatDuration(nowTick - sessionStartedAtRef.current)}</p>
               <p>Turns: {turns.length}</p>
               <p>AI service: {aiServiceOnline === null ? "checking…" : aiServiceOnline ? "online" : "offline"}</p>
+              <p>
+                Realtime voice:{" "}
+                {realtimeAvailable === null
+                  ? "checking…"
+                  : realtimeAvailable
+                    ? "provider configured (not yet wired as primary path)"
+                    : "not configured — using browser voice pipeline"}
+              </p>
               {lastLatency ? (
                 <>
                   <p>STT final → request sent: {lastLatency.sttToRequest}ms</p>
